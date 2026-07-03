@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}#{{ ticket.id }} — {{ ticket.title }}{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+  <div>
+    <a href="/tickets" class="text-muted text-decoration-none small">← All Tickets</a>
+    <h4 class="mb-1 mt-1">
+      <span class="text-muted">#{{ ticket.id }}</span> {{ ticket.title }}
+    </h4>
+    <div class="d-flex gap-2 flex-wrap">
+      <span class="badge badge-{{ ticket.status }}">{{ ticket.status.replace('_',' ').title() }}</span>
+      <span class="badge bg-{{ ticket.priority_badge }}">{{ ticket.priority.title() }}</span>
+      {% if ticket.category %}<span class="badge bg-dark border border-secondary">{{ ticket.category }}</span>{% endif %}
+      {% if ticket.is_overdue %}<span class="badge bg-danger overdue-badge"><i class="bi bi-clock-history"></i> SLA Overdue</span>{% endif %}
+    </div>
+  </div>
+
+  <!-- Status actions (tech/admin) -->
+  {% if role in ('tech','admin') %}
+  <div class="d-flex gap-2 flex-wrap">
+    {% if ticket.status == 'open' %}
+    <form method="post" action="/tickets/{{ ticket.id }}/status" class="d-inline">
+      <input type="hidden" name="new_status" value="in_progress">
+      <button class="btn btn-warning btn-sm">Take it</button>
+    </form>
+    {% endif %}
+    {% if ticket.status in ('open','in_progress') %}
+    <form method="post" action="/tickets/{{ ticket.id }}/status" class="d-inline">
+      <input type="hidden" name="new_status" value="pending">
+      <button class="btn btn-secondary btn-sm">Pending</button>
+    </form>
+    {% endif %}
+    {% if ticket.status not in ('resolved','closed') %}
+    <form method="post" action="/tickets/{{ ticket.id }}/status" class="d-inline">
+      <input type="hidden" name="new_status" value="resolved">
+      <button class="btn btn-success btn-sm"><i class="bi bi-check2"></i> Resolve</button>
+    </form>
+    {% endif %}
+    {% if ticket.status == 'resolved' %}
+    <form method="post" action="/tickets/{{ ticket.id }}/status" class="d-inline">
+      <input type="hidden" name="new_status" value="closed">
+      <button class="btn btn-dark btn-sm border border-secondary">Close</button>
+    </form>
+    {% endif %}
+  </div>
+  {% elif ticket.status in ('resolved','closed') %}
+  <form method="post" action="/tickets/{{ ticket.id }}/status">
+    <input type="hidden" name="new_status" value="open">
+    <button class="btn btn-outline-warning btn-sm">Reopen</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="row g-4">
+  <!-- Left: ticket + timeline -->
+  <div class="col-lg-8">
+
+    <!-- Description -->
+    <div class="stat-card p-4 mb-3">
+      <h6 class="text-muted mb-3"><i class="bi bi-card-text me-1"></i>Description</h6>
+      <div style="white-space:pre-wrap;color:#c9d1d9;line-height:1.6">{{ ticket.description }}</div>
+      <div class="mt-3 pt-3 border-top border-secondary row g-2 small text-muted">
+        <div class="col-md-4"><i class="bi bi-calendar me-1"></i>Created {{ ticket.created_at.strftime('%d %b %Y %H:%M') if ticket.created_at }}</div>
+        {% if ticket.sla_due_at %}<div class="col-md-4 {% if ticket.is_overdue %}text-danger{% endif %}"><i class="bi bi-clock me-1"></i>SLA due {{ ticket.sla_due_at.strftime('%d %b %Y %H:%M') }}</div>{% endif %}
+        {% if ticket.closed_at %}<div class="col-md-4 text-success"><i class="bi bi-check-circle me-1"></i>Closed {{ ticket.closed_at.strftime('%d %b %Y %H:%M') }}</div>{% endif %}
+        {% if ticket.resolution_hours %}<div class="col-md-4"><i class="bi bi-stopwatch me-1"></i>Resolved in {{ ticket.resolution_hours }}h</div>{% endif %}
+      </div>
+    </div>
+
+    <!-- Update timeline -->
+    <h6 class="text-muted mb-3"><i class="bi bi-chat-dots me-1"></i>Timeline</h6>
+    {% for u in updates %}
+    <div class="stat-card mb-2 p-3 {% if u.is_internal %}update-internal{% else %}update-public{% endif %}">
+      <div class="d-flex justify-content-between mb-2">
+        <div>
+          <strong style="font-size:.9rem">{{ u.author.full_name if u.author else 'System' }}</strong>
+          {% if u.is_internal %}<span class="badge bg-warning text-dark ms-2" style="font-size:.65rem">Internal</span>{% endif %}
+        </div>
+        <small class="text-muted">{{ u.created_at.strftime('%d %b %Y %H:%M') if u.created_at }}</small>
+      </div>
+      <div style="white-space:pre-wrap;color:#c9d1d9;font-size:.9rem">{{ u.content }}</div>
+    </div>
+    {% else %}
+    <div class="text-muted small text-center py-3">No updates yet.</div>
+    {% endfor %}
+
+    <!-- Add reply -->
+    {% if ticket.status not in ('closed',) %}
+    <div class="stat-card p-4 mt-3">
+      <h6 class="mb-3">{% if role in ('tech','admin') %}Add Reply / Note{% else %}Add Reply{% endif %}</h6>
+      <form method="post" action="/tickets/{{ ticket.id }}/update">
+        <textarea name="content" class="form-control mb-2" rows="4" required placeholder="Type your reply here…"></textarea>
+        <div class="d-flex justify-content-between align-items-center">
+          {% if role in ('tech','admin') %}
+          <div class="form-check">
+            <input type="checkbox" name="is_internal" value="true" class="form-check-input" id="internal">
+            <label class="form-check-label small" for="internal">Internal note (not visible to user)</label>
+          </div>
+          {% else %}
+          <div></div>
+          {% endif %}
+          <button type="submit" class="btn btn-primary btn-sm">
+            <i class="bi bi-send me-1"></i>Send
+          </button>
+        </div>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Right: info panels -->
+  <div class="col-lg-4">
+
+    <!-- Assignment (tech/admin) -->
+    {% if role in ('tech','admin') %}
+    <div class="stat-card p-3 mb-3">
+      <h6 class="text-muted mb-2"><i class="bi bi-person-gear me-1"></i>Assigned Tech</h6>
+      <form method="post" action="/tickets/{{ ticket.id }}/assign" class="d-flex gap-2">
+        <select name="tech_id" class="form-select form-select-sm">
+          <option value="">— Unassigned —</option>
+          {% for t in techs %}
+          <option value="{{ t.id }}" {% if ticket.assigned_to_id == t.id %}selected{% endif %}>{{ t.full_name }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-secondary btn-sm">Set</button>
+      </form>
+    </div>
+    {% endif %}
+
+    <!-- Requester info -->
+    <div class="stat-card p-3 mb-3">
+      <h6 class="text-muted mb-3"><i class="bi bi-person-circle me-1"></i>Requester</h6>
+      <div class="fw-semibold">{{ requester.full_name }}</div>
+      <div class="text-muted small">{{ requester.email }}</div>
+      {% if requester.phone %}<div class="text-muted small"><i class="bi bi-telephone me-1"></i>{{ requester.phone }}</div>{% endif %}
+      {% if requester.department %}<div class="text-muted small"><i class="bi bi-building me-1"></i>{{ requester.department }}</div>{% endif %}
+      {% if requester.title %}<div class="text-muted small"><i class="bi bi-briefcase me-1"></i>{{ requester.title }}</div>{% endif %}
+      <div class="mt-2 pt-2 border-top border-secondary">
+        <span class="badge {% if ticket_count > 10 %}bg-warning text-dark{% elif ticket_count > 5 %}bg-info text-dark{% else %}bg-secondary{% endif %}">
+          <i class="bi bi-ticket me-1"></i>{{ ticket_count }} ticket{% if ticket_count != 1 %}s{% endif %} total
+        </span>
+      </div>
+    </div>
+
+    <!-- Assigned device -->
+    <div class="stat-card p-3 mb-3">
+      <h6 class="text-muted mb-2"><i class="bi bi-laptop me-1"></i>
+        {% if ticket.asset %}Affected Device{% else %}User Devices{% endif %}
+      </h6>
+      {% if ticket.asset %}
+      <div class="fw-semibold">{{ ticket.asset.manufacturer or '' }} {{ ticket.asset.model or ticket.asset.name }}</div>
+      {% if ticket.asset.asset_tag %}<div class="text-muted small">Tag: {{ ticket.asset.asset_tag }}</div>{% endif %}
+      {% if ticket.asset.serial_number %}<div class="text-muted small">S/N: {{ ticket.asset.serial_number }}</div>{% endif %}
+      {% if ticket.asset.asset_type %}<div class="text-muted small">Type: {{ ticket.asset.asset_type }}</div>{% endif %}
+      {% if ticket.asset.status %}<div class="text-muted small">Status: {{ ticket.asset.status }}</div>{% endif %}
+      {% elif user_assets %}
+      {% for a in user_assets %}
+      <div class="small {% if not loop.first %}mt-2 pt-2 border-top border-secondary{% endif %}">
+        <div class="fw-semibold text-light">{{ a.manufacturer or '' }} {{ a.model or a.name }}</div>
+        {% if a.asset_tag %}<div class="text-muted">{{ a.asset_tag }}</div>{% endif %}
+        {% if a.asset_type %}<div class="text-muted">{{ a.asset_type }}</div>{% endif %}
+      </div>
+      {% endfor %}
+      {% else %}
+      <div class="text-muted small">No devices assigned to this user.</div>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+{% endblock %}

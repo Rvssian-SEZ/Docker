@@ -1,0 +1,12 @@
+<option value="">— No specific device —</option>
+{% for a in assets %}
+<option value="{{ a.id }}">
+  {% if a.manufacturer %}{{ a.manufacturer }} {% endif %}
+  {% if a.model %}{{ a.model }}{% else %}{{ a.name }}{% endif %}
+  {% if a.asset_tag %} [{{ a.asset_tag }}]{% endif %}
+  {% if a.asset_type %} · {{ a.asset_type }}{% endif %}
+</option>
+{% endfor %}
+{% if not assets %}
+<option disabled>No devices assigned to this user</option>
+{% endif %}

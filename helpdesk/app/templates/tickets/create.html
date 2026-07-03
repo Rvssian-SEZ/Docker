@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}New Ticket{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="bi bi-plus-circle me-2"></i>New Ticket</h4>
+  <a href="/tickets" class="btn btn-outline-secondary btn-sm">← Back</a>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="stat-card p-4">
+      <form method="post" action="/tickets">
+
+        {% if role in ('tech','admin') %}
+        <div class="mb-3">
+          <label class="form-label">Submitting for user</label>
+          <select name="on_behalf_of" id="user-select" class="form-select">
+            <option value="{{ current_user.id }}">— Self ({{ current_user.full_name }}) —</option>
+            {% for u in users %}
+            {% if u.id != current_user.id %}
+            <option value="{{ u.id }}">{{ u.full_name }} {% if u.department %}({{ u.department }}){% endif %}</option>
+            {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+        {% endif %}
+
+        <div class="mb-3">
+          <label class="form-label">Title <span class="text-danger">*</span></label>
+          <input type="text" name="title" class="form-control" required maxlength="200" placeholder="Brief description of the issue">
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Description <span class="text-danger">*</span></label>
+          <textarea name="description" class="form-control" rows="6" required
+            placeholder="Describe the issue in detail. Include any error messages, steps to reproduce, and what you expected to happen."></textarea>
+        </div>
+
+        <div class="row g-3 mb-3">
+          <div class="col-md-4">
+            <label class="form-label">Priority</label>
+            <select name="priority" class="form-select">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Category</label>
+            <select name="category" class="form-select">
+              <option value="">— Select category —</option>
+              {% for c in categories %}
+              <option value="{{ c }}">{{ c }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Affected Device</label>
+            <select name="asset_id" id="asset-select" class="form-select">
+              <option value="">— No specific device —</option>
+              {% for a in assets %}
+              <option value="{{ a.id }}">
+                {% if a.manufacturer %}{{ a.manufacturer }} {% endif %}
+                {% if a.model %}{{ a.model }}{% else %}{{ a.name }}{% endif %}
+                {% if a.asset_tag %} [{{ a.asset_tag }}]{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="d-flex gap-2 mt-4">
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-send me-1"></i>Submit Ticket
+          </button>
+          <a href="/tickets" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="stat-card p-3">
+      <h6 class="mb-3 text-muted"><i class="bi bi-clock me-1"></i>SLA Response Times</h6>
+      <table class="table table-dark table-sm mb-0" style="font-size:.8rem">
+        <tr><td><span class="badge bg-danger">Critical</span></td><td class="text-muted">4 hours</td></tr>
+        <tr><td><span class="badge bg-warning text-dark">High</span></td><td class="text-muted">8 hours</td></tr>
+        <tr><td><span class="badge bg-info text-dark">Medium</span></td><td class="text-muted">3 business days</td></tr>
+        <tr><td><span class="badge bg-secondary">Low</span></td><td class="text-muted">5 business days</td></tr>
+      </table>
+    </div>
+    <div class="stat-card p-3 mt-3">
+      <h6 class="mb-2 text-muted"><i class="bi bi-lightbulb me-1"></i>Tips</h6>
+      <ul class="list-unstyled small text-muted mb-0">
+        <li class="mb-1">• Include error messages verbatim</li>
+        <li class="mb-1">• Note any recent changes made</li>
+        <li class="mb-1">• Specify how many users are affected</li>
+        <li>• Select the affected device if known</li>
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('user-select')?.addEventListener('change', function() {
+  const userId = this.value;
+  fetch('/tickets/htmx/user-assets/' + userId)
+    .then(r => r.text())
+    .then(html => {
+      document.getElementById('asset-select').innerHTML = html;
+    });
+});
+</script>
+{% endblock %}

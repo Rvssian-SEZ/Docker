@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}Tickets{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="bi bi-ticket-perforated me-2"></i>
+    {% if role == 'user' %}My Tickets{% else %}All Tickets{% endif %}
+  </h4>
+  <a href="/tickets/new" class="btn btn-primary btn-sm">
+    <i class="bi bi-plus-lg me-1"></i>New Ticket
+  </a>
+</div>
+
+<!-- Stat cards (tech/admin only) -->
+{% if role in ('tech','admin') %}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="stat-card p-3 text-center">
+      <div style="font-size:1.8rem;font-weight:700;color:#da3633">{{ stats.open }}</div>
+      <div class="text-muted small">Open</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card p-3 text-center">
+      <div style="font-size:1.8rem;font-weight:700;color:#d29922">{{ stats.in_progress }}</div>
+      <div class="text-muted small">In Progress</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card p-3 text-center">
+      <div style="font-size:1.8rem;font-weight:700;color:#6e7681">{{ stats.pending }}</div>
+      <div class="text-muted small">Pending</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card p-3 text-center">
+      <div style="font-size:1.8rem;font-weight:700;color:#238636">{{ stats.resolved_today }}</div>
+      <div class="text-muted small">Resolved Today</div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Filter bar -->
+<div class="filter-bar mb-4">
+  <form method="get" action="/tickets" class="row g-2 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label small text-muted mb-1">Search</label>
+      <input type="text" name="search" class="form-control form-control-sm" placeholder="Title or description…" value="{{ filters.search }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small text-muted mb-1">Status</label>
+      <select name="status" class="form-select form-select-sm">
+        <option value="">All statuses</option>
+        {% for s in ['open','in_progress','pending','resolved','closed'] %}
+        <option value="{{ s }}" {% if filters.status == s %}selected{% endif %}>{{ s.replace('_',' ').title() }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small text-muted mb-1">Priority</label>
+      <select name="priority" class="form-select form-select-sm">
+        <option value="">All priorities</option>
+        {% for p in ['low','medium','high','critical'] %}
+        <option value="{{ p }}" {% if filters.priority == p %}selected{% endif %}>{{ p.title() }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label small text-muted mb-1">Category</label>
+      <select name="category" class="form-select form-select-sm">
+        <option value="">All categories</option>
+        {% for c in categories %}
+        <option value="{{ c }}" {% if filters.category == c %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% if role in ('tech','admin') %}
+    <div class="col-md-2">
+      <label class="form-label small text-muted mb-1">Assigned</label>
+      <select name="assigned_to" class="form-select form-select-sm">
+        <option value="">Anyone</option>
+        <option value="me" {% if filters.assigned_to == 'me' %}selected{% endif %}>Assigned to me</option>
+        <option value="unassigned" {% if filters.assigned_to == 'unassigned' %}selected{% endif %}>Unassigned</option>
+      </select>
+    </div>
+    {% endif %}
+    <div class="col-md-1">
+      <button type="submit" class="btn btn-secondary btn-sm w-100">Filter</button>
+    </div>
+    {% if filters.status or filters.priority or filters.category or filters.search or filters.assigned_to %}
+    <div class="col-md-1">
+      <a href="/tickets" class="btn btn-outline-secondary btn-sm w-100">Clear</a>
+    </div>
+    {% endif %}
+  </form>
+</div>
+
+<!-- Tickets table -->
+<div class="stat-card">
+  {% if tickets %}
+  <div class="table-responsive">
+    <table class="table table-dark table-hover mb-0" style="font-size:.875rem">
+      <thead style="background:#21262d">
+        <tr>
+          <th style="width:60px">#</th>
+          <th>Title</th>
+          <th style="width:120px">Status</th>
+          <th style="width:100px">Priority</th>
+          <th style="width:130px">Category</th>
+          {% if role in ('tech','admin') %}<th style="width:140px">Requester</th>{% endif %}
+          <th style="width:140px">Assigned To</th>
+          <th style="width:140px">Updated</th>
+          <th style="width:80px">SLA</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tickets %}
+        <tr class="priority-{{ t.priority }}" style="cursor:pointer" onclick="location.href='/tickets/{{ t.id }}'">
+          <td class="text-muted">#{{ t.id }}</td>
+          <td>
+            <a href="/tickets/{{ t.id }}" class="text-light text-decoration-none fw-semibold">{{ t.title }}</a>
+            {% if t.is_overdue %}<span class="badge bg-danger ms-1 overdue-badge">OVERDUE</span>{% endif %}
+          </td>
+          <td>
+            <span class="badge badge-{{ t.status }}">{{ t.status.replace('_',' ').title() }}</span>
+          </td>
+          <td>
+            <span class="badge bg-{{ t.priority_badge }}">{{ t.priority.title() }}</span>
+          </td>
+          <td class="text-muted">{{ t.category or '—' }}</td>
+          {% if role in ('tech','admin') %}
+          <td class="text-muted">{{ t.created_by.full_name if t.created_by else '—' }}</td>
+          {% endif %}
+          <td class="text-muted">
+            {% if t.assigned_to %}
+              <i class="bi bi-person-fill me-1"></i>{{ t.assigned_to.full_name }}
+            {% else %}
+              <span class="text-danger"><i class="bi bi-person-dash me-1"></i>Unassigned</span>
+            {% endif %}
+          </td>
+          <td class="text-muted small">{{ t.updated_at.strftime('%d %b %H:%M') if t.updated_at else '' }}</td>
+          <td>
+            {% if t.sla_due_at and t.status not in ('resolved','closed') %}
+              {% if t.is_overdue %}
+                <span class="text-danger small overdue-badge"><i class="bi bi-clock-history"></i> Over</span>
+              {% else %}
+                <span class="text-success small"><i class="bi bi-clock"></i> OK</span>
+              {% endif %}
+            {% elif t.status in ('resolved','closed') %}
+              {% if t.closed_at and t.sla_due_at %}
+                {% if t.closed_at <= t.sla_due_at %}
+                  <span class="text-success small">✓ Met</span>
+                {% else %}
+                  <span class="text-danger small">✗ Missed</span>
+                {% endif %}
+              {% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  {% if pages > 1 %}
+  <div class="d-flex justify-content-between align-items-center px-3 py-2 border-top border-secondary">
+    <small class="text-muted">{{ total }} tickets — page {{ page }} of {{ pages }}</small>
+    <div>
+      {% if page > 1 %}
+      <a href="?{{ filters.items()|map('join','=')|join('&') }}&page={{ page - 1 }}" class="btn btn-sm btn-outline-secondary me-1">← Prev</a>
+      {% endif %}
+      {% if page < pages %}
+      <a href="?{{ filters.items()|map('join','=')|join('&') }}&page={{ page + 1 }}" class="btn btn-sm btn-outline-secondary">Next →</a>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% else %}
+  <div class="text-center py-5 text-muted">
+    <i class="bi bi-inbox" style="font-size:3rem"></i>
+    <p class="mt-2">No tickets found{% if filters.status or filters.search %} matching your filters{% endif %}.</p>
+    <a href="/tickets/new" class="btn btn-primary btn-sm">Open a new ticket</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

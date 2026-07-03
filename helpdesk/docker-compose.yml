@@ -1,0 +1,62 @@
+version: "3.8"
+
+# Helpdesk — joins the existing itops_net to share itops_db.
+# Start itops stack first so itops_net and itops_db are available.
+
+services:
+  helpdesk:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: helpdesk_app
+    environment:
+      # --- Database (shared with itops) ---
+      DATABASE_URL: postgresql://${ITOPS_DB_USER:-itops}:${ITOPS_DB_PASSWORD:?required}@itops_db:5432/${ITOPS_DB_NAME:-itops}
+
+      # --- App ---
+      SECRET_KEY: ${SECRET_KEY:?required}
+      APP_BASE_URL: ${APP_BASE_URL:-http://192.168.110.50:8001}
+      DEBUG: ${DEBUG:-false}
+
+      # --- Authentik OIDC ---
+      AUTHENTIK_BASE_URL: ${AUTHENTIK_BASE_URL:?required}
+      AUTHENTIK_CLIENT_ID: ${AUTHENTIK_CLIENT_ID:?required}
+      AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_CLIENT_SECRET:?required}
+
+      # --- SMTP ---
+      SMTP_HOST: ${SMTP_HOST:?required}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-""}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-""}
+      SMTP_FROM: ${SMTP_FROM:-helpdesk@home.internal}
+      SMTP_TLS: ${SMTP_TLS:-true}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-true}
+
+      # --- Helpdesk config ---
+      HELPDESK_ADMIN_EMAIL: ${HELPDESK_ADMIN_EMAIL:-""}
+      HELPDESK_TECH_GROUP: ${HELPDESK_TECH_GROUP:-helpdesk-tech}
+      HELPDESK_ADMIN_GROUP: ${HELPDESK_ADMIN_GROUP:-helpdesk-admin}
+
+    ports:
+      - "8001:8000"
+    networks:
+      - itops_net        # shared — gives access to itops_db
+      - helpdesk_int     # internal only
+    volumes:
+      - helpdesk_uploads:/app/uploads
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  itops_net:
+    external: true
+    name: itops_itops_net
+  helpdesk_int:
+    driver: bridge
+
+volumes:
+  helpdesk_uploads:

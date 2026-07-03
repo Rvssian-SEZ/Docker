@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Error {{ status_code }}{% endblock %}
+{% block content %}
+<div class="text-center py-5">
+  <div style="font-size:5rem;color:#da3633">{{ status_code }}</div>
+  <h4 class="mt-2">{{ detail }}</h4>
+  <a href="/tickets" class="btn btn-primary mt-3">← Back to Tickets</a>
+</div>
+{% endblock %}

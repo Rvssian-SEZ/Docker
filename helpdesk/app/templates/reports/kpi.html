@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block title %}KPI Reports{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <h4 class="mb-0"><i class="bi bi-bar-chart-line me-2"></i>KPI Reports</h4>
+  <div class="d-flex gap-2 flex-wrap align-items-center">
+    <div id="year-selector" class="d-flex gap-2">
+      <select id="year-select" class="form-select form-select-sm" style="width:100px">
+        {% for y in range(2024, 2028) %}
+        <option value="{{ y }}" {% if y == 2026 %}selected{% endif %}>{{ y }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="btn-group btn-group-sm">
+      <button class="btn btn-primary active" data-period="monthly">Monthly</button>
+      <button class="btn btn-outline-primary" data-period="quarterly">Quarterly</button>
+      <button class="btn btn-outline-primary" data-period="yearly">Yearly</button>
+    </div>
+    <a id="export-btn" href="/reports/export/csv?year=2026" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
+  </div>
+</div>
+
+<!-- Summary pills (filled by JS) -->
+<div id="summary-pills" class="row g-3 mb-4">
+  <div class="col-6 col-md-3"><div class="stat-card p-3 text-center" id="pill-opened">
+    <div class="h4 mb-1" id="val-opened">—</div><div class="text-muted small">Tickets Opened</div>
+  </div></div>
+  <div class="col-6 col-md-3"><div class="stat-card p-3 text-center">
+    <div class="h4 mb-1" id="val-closed">—</div><div class="text-muted small">Tickets Closed</div>
+  </div></div>
+  <div class="col-6 col-md-3"><div class="stat-card p-3 text-center">
+    <div class="h4 mb-1" id="val-sla">—</div><div class="text-muted small">SLA Compliance</div>
+  </div></div>
+  <div class="col-6 col-md-3"><div class="stat-card p-3 text-center">
+    <div class="h4 mb-1" id="val-res">—</div><div class="text-muted small">Avg Resolution (h)</div>
+  </div></div>
+</div>
+
+<!-- Charts grid -->
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="stat-card p-3">
+      <h6 class="text-muted mb-3">Tickets Opened vs Closed</h6>
+      <canvas id="chart-volume" height="120"></canvas>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="stat-card p-3">
+      <h6 class="text-muted mb-3">By Category</h6>
+      <canvas id="chart-category" height="200"></canvas>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="stat-card p-3">
+      <h6 class="text-muted mb-3">SLA Compliance % per Period</h6>
+      <canvas id="chart-sla" height="140"></canvas>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="stat-card p-3">
+      <h6 class="text-muted mb-3">Avg Resolution Time (hours)</h6>
+      <canvas id="chart-resolution" height="140"></canvas>
+    </div>
+  </div>
+  <div class="col-12">
+    <div class="stat-card p-3">
+      <h6 class="text-muted mb-3">Tickets per Technician</h6>
+      <canvas id="chart-tech" height="80"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Tech table -->
+<div class="stat-card p-3 mt-4">
+  <h6 class="text-muted mb-3">Technician Performance</h6>
+  <div class="table-responsive">
+    <table class="table table-dark table-sm mb-0" style="font-size:.85rem">
+      <thead><tr><th>Technician</th><th class="text-end">Tickets Handled</th><th class="text-end">Avg Resolution (h)</th></tr></thead>
+      <tbody id="tech-table-body"><tr><td colspan="3" class="text-muted text-center">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const COLORS = {
+  blue: '#1f6feb', green: '#238636', yellow: '#d29922',
+  red: '#da3633', purple: '#8957e5', cyan: '#0090c1',
+  orange: '#db6d28', pink: '#e96ebe', teal: '#2da44e',
+};
+const PALETTE = Object.values(COLORS);
+
+Chart.defaults.color = '#8b949e';
+Chart.defaults.borderColor = '#30363d';
+Chart.defaults.font.family = 'system-ui, sans-serif';
+
+let charts = {};
+let currentData = null;
+
+function getOrCreate(id, type, data, options) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id);
+  charts[id] = new Chart(ctx, { type, data, options });
+}
+
+function updateSummary(d) {
+  const total = arr => arr.reduce((a,b) => a+b, 0);
+  const avg = arr => { const v = arr.filter(x=>x>0); return v.length ? (v.reduce((a,b)=>a+b,0)/v.length).toFixed(1) : '—'; };
+  const avgSla = arr => { const v = arr.filter(x=>x>0); return v.length ? (v.reduce((a,b)=>a+b,0)/v.length).toFixed(0)+'%' : '—'; };
+  document.getElementById('val-opened').textContent = total(d.opened);
+  document.getElementById('val-closed').textContent = total(d.closed);
+  document.getElementById('val-sla').textContent = avgSla(d.sla_compliance_pct);
+  document.getElementById('val-res').textContent = avg(d.avg_resolution_hours);
+}
+
+function renderCharts(d) {
+  currentData = d;
+  updateSummary(d);
+
+  // Volume
+  getOrCreate('chart-volume', 'bar', {
+    labels: d.labels,
+    datasets: [
+      { label: 'Opened', data: d.opened, backgroundColor: COLORS.red + 'aa', borderColor: COLORS.red, borderWidth: 1 },
+      { label: 'Closed', data: d.closed, backgroundColor: COLORS.green + 'aa', borderColor: COLORS.green, borderWidth: 1 },
+    ]
+  }, { plugins: { legend: { position: 'top' } }, scales: { y: { beginAtZero: true, grid: { color: '#21262d' } } } });
+
+  // Category donut
+  const catKeys = Object.keys(d.by_category);
+  const catVals = Object.values(d.by_category);
+  getOrCreate('chart-category', 'doughnut', {
+    labels: catKeys,
+    datasets: [{ data: catVals, backgroundColor: PALETTE.slice(0, catKeys.length), borderWidth: 1, borderColor: '#161b22' }]
+  }, { plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } } } });
+
+  // SLA line
+  getOrCreate('chart-sla', 'line', {
+    labels: d.labels,
+    datasets: [{ label: 'SLA %', data: d.sla_compliance_pct, borderColor: COLORS.green, backgroundColor: COLORS.green + '22',
+      fill: true, tension: 0.3, pointRadius: 4 }]
+  }, { plugins: { legend: { display: false } },
+       scales: { y: { min: 0, max: 100, grid: { color: '#21262d' }, ticks: { callback: v => v + '%' } } } });
+
+  // Resolution time line
+  getOrCreate('chart-resolution', 'line', {
+    labels: d.labels,
+    datasets: [{ label: 'Avg Hours', data: d.avg_resolution_hours, borderColor: COLORS.yellow, backgroundColor: COLORS.yellow + '22',
+      fill: true, tension: 0.3, pointRadius: 4 }]
+  }, { plugins: { legend: { display: false } },
+       scales: { y: { beginAtZero: true, grid: { color: '#21262d' } } } });
+
+  // Tech bar
+  const techNames = d.by_tech.map(t => t.name);
+  const techCounts = d.by_tech.map(t => t.count);
+  getOrCreate('chart-tech', 'bar', {
+    labels: techNames,
+    datasets: [{ label: 'Tickets', data: techCounts, backgroundColor: COLORS.blue + 'cc', borderColor: COLORS.blue, borderWidth: 1 }]
+  }, { indexAxis: 'y', plugins: { legend: { display: false } },
+       scales: { x: { beginAtZero: true, grid: { color: '#21262d' } } } });
+
+  // Tech table
+  const tbody = document.getElementById('tech-table-body');
+  if (d.by_tech.length) {
+    tbody.innerHTML = d.by_tech.map(t =>
+      `<tr><td>${t.name}</td><td class="text-end">${t.count}</td><td class="text-end">${t.avg_hours != null ? t.avg_hours + 'h' : '—'}</td></tr>`
+    ).join('');
+  } else {
+    tbody.innerHTML = '<tr><td colspan="3" class="text-muted text-center">No data</td></tr>';
+  }
+}
+
+async function loadData(period, year) {
+  const url = `/reports/data?period=${period}&year=${year}`;
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    renderCharts(d);
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+// Init
+let activePeriod = 'monthly';
+let activeYear = document.getElementById('year-select').value;
+
+document.querySelectorAll('[data-period]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-period]').forEach(b => {
+      b.classList.replace('btn-primary','btn-outline-primary');
+      b.classList.remove('active');
+    });
+    btn.classList.replace('btn-outline-primary','btn-primary');
+    btn.classList.add('active');
+    activePeriod = btn.dataset.period;
+    // Hide year selector for yearly view
+    document.getElementById('year-selector').style.display = activePeriod === 'yearly' ? 'none' : 'flex';
+    loadData(activePeriod, activeYear);
+  });
+});
+
+document.getElementById('year-select').addEventListener('change', function() {
+  activeYear = this.value;
+  document.getElementById('export-btn').href = `/reports/export/csv?year=${activeYear}`;
+  loadData(activePeriod, activeYear);
+});
+
+loadData('monthly', activeYear);
+</script>
+{% endblock %}
