@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  emailclient:
+    build: ./app
+    image: emailclient:latest
+    container_name: emailclient
+    restart: unless-stopped
+    ports:
+      - "8003:8000"
+    env_file: .env
+    networks:
+      - itops_net
+
+networks:
+  itops_net:
+    external: true
+    name: itops_itops_net

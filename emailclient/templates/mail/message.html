@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}{% if msg %}{{ msg.subject }}{% else %}Message{% endif %} — EmailClient{% endblock %}
+
+{% block page_title %}
+  <a href="/mail?mailbox={{ selected }}" class="text-muted me-2" style="text-decoration:none">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  {% if msg %}
+    {% if msg.msg_type == 'fault' %}
+      <span class="badge badge-fault me-2">⚡ FAULT</span>
+    {% elif msg.msg_type == 'normal' %}
+      <span class="badge badge-normal me-2">✓ RECOVERY</span>
+    {% else %}
+      <span class="badge badge-other me-2">INFO</span>
+    {% endif %}
+    <span>{{ msg.subject }}</span>
+  {% else %}
+    Message
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="p-4" style="max-width:900px">
+
+  {% if imap_error %}
+  <div class="alert alert-danger py-2 small">
+    <i class="bi bi-exclamation-triangle-fill me-2"></i>{{ imap_error }}
+  </div>
+
+  {% elif not msg %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-question-circle" style="font-size:2.5rem;opacity:.3"></i>
+    <p class="mt-2 small">Message not found.</p>
+  </div>
+
+  {% else %}
+
+  <!-- Meta card -->
+  <div class="card border-secondary mb-3" style="background:#111827">
+    <div class="card-body py-3">
+
+      <div class="row g-2 small text-muted mb-3">
+        <div class="col-sm-6">
+          <i class="bi bi-person me-1"></i>
+          <strong class="text-light">{{ msg.from_name }}</strong>
+          {% if msg.from_addr %}<span class="ms-1">&lt;{{ msg.from_addr }}&gt;</span>{% endif %}
+        </div>
+        {% if msg.to_addr %}
+        <div class="col-sm-6">
+          <i class="bi bi-send me-1"></i>{{ msg.to_addr }}
+        </div>
+        {% endif %}
+        <div class="col-sm-6">
+          <i class="bi bi-inbox me-1"></i>
+          Mailbox: <strong class="text-light">{{ selected }}</strong>
+        </div>
+        {% if msg.date %}
+        <div class="col-sm-6">
+          <i class="bi bi-calendar3 me-1"></i>{{ msg.date.strftime('%d %b %Y  %H:%M') }}
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="d-flex gap-2">
+        <form method="post" action="/mail/{{ msg.uid }}/unseen">
+          <input type="hidden" name="mailbox" value="{{ selected }}" />
+          <button type="submit" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-envelope me-1"></i>Mark unread
+          </button>
+        </form>
+        <form method="post" action="/mail/{{ msg.uid }}/delete"
+              onsubmit="return confirm('Delete this message?')">
+          <input type="hidden" name="mailbox" value="{{ selected }}" />
+          <button type="submit" class="btn btn-sm btn-outline-danger">
+            <i class="bi bi-trash me-1"></i>Delete
+          </button>
+        </form>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div class="card border-secondary" style="background:#111827">
+    <div class="card-body p-0">
+      {% if msg.body_html %}
+      <iframe
+        id="body-frame"
+        sandbox="allow-same-origin"
+        frameborder="0"
+        style="width:100%;min-height:300px;border-radius:6px;background:#fff;display:block"
+        onload="this.style.height = this.contentDocument.body.scrollHeight + 40 + 'px'">
+      </iframe>
+      <script>
+        (function(){
+          const f = document.getElementById('body-frame');
+          f.contentDocument.open();
+          f.contentDocument.write({{ msg.body_html | tojson }});
+          f.contentDocument.close();
+        })();
+      </script>
+      {% else %}
+      <pre class="msg-body-pre m-0" style="border-radius:6px">{{ msg.body_text or '(empty)' }}</pre>
+      {% endif %}
+    </div>
+  </div>
+
+  {% endif %}
+</div>
+{% endblock %}

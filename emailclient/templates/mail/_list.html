@@ -1,0 +1,43 @@
+{% if imap_error %}
+<div class="alert alert-danger m-3 py-2 small">
+  <i class="bi bi-exclamation-triangle-fill me-2"></i>IMAP error: {{ imap_error }}
+</div>
+
+{% elif not messages %}
+<div class="text-center text-muted py-5">
+  <i class="bi bi-inbox" style="font-size:2.5rem;opacity:.25"></i>
+  <p class="mt-2 small">No messages</p>
+</div>
+
+{% else %}
+{% for m in messages %}
+<a href="/mail/{{ m.uid }}?mailbox={{ selected }}"
+   class="msg-row {% if not m.seen %}unread{% endif %}">
+
+  <div>
+    {% if not m.seen %}<div class="unread-dot"></div>
+    {% else %}<div class="dot-spacer"></div>{% endif %}
+  </div>
+
+  <div class="flex-grow-1 overflow-hidden">
+    <div class="d-flex align-items-center gap-2 mb-1">
+      {% if m.msg_type == 'fault' %}
+        <span class="badge badge-fault">⚡ FAULT</span>
+      {% elif m.msg_type == 'normal' %}
+        <span class="badge badge-normal">✓ RECOVERY</span>
+      {% else %}
+        <span class="badge badge-other">INFO</span>
+      {% endif %}
+      <span class="msg-subject">{{ m.subject }}</span>
+    </div>
+    <div class="msg-meta d-flex gap-3">
+      <span><i class="bi bi-person me-1"></i>{{ m.from_name or m.from_addr }}</span>
+      <span class="ms-auto">
+        {% if m.date %}{{ m.date.strftime('%d %b %H:%M') }}{% endif %}
+      </span>
+    </div>
+  </div>
+
+</a>
+{% endfor %}
+{% endif %}
