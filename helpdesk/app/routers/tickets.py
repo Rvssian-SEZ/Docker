@@ -308,11 +308,13 @@ async def ticket_add_update(
     db.commit()
     db.refresh(update)
 
+    owner_email = ticket.created_by.email if ticket.created_by else None
+    assignee_email = ticket.assigned_to.email if ticket.assigned_to else None
     background_tasks.add_task(
         mail.notify_ticket_updated,
-        ticket, update, current_user,
-        ticket.created_by.email,
-        ticket.assigned_to,
+        ticket.id, ticket.title, ticket.status, update.content, update.is_internal,
+        current_user.full_name, current_user.email,
+        owner_email, assignee_email,
     )
 
     return RedirectResponse(f"/tickets/{ticket_id}", status_code=303)
@@ -369,6 +371,7 @@ async def ticket_change_status(
 
 @router.post("/{ticket_id}/assign")
 async def ticket_assign(
+    background_tasks: BackgroundTasks,
     ticket_id: int,
     request: Request,
     tech_id: int = Form(None),
@@ -383,10 +386,20 @@ async def ticket_assign(
     if not ticket:
         raise HTTPException(404)
 
+    old_assignee = ticket.assigned_to
     ticket.assigned_to_id = tech_id or None
     ticket.updated_at = datetime.utcnow()
     if ticket.status == "open" and tech_id:
         ticket.status = "in_progress"
     db.commit()
+    db.refresh(ticket)
+
+    if tech_id:
+        assigned_tech = db.query(User).get(tech_id)
+        if assigned_tech and assigned_tech.email:
+            background_tasks.add_task(
+                mail.notify_ticket_created,
+                ticket, ticket.created_by, assigned_tech, [],
+            )
 
     return RedirectResponse(f"/tickets/{ticket_id}", status_code=303)

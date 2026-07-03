@@ -31,8 +31,8 @@ async def _send(to: list[str], subject: str, html_body: str, text_body: str = ""
             msg,
             hostname=settings.smtp_host,
             port=settings.smtp_port,
-            username=settings.smtp_user or None,
-            password=settings.smtp_password or None,
+            username=None,
+            password=None,
             use_tls=settings.smtp_tls and not settings.smtp_starttls,
             start_tls=settings.smtp_starttls,
         )
@@ -81,42 +81,44 @@ async def notify_ticket_created(ticket, created_by, assigned_to=None, tech_email
         <strong>Description:</strong><br>{ticket.description}
       </div>
       <p style="margin-top:16px">
-        <a href="{_ticket_url(ticket.id)}" style="background:#0d6efd;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px">
+        <a href="{_ticket_url(ticket.id)}" style="background:#0d6efd;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px" target="_blank">
           View Ticket
         </a>
+      <p style="margin-top:8px;font-size:.8rem;color:#6c757d">Link: {_ticket_url(ticket.id)}</p>
       </p>
     </div>
     """
     await _send(recipients, subject, html)
 
 
-async def notify_ticket_updated(ticket, update, author, ticket_owner_email: str = None, assigned_to=None):
+async def notify_ticket_updated(ticket_id, ticket_title, ticket_status, content, is_internal,
+                               author_name, author_email, ticket_owner_email=None, assignee_email=None):
     recipients = set()
     if ticket_owner_email:
         recipients.add(ticket_owner_email)
-    if assigned_to and assigned_to.email:
-        recipients.add(assigned_to.email)
-
-    # Don't notify the person who made the update
-    recipients.discard(author.email)
+    if assignee_email:
+        recipients.add(assignee_email)
+    recipients.discard(author_email)
     if not recipients:
         return
 
-    subject = f"[Helpdesk #{ticket.id}] Update: {ticket.title}"
-    note_type = "Internal Note" if update.is_internal else "Reply"
+    subject = f"[Helpdesk #{ticket_id}] Update: {ticket_title}"
+    note_type = "Internal Note" if is_internal else "Reply"
+    url = _ticket_url(ticket_id)
     html = f"""
     <div style="font-family:Arial,sans-serif;max-width:600px">
-      <h2 style="color:#0d6efd">Ticket #{ticket.id} Updated</h2>
-      <p><strong>{author.full_name}</strong> added a {note_type}:</p>
+      <h2 style="color:#0d6efd">Ticket #{ticket_id} Updated</h2>
+      <p><strong>{author_name}</strong> added a {note_type}:</p>
       <div style="margin:12px 0;padding:12px;background:#f8f9fa;border-left:4px solid #6c757d">
-        {update.content}
+        {content}
       </div>
-      <p><strong>Status:</strong> {ticket.status.replace('_', ' ').title()}</p>
+      <p><strong>Status:</strong> {ticket_status.replace("_", " ").title()}</p>
       <p>
-        <a href="{_ticket_url(ticket.id)}" style="background:#0d6efd;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px">
+        <a href="{url}" target="_blank" style="background:#0d6efd;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px">
           View Ticket
         </a>
       </p>
+      <p style="margin-top:8px;font-size:.8rem;color:#6c757d">Link: {url}</p>
     </div>
     """
     await _send(list(recipients), subject, html)
@@ -135,9 +137,10 @@ async def notify_ticket_closed(ticket, closed_by, ticket_owner_email: str = None
          <strong>{closed_by.full_name}</strong>.</p>
       <p>If you feel the issue is not fully resolved, please reopen the ticket.</p>
       <p>
-        <a href="{_ticket_url(ticket.id)}" style="background:#198754;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px">
+        <a href="{_ticket_url(ticket.id)}" style="background:#198754;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px" target="_blank">
           View &amp; Reopen
         </a>
+      <p style="margin-top:8px;font-size:.8rem;color:#6c757d">Link: {_ticket_url(ticket.id)}</p>
       </p>
     </div>
     """
@@ -162,9 +165,10 @@ async def notify_status_changed(ticket, changed_by, old_status: str, assigned_to
          → <strong>{ticket.status.replace('_', ' ').title()}</strong>
          by <strong>{changed_by.full_name}</strong>.</p>
       <p>
-        <a href="{_ticket_url(ticket.id)}" style="background:#0d6efd;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px">
+        <a href="{_ticket_url(ticket.id)}" style="background:#0d6efd;color:#fff;padding:10px 20px;text-decoration:none;border-radius:4px" target="_blank">
           View Ticket
         </a>
+      <p style="margin-top:8px;font-size:.8rem;color:#6c757d">Link: {_ticket_url(ticket.id)}</p>
       </p>
     </div>
     """
