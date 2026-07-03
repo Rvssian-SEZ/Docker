@@ -25,6 +25,7 @@ def list_users(
             | User.username.ilike(like)
             | User.email.ilike(like)
             | User.department.ilike(like)
+            | User.title.ilike(like)
         )
     users = query.order_by(User.full_name).all()
     return templates.TemplateResponse(request, "users/list.html", {

@@ -68,6 +68,46 @@ def create_equipment(
     return RedirectResponse("/equipment", status_code=302)
 
 
+@router.post("/{equipment_id}/edit")
+def edit_equipment(
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+    name: str = Form(...),
+    category: str = Form(""),
+    serial_number: str = Form(""),
+    asset_tag: str = Form(""),
+    location: str = Form(""),
+    notes: str = Form(""),
+):
+    eq = db.query(Equipment).filter(Equipment.id == equipment_id).first()
+    if not eq:
+        return HTMLResponse("Equipment not found", status_code=404)
+    eq.name = name
+    eq.category = category
+    eq.serial_number = serial_number
+    eq.asset_tag = asset_tag or None
+    eq.location = location
+    eq.notes = notes
+    db.commit()
+    return RedirectResponse("/equipment", status_code=302)
+
+
+@router.post("/{equipment_id}/status")
+def update_status(
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+    status: str = Form(...),
+):
+    eq = db.query(Equipment).filter(Equipment.id == equipment_id).first()
+    if not eq:
+        return HTMLResponse("Equipment not found", status_code=404)
+    eq.status = EquipmentStatus(status)
+    db.commit()
+    return RedirectResponse("/equipment", status_code=302)
+
+
 @router.get("/lending", response_class=HTMLResponse)
 def lending_list(
     request: Request,

@@ -21,7 +21,7 @@ app.add_middleware(
     secret_key=settings.SECRET_KEY,
     session_cookie="itops_session",
     max_age=86400 * 7,
-    https_only=False,   # Set True once behind HTTPS/NPM
+    https_only=True,
     same_site="lax",
 )
 
