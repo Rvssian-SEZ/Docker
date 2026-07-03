@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}IT Assets{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h4 class="mb-0"><i class="bi bi-pc-display me-2"></i>IT Assets</h4>
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addAssetModal">
+    <i class="bi bi-plus-lg"></i> Add Asset
+  </button>
+</div>
+
+{# ── Filters ── #}
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-4">
+    <input type="text" name="search" class="form-control form-control-sm"
+           placeholder="Search name, tag, serial…" value="{{ search }}">
+  </div>
+  <div class="col-auto">
+    <select name="status" class="form-select form-select-sm">
+      <option value="">All statuses</option>
+      {% for s in statuses %}
+        <option value="{{ s.value }}" {% if filter_status == s.value %}selected{% endif %}>{{ s.value|title }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <select name="category" class="form-select form-select-sm">
+      <option value="">All categories</option>
+      {% for c in categories %}
+        <option value="{{ c.value }}" {% if filter_category == c.value %}selected{% endif %}>{{ c.value }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-secondary btn-sm">Filter</button>
+    <a href="/assets" class="btn btn-outline-secondary btn-sm">Clear</a>
+  </div>
+</form>
+
+{# ── Asset Table ── #}
+<div class="card bg-dark border-secondary">
+  <div class="table-responsive">
+    <table class="table table-dark table-hover table-sm mb-0">
+      <thead class="text-secondary">
+        <tr>
+          <th>Tag</th><th>Name</th><th>Category</th><th>Serial</th>
+          <th>Status</th><th>Assigned To</th><th>Warranty</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for asset in assets %}
+        <tr>
+          <td><code class="text-info">{{ asset.asset_tag or "—" }}</code></td>
+          <td>{{ asset.name }}</td>
+          <td><span class="text-secondary">{{ asset.category.value if asset.category else "—" }}</span></td>
+          <td><small class="text-muted">{{ asset.serial_number or "—" }}</small></td>
+          <td>
+            <span class="badge badge-{{ asset.status.value }}">{{ asset.status.value }}</span>
+          </td>
+          <td>
+            {% if asset.assigned_user %}
+              <a href="/users/{{ asset.assigned_user.id }}" class="text-decoration-none">
+                {{ asset.assigned_user.display_name }}
+              </a>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if asset.warranty_expiry %}
+              <small class="{% if asset.warranty_expiry.isoformat() < now_date %}text-danger{% else %}text-muted{% endif %}">
+                {{ asset.warranty_expiry.strftime('%Y-%m-%d') }}
+              </small>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            <div class="dropdown">
+              <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                Actions
+              </button>
+              <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end">
+                <li>
+                  <button class="dropdown-item" data-bs-toggle="modal"
+                          data-bs-target="#assignModal{{ asset.id }}">
+                    <i class="bi bi-person-check"></i> Assign / Unassign
+                  </button>
+                </li>
+                <li>
+                  <button class="dropdown-item" data-bs-toggle="modal"
+                          data-bs-target="#statusModal{{ asset.id }}">
+                    <i class="bi bi-arrow-repeat"></i> Change Status
+                  </button>
+                </li>
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                  <form method="post" action="/assets/{{ asset.id }}/delete"
+                        onsubmit="return confirm('Delete {{ asset.name }}?')">
+                    <button class="dropdown-item text-danger"><i class="bi bi-trash"></i> Delete</button>
+                  </form>
+                </li>
+              </ul>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="text-center text-muted py-4">No assets found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<small class="text-muted">{{ assets|length }} asset(s)</small>
+
+{# ── Modals ── #}
+{% for asset in assets %}
+
+{# Assign Modal #}
+<div class="modal fade" id="assignModal{{ asset.id }}" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content bg-dark">
+      <div class="modal-header border-secondary">
+        <h6 class="modal-title">Assign: {{ asset.name }}</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/assets/{{ asset.id }}/assign">
+        <div class="modal-body">
+          <label class="form-label small">Assign to user</label>
+          <select name="user_id" class="form-select form-select-sm bg-dark text-white border-secondary">
+            <option value="">— Unassign —</option>
+            {% for u in users %}
+              <option value="{{ u.id }}" {% if asset.assigned_user_id == u.id %}selected{% endif %}>
+                {{ u.display_name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button class="btn btn-primary btn-sm">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# Status Modal #}
+<div class="modal fade" id="statusModal{{ asset.id }}" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content bg-dark">
+      <div class="modal-header border-secondary">
+        <h6 class="modal-title">Status: {{ asset.name }}</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/assets/{{ asset.id }}/status">
+        <div class="modal-body">
+          <select name="status" class="form-select form-select-sm bg-dark text-white border-secondary">
+            {% for s in statuses %}
+              <option value="{{ s.value }}" {% if asset.status == s %}selected{% endif %}>
+                {{ s.value|title }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button class="btn btn-primary btn-sm">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endfor %}
+
+{# Add Asset Modal #}
+<div class="modal fade" id="addAssetModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content bg-dark">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title">New IT Asset</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/assets/new">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small">Name *</label>
+              <input type="text" name="name" class="form-control form-control-sm bg-dark text-white border-secondary" required>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small">Asset Tag</label>
+              <input type="text" name="asset_tag" class="form-control form-control-sm bg-dark text-white border-secondary" placeholder="AST-0001">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small">Category</label>
+              <select name="category" class="form-select form-select-sm bg-dark text-white border-secondary">
+                {% for c in categories %}<option value="{{ c.name }}">{{ c.value }}</option>{% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Manufacturer</label>
+              <input type="text" name="manufacturer" class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Model</label>
+              <input type="text" name="model" class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Serial Number</label>
+              <input type="text" name="serial_number" class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small">Purchase Date</label>
+              <input type="date" name="purchase_date" class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small">Warranty Expiry</label>
+              <input type="date" name="warranty_expiry" class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small">Purchase Price</label>
+              <input type="text" name="purchase_price" class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label small">Supplier</label>
+              <input type="text" name="supplier" class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Notes</label>
+              <textarea name="notes" rows="2" class="form-control form-control-sm bg-dark text-white border-secondary"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Add Asset</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

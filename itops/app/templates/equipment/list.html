@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}Equipment{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h4 class="mb-0"><i class="bi bi-camera-video me-2"></i>Equipment</h4>
+  <div class="d-flex gap-2">
+    <a href="/equipment/lending" class="btn btn-outline-info btn-sm">
+      <i class="bi bi-arrow-left-right"></i> Lending Board
+    </a>
+    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addEquipmentModal">
+      <i class="bi bi-plus-lg"></i> Add Equipment
+    </button>
+  </div>
+</div>
+
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-4">
+    <input type="text" name="search" class="form-control form-control-sm"
+           placeholder="Name or category…" value="{{ search }}">
+  </div>
+  <div class="col-auto">
+    <select name="status" class="form-select form-select-sm">
+      <option value="">All statuses</option>
+      {% for s in statuses %}
+        <option value="{{ s.value }}" {% if filter_status == s.value %}selected{% endif %}>{{ s.value|replace('_',' ')|title }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-secondary btn-sm">Filter</button>
+    <a href="/equipment" class="btn btn-outline-secondary btn-sm">Clear</a>
+  </div>
+</form>
+
+<div class="card bg-dark border-secondary">
+  <div class="table-responsive">
+    <table class="table table-dark table-hover table-sm mb-0">
+      <thead class="text-secondary">
+        <tr>
+          <th>Name</th><th>Category</th><th>Tag</th><th>Serial</th>
+          <th>Status</th><th>Location</th><th>Current Borrower</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for eq in equipment_list %}
+        {% set loan = eq.active_loan %}
+        <tr>
+          <td><strong>{{ eq.name }}</strong></td>
+          <td><small class="text-muted">{{ eq.category or "—" }}</small></td>
+          <td><code class="text-info">{{ eq.asset_tag or "—" }}</code></td>
+          <td><small class="text-muted">{{ eq.serial_number or "—" }}</small></td>
+          <td><span class="badge badge-{{ eq.status.value }}">{{ eq.status.value|replace('_',' ')|title }}</span></td>
+          <td>{{ eq.location or "—" }}</td>
+          <td>
+            {% if loan %}
+              <a href="/users/{{ loan.user_id }}" class="text-decoration-none">
+                {{ loan.user.display_name }}
+              </a>
+              {% if loan.is_overdue %}
+                <span class="badge badge-overdue ms-1">Overdue</span>
+              {% endif %}
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            <div class="d-flex gap-1">
+              {% if eq.status.value == 'available' %}
+              <button class="btn btn-sm btn-outline-warning"
+                      data-bs-toggle="modal" data-bs-target="#lendModal{{ eq.id }}">
+                <i class="bi bi-box-arrow-up-right"></i> Lend
+              </button>
+              {% endif %}
+              <form method="post" action="/equipment/{{ eq.id }}/delete"
+                    onsubmit="return confirm('Delete {{ eq.name }}?')">
+                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="text-center text-muted py-4">No equipment found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<small class="text-muted">{{ equipment_list|length }} item(s)</small>
+
+{# Quick-lend modals #}
+{% for eq in equipment_list %}
+{% if eq.status.value == 'available' %}
+<div class="modal fade" id="lendModal{{ eq.id }}" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark">
+      <div class="modal-header border-secondary">
+        <h6 class="modal-title">Lend: {{ eq.name }}</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/equipment/lend">
+        <input type="hidden" name="equipment_id" value="{{ eq.id }}">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small">Borrow *</label>
+            <select name="user_id" class="form-select form-select-sm bg-dark text-white border-secondary" required>
+              <option value="">Select user…</option>
+              {% for u in users %}
+                <option value="{{ u.id }}">{{ u.display_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">Due back</label>
+            <input type="datetime-local" name="due_at"
+                   class="form-control form-control-sm bg-dark text-white border-secondary">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">Notes</label>
+            <input type="text" name="notes"
+                   class="form-control form-control-sm bg-dark text-white border-secondary">
+          </div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-warning btn-sm text-dark">Lend Out</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+
+{# Add Equipment Modal #}
+<div class="modal fade" id="addEquipmentModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title">New Equipment</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/equipment/new">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label small">Name *</label>
+              <input type="text" name="name" required
+                     class="form-control form-control-sm bg-dark text-white border-secondary"
+                     placeholder="e.g. Epson EB-X51 Projector">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Category</label>
+              <input type="text" name="category"
+                     class="form-control form-control-sm bg-dark text-white border-secondary"
+                     placeholder="Projector, Camera…">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Asset Tag</label>
+              <input type="text" name="asset_tag"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Serial Number</label>
+              <input type="text" name="serial_number"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Storage Location</label>
+              <input type="text" name="location"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Notes</label>
+              <textarea name="notes" rows="2"
+                        class="form-control form-control-sm bg-dark text-white border-secondary"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Add Equipment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

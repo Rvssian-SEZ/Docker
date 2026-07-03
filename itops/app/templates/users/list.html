@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h4 class="mb-0"><i class="bi bi-people me-2"></i>Users</h4>
+  <small class="text-muted">Synced from Authentik — edit extended details below</small>
+</div>
+
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-4">
+    <input type="text" name="search" class="form-control form-control-sm"
+           placeholder="Name, username, email, department…" value="{{ search }}">
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-secondary btn-sm">Search</button>
+    <a href="/users" class="btn btn-outline-secondary btn-sm">Clear</a>
+  </div>
+</form>
+
+<div class="card bg-dark border-secondary">
+  <div class="table-responsive">
+    <table class="table table-dark table-hover table-sm mb-0">
+      <thead class="text-secondary">
+        <tr>
+          <th>Name</th><th>Username</th><th>Email</th>
+          <th>Department</th><th>Phone</th><th>Title</th>
+          <th>Assets</th><th>Active Loans</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in users %}
+        <tr>
+          <td><strong>{{ user.display_name }}</strong></td>
+          <td><code class="text-secondary">{{ user.username }}</code></td>
+          <td><small>{{ user.email }}</small></td>
+          <td>{{ user.department or "—" }}</td>
+          <td>{{ user.phone or "—" }}</td>
+          <td>{{ user.title or "—" }}</td>
+          <td>
+            <span class="badge bg-secondary">{{ user.it_assets|length }}</span>
+          </td>
+          <td>
+            {% set active = user.lendings|selectattr('returned_at', 'none')|list %}
+            <span class="badge {% if active %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+              {{ active|length }}
+            </span>
+          </td>
+          <td>
+            <a href="/users/{{ user.id }}" class="btn btn-sm btn-outline-info">
+              <i class="bi bi-pencil"></i>
+            </a>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="text-center text-muted py-4">No users found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<small class="text-muted">{{ users|length }} user(s)</small>
+{% endblock %}

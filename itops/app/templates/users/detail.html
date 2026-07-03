@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}{{ user.display_name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <a href="/users" class="text-secondary text-decoration-none small">
+      <i class="bi bi-arrow-left"></i> Back to Users
+    </a>
+    <h4 class="mb-0 mt-1"><i class="bi bi-person-circle me-2"></i>{{ user.display_name }}</h4>
+    <small class="text-muted">{{ user.username }} · {{ user.email }}</small>
+  </div>
+  <span class="badge {% if user.is_active %}bg-success{% else %}bg-danger{% endif %}">
+    {% if user.is_active %}Active{% else %}Inactive{% endif %}
+  </span>
+</div>
+
+<div class="row g-4">
+  {# ── Edit Form ── #}
+  <div class="col-md-5">
+    <div class="card bg-dark border-secondary">
+      <div class="card-header border-secondary">
+        <h6 class="mb-0">Extended Details</h6>
+      </div>
+      <form method="post" action="/users/{{ user.id }}/edit">
+        <div class="card-body">
+          <div class="mb-3">
+            <label class="form-label small">Phone</label>
+            <input type="text" name="phone" value="{{ user.phone }}"
+                   class="form-control form-control-sm bg-dark text-white border-secondary">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">Department</label>
+            <input type="text" name="department" value="{{ user.department }}"
+                   class="form-control form-control-sm bg-dark text-white border-secondary">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">Job Title</label>
+            <input type="text" name="title" value="{{ user.title }}"
+                   class="form-control form-control-sm bg-dark text-white border-secondary">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">Location / Office</label>
+            <input type="text" name="location" value="{{ user.location }}"
+                   class="form-control form-control-sm bg-dark text-white border-secondary">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">Notes</label>
+            <textarea name="notes" rows="3"
+                      class="form-control form-control-sm bg-dark text-white border-secondary">{{ user.notes }}</textarea>
+          </div>
+        </div>
+        <div class="card-footer border-secondary">
+          <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ── Assigned Assets ── #}
+  <div class="col-md-7">
+    <div class="card bg-dark border-secondary mb-4">
+      <div class="card-header border-secondary">
+        <h6 class="mb-0"><i class="bi bi-pc-display me-1"></i>Assigned IT Assets
+          <span class="badge bg-secondary ms-2">{{ user.it_assets|length }}</span>
+        </h6>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-dark table-sm mb-0">
+          <thead class="text-secondary"><tr><th>Tag</th><th>Name</th><th>Category</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for asset in user.it_assets %}
+            <tr>
+              <td><code class="text-info">{{ asset.asset_tag or "—" }}</code></td>
+              <td>{{ asset.name }}</td>
+              <td><small class="text-muted">{{ asset.category.value if asset.category else "—" }}</small></td>
+              <td><span class="badge badge-{{ asset.status.value }}">{{ asset.status.value }}</span></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-center text-muted py-3">No assets assigned.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# ── Equipment Lending History ── #}
+    <div class="card bg-dark border-secondary">
+      <div class="card-header border-secondary">
+        <h6 class="mb-0"><i class="bi bi-arrow-left-right me-1"></i>Equipment Lending History
+          <span class="badge bg-secondary ms-2">{{ user.lendings|length }}</span>
+        </h6>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-dark table-sm mb-0">
+          <thead class="text-secondary"><tr><th>Equipment</th><th>Lent</th><th>Due</th><th>Returned</th></tr></thead>
+          <tbody>
+            {% for record in user.lendings|sort(attribute='lent_at', reverse=True) %}
+            <tr>
+              <td>{{ record.equipment.name }}</td>
+              <td><small>{{ record.lent_at.strftime('%Y-%m-%d') }}</small></td>
+              <td>
+                {% if record.due_at %}
+                  <small class="{% if record.is_overdue %}text-danger{% else %}text-muted{% endif %}">
+                    {{ record.due_at.strftime('%Y-%m-%d') }}
+                  </small>
+                {% else %}—{% endif %}
+              </td>
+              <td>
+                {% if record.returned_at %}
+                  <small class="text-success">{{ record.returned_at.strftime('%Y-%m-%d') }}</small>
+                {% else %}
+                  <span class="badge badge-on_loan">On Loan</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-center text-muted py-3">No lending history.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

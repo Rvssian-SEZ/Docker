@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% block title %}Equipment Lending{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h4 class="mb-0"><i class="bi bi-arrow-left-right me-2"></i>Equipment Lending</h4>
+  <div class="d-flex gap-2">
+    <a href="/equipment/lending?show=active"
+       class="btn btn-sm {% if show == 'active' %}btn-info{% else %}btn-outline-secondary{% endif %}">
+      Active Loans
+    </a>
+    <a href="/equipment/lending?show=all"
+       class="btn btn-sm {% if show == 'all' %}btn-info{% else %}btn-outline-secondary{% endif %}">
+      All History
+    </a>
+    <button class="btn btn-primary btn-sm ms-2" data-bs-toggle="modal" data-bs-target="#newLoanModal">
+      <i class="bi bi-plus-lg"></i> New Loan
+    </button>
+  </div>
+</div>
+
+{% set overdue_count = records|selectattr('is_overdue')|list|length %}
+{% if overdue_count > 0 %}
+<div class="alert alert-danger d-flex align-items-center gap-2 py-2">
+  <i class="bi bi-exclamation-triangle-fill"></i>
+  <strong>{{ overdue_count }} overdue loan(s)</strong> — highlighted below.
+</div>
+{% endif %}
+
+<div class="card bg-dark border-secondary">
+  <div class="table-responsive">
+    <table class="table table-dark table-hover table-sm mb-0">
+      <thead class="text-secondary">
+        <tr>
+          <th>Equipment</th><th>Borrower</th><th>Lent</th>
+          <th>Due</th><th>Returned</th><th>Processed by</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for record in records %}
+        <tr class="{% if record.is_overdue %}table-danger{% endif %}">
+          <td>
+            <strong>{{ record.equipment.name }}</strong>
+            <small class="text-muted d-block">{{ record.equipment.category }}</small>
+          </td>
+          <td>
+            <a href="/users/{{ record.user_id }}" class="text-decoration-none">
+              {{ record.user.display_name }}
+            </a>
+          </td>
+          <td><small>{{ record.lent_at.strftime('%Y-%m-%d %H:%M') }}</small></td>
+          <td>
+            {% if record.due_at %}
+              <small class="{% if record.is_overdue %}text-danger fw-bold{% else %}text-muted{% endif %}">
+                {% if record.is_overdue %}<i class="bi bi-exclamation-circle"></i> {% endif %}
+                {{ record.due_at.strftime('%Y-%m-%d') }}
+              </small>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if record.returned_at %}
+              <small class="text-success">
+                <i class="bi bi-check-circle"></i> {{ record.returned_at.strftime('%Y-%m-%d') }}
+              </small>
+            {% else %}
+              <span class="badge badge-on_loan">On Loan</span>
+            {% endif %}
+          </td>
+          <td>
+            <small class="text-muted">
+              {{ record.lent_by.display_name if record.lent_by else "—" }}
+            </small>
+          </td>
+          <td>
+            {% if not record.returned_at %}
+            <button class="btn btn-sm btn-outline-success"
+                    data-bs-toggle="modal" data-bs-target="#returnModal{{ record.id }}">
+              <i class="bi bi-box-arrow-in-left"></i> Return
+            </button>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center text-muted py-4">
+          {% if show == 'active' %}No active loans.{% else %}No lending records.{% endif %}
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<small class="text-muted">{{ records|length }} record(s)</small>
+
+{# Return modals #}
+{% for record in records %}
+{% if not record.returned_at %}
+<div class="modal fade" id="returnModal{{ record.id }}" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content bg-dark">
+      <div class="modal-header border-secondary">
+        <h6 class="modal-title">Return: {{ record.equipment.name }}</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/equipment/return/{{ record.id }}">
+        <div class="modal-body">
+          <p class="small text-muted">Borrowed by <strong>{{ record.user.display_name }}</strong></p>
+          <label class="form-label small">Return notes (optional)</label>
+          <input type="text" name="notes"
+                 class="form-control form-control-sm bg-dark text-white border-secondary"
+                 placeholder="Condition, damage notes…">
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success btn-sm">Confirm Return</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+
+{# New Loan Modal #}
+<div class="modal fade" id="newLoanModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title">New Loan</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/equipment/lend">
+        <div class="modal-body">
+          {% if equipment_list %}
+          <div class="mb-3">
+            <label class="form-label small">Equipment *</label>
+            <select name="equipment_id" class="form-select form-select-sm bg-dark text-white border-secondary" required>
+              <option value="">Select available equipment…</option>
+              {% for eq in equipment_list %}
+                <option value="{{ eq.id }}">{{ eq.name }}{% if eq.category %} ({{ eq.category }}){% endif %}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% else %}
+          <div class="alert alert-warning py-2 small">No equipment is currently available for lending.</div>
+          {% endif %}
+          <div class="mb-3">
+            <label class="form-label small">Borrower *</label>
+            <select name="user_id" class="form-select form-select-sm bg-dark text-white border-secondary" required>
+              <option value="">Select user…</option>
+              {% for u in users %}
+                <option value="{{ u.id }}">{{ u.display_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">Due back</label>
+            <input type="datetime-local" name="due_at"
+                   class="form-control form-control-sm bg-dark text-white border-secondary">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">Notes</label>
+            <input type="text" name="notes"
+                   class="form-control form-control-sm bg-dark text-white border-secondary">
+          </div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-warning btn-sm text-dark" {% if not equipment_list %}disabled{% endif %}>
+            Lend Out
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
