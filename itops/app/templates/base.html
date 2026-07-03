@@ -76,8 +76,6 @@
     .badge-lost        { background-color: #dc3545; }
     .badge-overdue     { background-color: #dc3545; }
     table { font-size: .875rem; }
-    .htmx-indicator { opacity: 0; transition: opacity 200ms ease-in; }
-    .htmx-request .htmx-indicator { opacity: 1; }
   </style>
 </head>
 <body>
@@ -102,6 +100,10 @@
        class="nav-link {% if request.url.path.startswith('/equipment/lending') %}active{% endif %}">
       <i class="bi bi-arrow-left-right"></i> Lending
     </a>
+    <a href="/contracts"
+       class="nav-link {% if request.url.path.startswith('/contracts') %}active{% endif %}">
+      <i class="bi bi-file-earmark-text"></i> Contracts
+    </a>
   </div>
   <div class="sidebar-footer">
     <div class="username"><i class="bi bi-person-circle me-1"></i>{{ current_user.display_name }}</div>
@@ -112,8 +114,6 @@
 </nav>
 
 <main class="main-content">
-  {% with messages = [] %}
-  {% endwith %}
   {% block content %}{% endblock %}
 </main>
 
