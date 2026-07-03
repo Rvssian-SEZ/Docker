@@ -35,7 +35,7 @@ async def inbox(
     user: dict     = Depends(require_user),
     mailbox: str   = Query(default=""),
     q: str         = Query(default=""),
-    unread_only: bool = Query(default=False),
+    unread_only: str  = Query(default=""),
     msg_type: str  = Query(default=""),
 ):
     selected = _resolve_mailbox(mailbox or None)
@@ -45,7 +45,7 @@ async def inbox(
     try:
         messages   = imap_svc.list_messages(
             selected,
-            unread_only=unread_only,
+            unread_only=unread_only == "true",
             search_q=q,
             msg_type=msg_type,
         )
