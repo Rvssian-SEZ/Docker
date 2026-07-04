@@ -20,9 +20,7 @@ services:
       retries: 5
 
   app:
-    build:
-      context: ./app
-      dockerfile: Dockerfile
+    image: ghcr.io/rvssian-sez/itops:latest
     container_name: itops_app
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-itops}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-itops}
@@ -32,6 +30,8 @@ services:
       AUTHENTIK_CLIENT_SECRET: ${AUTHENTIK_CLIENT_SECRET:?AUTHENTIK_CLIENT_SECRET is required}
       AUTHENTIK_SLUG: ${AUTHENTIK_SLUG:-itops}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8000}
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+      SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
     depends_on:
       db:
         condition: service_healthy
@@ -41,9 +41,8 @@ services:
     ports:
       - "${APP_PORT:-8000}:8000"
     volumes:
-      # Uncomment for live reload during development:
-      # - ./app:/app
       - app_logs:/app/logs
+      - ${CA_CERT_PATH:-/dev/null}:/usr/local/share/ca-certificates/root_ca.crt:ro
 
   pgadmin:
     image: dpage/pgadmin4:latest
