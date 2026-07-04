@@ -191,10 +191,7 @@ async def ticket_create(
     db.refresh(ticket)
 
     requester = db.query(User).get(requester_id)
-    background_tasks.add_task(
-        mail.notify_ticket_created,
-        ticket, requester, None, _tech_emails(db),
-    )
+    # No email on create — tech is notified when assigned
 
     return RedirectResponse(f"/tickets/{ticket.id}", status_code=303)
 
@@ -297,6 +294,12 @@ async def ticket_add_update(
             raise HTTPException(403)
         is_internal = False  # users cannot post internal notes
 
+    # Capture values before session closes
+    assignee_email = ticket.assigned_to.email if ticket.assigned_to_id and ticket.assigned_to else None
+    ticket_id = ticket.id
+    ticket_title = ticket.title
+    ticket_status = ticket.status
+
     update = TicketUpdate(
         ticket_id=ticket.id,
         author_id=current_user.id,
@@ -308,14 +311,13 @@ async def ticket_add_update(
     db.commit()
     db.refresh(update)
 
-    owner_email = ticket.created_by.email if ticket.created_by else None
-    assignee_email = ticket.assigned_to.email if ticket.assigned_to else None
-    background_tasks.add_task(
-        mail.notify_ticket_updated,
-        ticket.id, ticket.title, ticket.status, update.content, update.is_internal,
-        current_user.full_name, current_user.email,
-        owner_email, assignee_email,
-    )
+    if assignee_email:
+        background_tasks.add_task(
+            mail.notify_ticket_updated,
+            ticket_id, ticket_title, ticket_status, update.content, update.is_internal,
+            current_user.full_name, current_user.email,
+            None, assignee_email,
+        )
 
     return RedirectResponse(f"/tickets/{ticket_id}", status_code=303)
 
