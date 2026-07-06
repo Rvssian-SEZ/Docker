@@ -7,7 +7,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from core.config import settings
 from core.deps import RequiresLoginException
 import models  # noqa: F401
-from routers import auth, users, assets, equipment, contracts
+from routers import auth, users, assets, equipment, contracts, printers
 
 app = FastAPI(
     title="IT Ops Portal",
@@ -21,7 +21,7 @@ app.add_middleware(
     secret_key=settings.SECRET_KEY,
     session_cookie="itops_session",
     max_age=86400 * 7,
-    https_only=False,   # Set True once behind HTTPS/NPM
+    https_only=False,
     same_site="lax",
 )
 
@@ -35,6 +35,7 @@ app.include_router(users.router, prefix="/users", tags=["users"])
 app.include_router(assets.router, prefix="/assets", tags=["assets"])
 app.include_router(equipment.router, prefix="/equipment", tags=["equipment"])
 app.include_router(contracts.router, prefix="/contracts", tags=["contracts"])
+app.include_router(printers.router, prefix="/printers", tags=["printers"])
 
 @app.get("/")
 def root():

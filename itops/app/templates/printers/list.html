@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}Printers{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h4 class="mb-0"><i class="bi bi-printer me-2"></i>Printers</h4>
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addPrinterModal">
+    <i class="bi bi-plus-lg"></i> Add Printer
+  </button>
+</div>
+
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-4">
+    <input type="text" name="search" class="form-control form-control-sm"
+           placeholder="Make, model, location, department, tag…" value="{{ search }}">
+  </div>
+  <div class="col-auto">
+    <select name="status" class="form-select form-select-sm">
+      <option value="">All statuses</option>
+      {% for s in statuses %}
+        <option value="{{ s.value }}" {% if filter_status == s.value %}selected{% endif %}>{{ s.value|title }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-secondary btn-sm">Filter</button>
+    <a href="/printers" class="btn btn-outline-secondary btn-sm">Clear</a>
+  </div>
+</form>
+
+<div class="card bg-dark border-secondary">
+  <div class="table-responsive" style="overflow: visible;">
+    <table class="table table-dark table-hover table-sm mb-0">
+      <thead class="text-secondary">
+        <tr>
+          <th>Make / Model</th><th>Tag</th><th>Location</th><th>Department</th>
+          <th>IP</th><th>Status</th><th>Warranty</th><th>Repairs</th><th>TCO</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in printers %}
+        <tr>
+          <td>
+            <a href="/printers/{{ p.id }}" class="text-decoration-none fw-bold">{{ p.make }} {{ p.model }}</a>
+            {% if p.serial_number %}<small class="text-muted d-block">{{ p.serial_number }}</small>{% endif %}
+          </td>
+          <td><code class="text-info">{{ p.asset_tag or "—" }}</code></td>
+          <td>{{ p.location or "—" }}</td>
+          <td>{{ p.department or "—" }}</td>
+          <td><small class="text-muted">{{ p.ip_address or "—" }}</small></td>
+          <td><span class="badge badge-{{ p.status.value }}">{{ p.status.value|title }}</span></td>
+          <td>
+            {% if p.warranty_expiry %}
+              <small class="{% if p.warranty_expired %}text-danger{% else %}text-muted{% endif %}">
+                {{ p.warranty_expiry.strftime('%Y-%m-%d') }}
+              </small>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            <span class="badge bg-secondary">{{ p.repairs|length }}</span>
+            {% if p.total_repair_cost > 0 %}
+              <small class="text-warning ms-1">${{ "%.2f"|format(p.total_repair_cost) }}</small>
+            {% endif %}
+          </td>
+          <td>
+            {% if p.tco > 0 %}
+              <small class="text-info">${{ "%.2f"|format(p.tco) }}</small>
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            <div class="dropdown dropup">
+              <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                Actions
+              </button>
+              <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end" style="overflow: visible;">
+                <li><a class="dropdown-item" href="/printers/{{ p.id }}">
+                  <i class="bi bi-eye me-1"></i> View / Edit
+                </a></li>
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                  <form method="post" action="/printers/{{ p.id }}/delete"
+                        onsubmit="return confirm('Delete {{ p.make }} {{ p.model }}?')">
+                    <button class="dropdown-item text-danger" type="submit">
+                      <i class="bi bi-trash me-1"></i> Delete
+                    </button>
+                  </form>
+                </li>
+              </ul>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="10" class="text-center text-muted py-4">No printers found.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<small class="text-muted">{{ printers|length }} printer(s)</small>
+
+{# ── Add Printer Modal ── #}
+<div class="modal fade" id="addPrinterModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content bg-dark">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title">Add Printer</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/printers/new">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small">Make *</label>
+              <input type="text" name="make" required
+                     class="form-control form-control-sm bg-dark text-white border-secondary"
+                     placeholder="e.g. HP, Canon, Epson">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Model *</label>
+              <input type="text" name="model" required
+                     class="form-control form-control-sm bg-dark text-white border-secondary"
+                     placeholder="e.g. LaserJet Pro M404n">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Serial Number</label>
+              <input type="text" name="serial_number"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Asset Tag</label>
+              <input type="text" name="asset_tag"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">IP Address</label>
+              <input type="text" name="ip_address"
+                     class="form-control form-control-sm bg-dark text-white border-secondary"
+                     placeholder="e.g. 192.168.1.50">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Location</label>
+              <input type="text" name="location"
+                     class="form-control form-control-sm bg-dark text-white border-secondary"
+                     placeholder="e.g. Floor 2, Room 204">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Department</label>
+              <input type="text" name="department"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Service Contract</label>
+              <select name="contract_id" class="form-select form-select-sm bg-dark text-white border-secondary">
+                <option value="">— None —</option>
+                {% for c in contracts %}
+                  <option value="{{ c.id }}">{{ c.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Purchase Date</label>
+              <input type="date" name="purchase_date"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Warranty Expiry</label>
+              <input type="date" name="warranty_expiry"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small">Purchase Price</label>
+              <input type="text" name="purchase_price"
+                     class="form-control form-control-sm bg-dark text-white border-secondary"
+                     placeholder="e.g. 499.99">
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Notes</label>
+              <textarea name="notes" rows="2"
+                        class="form-control form-control-sm bg-dark text-white border-secondary"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Add Printer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

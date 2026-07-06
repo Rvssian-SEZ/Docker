@@ -8,72 +8,53 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <script src="https://unpkg.com/htmx.org@1.9.12" defer></script>
   <style>
-    :root {
-      --sidebar-width: 220px;
-      --sidebar-bg: #141920;
-      --accent: #3d8bfd;
-    }
+    :root { --sidebar-width: 220px; --sidebar-bg: #141920; --accent: #3d8bfd; }
     body { background: #1a2030; }
     .sidebar {
       position: fixed; top: 0; left: 0; bottom: 0;
       width: var(--sidebar-width);
       background: var(--sidebar-bg);
       border-right: 1px solid rgba(255,255,255,.07);
-      display: flex; flex-direction: column;
-      z-index: 100;
+      display: flex; flex-direction: column; z-index: 100;
     }
     .sidebar-brand {
-      padding: 1.25rem 1rem;
-      font-size: 1rem;
-      font-weight: 700;
-      letter-spacing: .04em;
-      color: #fff;
+      padding: 1.25rem 1rem; font-size: 1rem; font-weight: 700;
+      letter-spacing: .04em; color: #fff;
       border-bottom: 1px solid rgba(255,255,255,.07);
     }
     .sidebar-brand span { color: var(--accent); }
     .sidebar-nav { flex: 1; padding: .5rem 0; }
     .sidebar-nav .nav-label {
-      padding: .6rem 1rem .25rem;
-      font-size: .65rem;
-      text-transform: uppercase;
-      letter-spacing: .1em;
-      color: #6c757d;
+      padding: .6rem 1rem .25rem; font-size: .65rem;
+      text-transform: uppercase; letter-spacing: .1em; color: #6c757d;
     }
     .sidebar-nav .nav-link {
       display: flex; align-items: center; gap: .6rem;
-      padding: .45rem 1rem;
-      color: #adb5bd;
-      border-radius: 0;
-      font-size: .875rem;
-      transition: background .15s, color .15s;
+      padding: .45rem 1rem; color: #adb5bd; border-radius: 0;
+      font-size: .875rem; transition: background .15s, color .15s;
     }
     .sidebar-nav .nav-link:hover { background: rgba(255,255,255,.05); color: #fff; }
     .sidebar-nav .nav-link.active { background: rgba(61,139,253,.15); color: var(--accent); }
     .sidebar-nav .nav-link i { font-size: 1rem; width: 1.2rem; text-align: center; }
     .sidebar-footer {
-      padding: .75rem 1rem;
-      border-top: 1px solid rgba(255,255,255,.07);
-      font-size: .8rem;
-      color: #6c757d;
+      padding: .75rem 1rem; border-top: 1px solid rgba(255,255,255,.07);
+      font-size: .8rem; color: #6c757d;
     }
     .sidebar-footer .username { color: #adb5bd; font-weight: 500; }
-    .main-content {
-      margin-left: var(--sidebar-width);
-      min-height: 100vh;
-      padding: 1.5rem 2rem;
-    }
+    .main-content { margin-left: var(--sidebar-width); min-height: 100vh; padding: 1.5rem 2rem; }
     .page-header {
       display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 1.5rem;
-      padding-bottom: .75rem;
+      margin-bottom: 1.5rem; padding-bottom: .75rem;
       border-bottom: 1px solid rgba(255,255,255,.08);
     }
     .badge-available   { background-color: #198754; }
     .badge-assigned    { background-color: #0d6efd; }
+    .badge-active      { background-color: #198754; }
     .badge-on_loan     { background-color: #ffc107; color: #000; }
     .badge-maintenance { background-color: #0dcaf0; color: #000; }
     .badge-retired     { background-color: #6c757d; }
     .badge-lost        { background-color: #dc3545; }
+    .badge-offline     { background-color: #dc3545; }
     .badge-overdue     { background-color: #dc3545; }
     table { font-size: .875rem; }
   </style>
@@ -84,24 +65,22 @@
   <div class="sidebar-brand">IT<span>Ops</span> Portal</div>
   <div class="sidebar-nav">
     <div class="nav-label">Modules</div>
-    <a href="/assets"
-       class="nav-link {% if request.url.path.startswith('/assets') %}active{% endif %}">
+    <a href="/assets" class="nav-link {% if request.url.path.startswith('/assets') %}active{% endif %}">
       <i class="bi bi-pc-display"></i> IT Assets
     </a>
-    <a href="/users"
-       class="nav-link {% if request.url.path.startswith('/users') %}active{% endif %}">
+    <a href="/users" class="nav-link {% if request.url.path.startswith('/users') %}active{% endif %}">
       <i class="bi bi-people"></i> Users
     </a>
-    <a href="/equipment"
-       class="nav-link {% if request.url.path.startswith('/equipment') and not request.url.path.startswith('/equipment/lending') %}active{% endif %}">
+    <a href="/equipment" class="nav-link {% if request.url.path.startswith('/equipment') and not request.url.path.startswith('/equipment/lending') %}active{% endif %}">
       <i class="bi bi-camera-video"></i> Equipment
     </a>
-    <a href="/equipment/lending"
-       class="nav-link {% if request.url.path.startswith('/equipment/lending') %}active{% endif %}">
+    <a href="/equipment/lending" class="nav-link {% if request.url.path.startswith('/equipment/lending') %}active{% endif %}">
       <i class="bi bi-arrow-left-right"></i> Lending
     </a>
-    <a href="/contracts"
-       class="nav-link {% if request.url.path.startswith('/contracts') %}active{% endif %}">
+    <a href="/printers" class="nav-link {% if request.url.path.startswith('/printers') %}active{% endif %}">
+      <i class="bi bi-printer"></i> Printers
+    </a>
+    <a href="/contracts" class="nav-link {% if request.url.path.startswith('/contracts') %}active{% endif %}">
       <i class="bi bi-file-earmark-text"></i> Contracts
     </a>
   </div>

@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block title %}{{ printer.make }} {{ printer.model }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <a href="/printers" class="text-secondary text-decoration-none small">
+      <i class="bi bi-arrow-left"></i> Back to Printers
+    </a>
+    <h4 class="mb-0 mt-1"><i class="bi bi-printer me-2"></i>{{ printer.make }} {{ printer.model }}</h4>
+    <small class="text-muted">
+      {{ printer.asset_tag or "No tag" }}
+      {% if printer.serial_number %} · {{ printer.serial_number }}{% endif %}
+    </small>
+  </div>
+  <span class="badge badge-{{ printer.status.value }} fs-6">{{ printer.status.value|title }}</span>
+</div>
+
+<div class="row g-4">
+
+  {# ── Edit Form ── #}
+  <div class="col-md-5">
+    <div class="card bg-dark border-secondary">
+      <div class="card-header border-secondary">
+        <h6 class="mb-0">Printer Details</h6>
+      </div>
+      <form method="post" action="/printers/{{ printer.id }}/edit">
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label small">Make *</label>
+              <input type="text" name="make" value="{{ printer.make }}" required
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Model *</label>
+              <input type="text" name="model" value="{{ printer.model }}" required
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Serial Number</label>
+              <input type="text" name="serial_number" value="{{ printer.serial_number or '' }}"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Asset Tag</label>
+              <input type="text" name="asset_tag" value="{{ printer.asset_tag or '' }}"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">IP Address</label>
+              <input type="text" name="ip_address" value="{{ printer.ip_address or '' }}"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Status</label>
+              <select name="status" class="form-select form-select-sm bg-dark text-white border-secondary">
+                {% for s in statuses %}
+                  <option value="{{ s.value }}" {% if printer.status == s %}selected{% endif %}>{{ s.value|title }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Location</label>
+              <input type="text" name="location" value="{{ printer.location or '' }}"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Department</label>
+              <input type="text" name="department" value="{{ printer.department or '' }}"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Purchase Date</label>
+              <input type="date" name="purchase_date"
+                     value="{{ printer.purchase_date.isoformat() if printer.purchase_date else '' }}"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Warranty Expiry</label>
+              <input type="date" name="warranty_expiry"
+                     value="{{ printer.warranty_expiry.isoformat() if printer.warranty_expiry else '' }}"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Purchase Price</label>
+              <input type="text" name="purchase_price"
+                     value="{{ printer.purchase_price or '' }}"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Service Contract</label>
+              <select name="contract_id" class="form-select form-select-sm bg-dark text-white border-secondary">
+                <option value="">— None —</option>
+                {% for c in contracts %}
+                  <option value="{{ c.id }}" {% if printer.contract_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Notes</label>
+              <textarea name="notes" rows="3"
+                        class="form-control form-control-sm bg-dark text-white border-secondary">{{ printer.notes or '' }}</textarea>
+            </div>
+          </div>
+        </div>
+        <div class="card-footer border-secondary d-flex justify-content-between">
+          <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
+          <form method="post" action="/printers/{{ printer.id }}/delete"
+                onsubmit="return confirm('Delete this printer and all its repair records?')">
+            <button class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> Delete</button>
+          </form>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  {# ── Right column ── #}
+  <div class="col-md-7">
+
+    {# ── Cost Summary ── #}
+    <div class="row g-3 mb-4">
+      <div class="col-4">
+        <div class="card bg-dark border-secondary text-center p-3">
+          <div class="text-muted small">Purchase Price</div>
+          <div class="fs-5 fw-bold text-white">
+            {% if printer.purchase_price %}${{ "%.2f"|format(printer.purchase_price) }}{% else %}—{% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="col-4">
+        <div class="card bg-dark border-secondary text-center p-3">
+          <div class="text-muted small">Total Repairs</div>
+          <div class="fs-5 fw-bold text-warning">
+            {% if printer.total_repair_cost > 0 %}${{ "%.2f"|format(printer.total_repair_cost) }}{% else %}$0.00{% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="col-4">
+        <div class="card bg-dark border-secondary text-center p-3">
+          <div class="text-muted small">Total TCO</div>
+          <div class="fs-5 fw-bold text-info">
+            {% if printer.tco > 0 %}${{ "%.2f"|format(printer.tco) }}{% else %}—{% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# ── Repair Records ── #}
+    <div class="card bg-dark border-secondary">
+      <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+        <h6 class="mb-0"><i class="bi bi-tools me-1"></i>Repair Records
+          <span class="badge bg-secondary ms-2">{{ printer.repairs|length }}</span>
+        </h6>
+        <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal"
+                data-bs-target="#addRepairModal">
+          <i class="bi bi-plus-lg"></i> Add Repair
+        </button>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-dark table-sm mb-0">
+          <thead class="text-secondary">
+            <tr><th>Date</th><th>Description</th><th>Cost</th><th>Reference</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for repair in printer.repairs|sort(attribute='repair_date', reverse=True) %}
+            <tr>
+              <td><small>{{ repair.repair_date.strftime('%Y-%m-%d') }}</small></td>
+              <td>
+                {{ repair.description }}
+                {% if repair.notes %}
+                  <small class="text-muted d-block">{{ repair.notes }}</small>
+                {% endif %}
+              </td>
+              <td>
+                {% if repair.cost %}
+                  <span class="text-warning">${{ "%.2f"|format(repair.cost) }}</span>
+                {% else %}—{% endif %}
+              </td>
+              <td><small class="text-muted">{{ repair.document_ref or "—" }}</small></td>
+              <td>
+                <form method="post"
+                      action="/printers/{{ printer.id }}/repairs/{{ repair.id }}/delete"
+                      onsubmit="return confirm('Delete this repair record?')">
+                  <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-center text-muted py-3">No repairs recorded.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Add Repair Modal ── #}
+<div class="modal fade" id="addRepairModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title">Add Repair Record</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/printers/{{ printer.id }}/repairs/add">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label small">Description *</label>
+              <input type="text" name="description" required
+                     class="form-control form-control-sm bg-dark text-white border-secondary"
+                     placeholder="e.g. Replaced fuser unit">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Date</label>
+              <input type="date" name="repair_date"
+                     value="{{ today }}"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label small">Amount Spent</label>
+              <input type="text" name="cost"
+                     class="form-control form-control-sm bg-dark text-white border-secondary"
+                     placeholder="e.g. 150.00">
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Document Reference</label>
+              <input type="text" name="document_ref"
+                     class="form-control form-control-sm bg-dark text-white border-secondary"
+                     placeholder="Invoice number, filename, ticket ref…">
+            </div>
+            <div class="col-12">
+              <label class="form-label small">Notes</label>
+              <textarea name="notes" rows="2"
+                        class="form-control form-control-sm bg-dark text-white border-secondary"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-warning btn-sm text-dark">Add Repair</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
