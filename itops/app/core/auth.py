@@ -1,21 +1,9 @@
-"""
-OIDC Authentication with Authentik.
-
-Flow:
-  1. User hits a protected route → redirected to /auth/login
-  2. /auth/login → redirects to Authentik authorization URL with a signed state token
-  3. Authentik redirects to /auth/callback with ?code=...&state=...
-  4. App exchanges code for tokens, fetches userinfo, upserts User in DB
-  5. User info stored in session cookie (signed by SessionMiddleware)
-  6. All protected routes read from request.session["user"]
-"""
-
+import os
 import secrets
 from urllib.parse import urlencode
 
 import httpx
 from fastapi import Request
-from fastapi.responses import RedirectResponse
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from sqlalchemy.orm import Session
 
@@ -25,20 +13,17 @@ from models.user import User
 
 _signer = URLSafeTimedSerializer(settings.SECRET_KEY, salt="oidc-state")
 
+# Use internal CA cert if provided
+_CA_CERT = os.environ.get("SSL_CERT_FILE") or os.environ.get("REQUESTS_CA_BUNDLE") or True
 
-# ── State token helpers ──────────────────────────────────────────────────────────
 
 def make_state(next_url: str = "/") -> str:
-    """Create a signed state token that carries the post-login redirect URL."""
     return _signer.dumps({"next": next_url, "nonce": secrets.token_hex(8)})
 
 
 def verify_state(token: str, max_age: int = 600) -> dict:
-    """Verify and decode a state token. Raises on tamper/expiry."""
     return _signer.loads(token, max_age=max_age)
 
-
-# ── Authorization URL ────────────────────────────────────────────────────────────
 
 def get_authorization_url(state: str) -> str:
     params = {
@@ -51,10 +36,8 @@ def get_authorization_url(state: str) -> str:
     return f"{settings.authentik_authorize_url}?{urlencode(params)}"
 
 
-# ── Token exchange ───────────────────────────────────────────────────────────────
-
 async def exchange_code_for_tokens(code: str) -> dict:
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, verify=_CA_CERT) as client:
         response = await client.post(
             settings.authentik_token_url,
             data={
@@ -70,7 +53,7 @@ async def exchange_code_for_tokens(code: str) -> dict:
 
 
 async def get_userinfo(access_token: str) -> dict:
-    async with httpx.AsyncClient(timeout=15) as client:
+    async with httpx.AsyncClient(timeout=15, verify=_CA_CERT) as client:
         response = await client.get(
             settings.authentik_userinfo_url,
             headers={"Authorization": f"Bearer {access_token}"},
@@ -79,10 +62,7 @@ async def get_userinfo(access_token: str) -> dict:
         return response.json()
 
 
-# ── User upsert ─────────────────────────────────────────────────────────────────
-
 def upsert_user(db: Session, userinfo: dict) -> User:
-    """Create or update a local User record from OIDC userinfo claims."""
     sub = userinfo["sub"]
     user = db.query(User).filter(User.sub == sub).first()
 
@@ -93,7 +73,6 @@ def upsert_user(db: Session, userinfo: dict) -> User:
     user.username = userinfo.get("preferred_username", sub)
     user.email = userinfo.get("email", "")
     user.full_name = userinfo.get("name", "")
-    # Authentik can send groups; store as comma-separated string
     groups = userinfo.get("groups", [])
     user.groups = ",".join(groups) if groups else ""
 
@@ -101,8 +80,6 @@ def upsert_user(db: Session, userinfo: dict) -> User:
     db.refresh(user)
     return user
 
-
-# ── Session helpers ──────────────────────────────────────────────────────────────
 
 def set_session_user(request: Request, user: User) -> None:
     request.session["user"] = {
