@@ -66,6 +66,81 @@ def list_printers(
     })
 
 
+
+
+@router.get("/metrics", response_class=HTMLResponse)
+def printer_metrics(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    from sqlalchemy import extract, func
+    from models.printer import PrinterRepair
+
+    # Purchase spend by year
+    purchase_rows = db.query(
+        extract("year", Printer.purchase_date).label("year"),
+        func.sum(Printer.purchase_price).label("total"),
+        func.count(Printer.id).label("count"),
+    ).filter(
+        Printer.purchase_date != None,  # noqa: E711
+        Printer.purchase_price != None,  # noqa: E711
+    ).group_by("year").order_by("year").all()
+
+    # Repair spend by year
+    repair_rows = db.query(
+        extract("year", PrinterRepair.repair_date).label("year"),
+        func.sum(PrinterRepair.cost).label("total"),
+        func.count(PrinterRepair.id).label("count"),
+    ).filter(
+        PrinterRepair.cost != None,  # noqa: E711
+    ).group_by("year").order_by("year").all()
+
+    # All-time totals
+    total_purchase = db.query(func.sum(Printer.purchase_price)).filter(
+        Printer.purchase_price != None  # noqa: E711
+    ).scalar() or 0
+
+    total_repairs = db.query(func.sum(PrinterRepair.cost)).filter(
+        PrinterRepair.cost != None  # noqa: E711
+    ).scalar() or 0
+
+    total_printers = db.query(func.count(Printer.id)).scalar() or 0
+    total_repair_records = db.query(func.count(PrinterRepair.id)).scalar() or 0
+
+    # Build unified year set
+    all_years = sorted(set(
+        [int(r.year) for r in purchase_rows] +
+        [int(r.year) for r in repair_rows]
+    ))
+
+    purchase_by_year = {int(r.year): {"total": float(r.total or 0), "count": r.count} for r in purchase_rows}
+    repair_by_year = {int(r.year): {"total": float(r.total or 0), "count": r.count} for r in repair_rows}
+
+    yearly = []
+    for year in all_years:
+        p = purchase_by_year.get(year, {"total": 0, "count": 0})
+        r = repair_by_year.get(year, {"total": 0, "count": 0})
+        yearly.append({
+            "year": year,
+            "purchase_total": p["total"],
+            "purchase_count": p["count"],
+            "repair_total": r["total"],
+            "repair_count": r["count"],
+            "combined": p["total"] + r["total"],
+        })
+
+    return templates.TemplateResponse(request, "printers/metrics.html", {
+        "yearly": yearly,
+        "all_years": all_years,
+        "total_purchase": float(total_purchase),
+        "total_repairs": float(total_repairs),
+        "total_combined": float(total_purchase) + float(total_repairs),
+        "total_printers": total_printers,
+        "total_repair_records": total_repair_records,
+        "current_user": current_user,
+    })
+
 @router.get("/{printer_id}", response_class=HTMLResponse)
 def printer_detail(
     printer_id: int,
