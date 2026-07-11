@@ -1,18 +1,22 @@
+import os
+import uuid
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from core.deps import get_db, require_user
-from models.printer import Printer, PrinterRepair, PrinterStatus
+from models.printer import Printer, PrinterRepair, PrinterStatus, PrinterAttachment
 from models.contract import Contract
 from models.user import User
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+
+UPLOAD_DIR = "/app/uploads/printers"
 
 
 def _parse_date(s):
@@ -23,6 +27,11 @@ def _parse_decimal(s):
         return Decimal(s) if s else None
     except Exception:
         return None
+
+def _printer_upload_dir(printer_id: int) -> str:
+    path = os.path.join(UPLOAD_DIR, str(printer_id))
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -37,10 +46,8 @@ def list_printers(
     if search:
         like = f"%{search}%"
         query = query.filter(
-            Printer.make.ilike(like)
-            | Printer.model.ilike(like)
-            | Printer.location.ilike(like)
-            | Printer.department.ilike(like)
+            Printer.make.ilike(like) | Printer.model.ilike(like)
+            | Printer.location.ilike(like) | Printer.department.ilike(like)
             | Printer.asset_tag.ilike(like)
         )
     if status:
@@ -74,6 +81,7 @@ def printer_detail(
         "printer": printer,
         "contracts": contracts,
         "statuses": PrinterStatus,
+        "today": date.today().isoformat(),
         "current_user": current_user,
     })
 
@@ -96,13 +104,9 @@ def create_printer(
     notes: str = Form(""),
 ):
     printer = Printer(
-        make=make,
-        model=model,
-        serial_number=serial_number,
-        asset_tag=asset_tag or None,
-        ip_address=ip_address,
-        location=location,
-        department=department,
+        make=make, model=model, serial_number=serial_number,
+        asset_tag=asset_tag or None, ip_address=ip_address,
+        location=location, department=department,
         purchase_date=_parse_date(purchase_date),
         warranty_expiry=_parse_date(warranty_expiry),
         purchase_price=_parse_decimal(purchase_price),
@@ -136,7 +140,6 @@ def edit_printer(
     printer = db.query(Printer).filter(Printer.id == printer_id).first()
     if not printer:
         return HTMLResponse("Printer not found", status_code=404)
-
     printer.make = make
     printer.model = model
     printer.serial_number = serial_number
@@ -181,7 +184,6 @@ def add_repair(
     printer = db.query(Printer).filter(Printer.id == printer_id).first()
     if not printer:
         return HTMLResponse("Printer not found", status_code=404)
-
     repair = PrinterRepair(
         printer_id=printer_id,
         description=description,
@@ -208,5 +210,98 @@ def delete_repair(
     ).first()
     if repair:
         db.delete(repair)
+        db.commit()
+    return RedirectResponse(f"/printers/{printer_id}", status_code=302)
+
+
+# ── Attachments ────────────────────────────────────────────────────────────────
+
+@router.post("/{printer_id}/attachments/upload")
+async def upload_attachment(
+    printer_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+    file: UploadFile = File(...),
+    notes: str = Form(""),
+):
+    printer = db.query(Printer).filter(Printer.id == printer_id).first()
+    if not printer:
+        return HTMLResponse("Printer not found", status_code=404)
+
+    # Generate unique stored filename
+    ext = os.path.splitext(file.filename)[1] if file.filename else ""
+    stored_filename = f"{uuid.uuid4().hex}{ext}"
+    upload_path = os.path.join(_printer_upload_dir(printer_id), stored_filename)
+
+    # Save file
+    contents = await file.read()
+    with open(upload_path, "wb") as f:
+        f.write(contents)
+
+    # Determine mime type
+    mime_type = file.content_type or "application/octet-stream"
+    if not mime_type or mime_type == "application/octet-stream":
+        if ext.lower() == ".pdf":
+            mime_type = "application/pdf"
+
+    attachment = PrinterAttachment(
+        printer_id=printer_id,
+        filename=stored_filename,
+        original_filename=file.filename or stored_filename,
+        file_size=len(contents),
+        mime_type=mime_type,
+        notes=notes,
+        uploaded_by_id=current_user.id,
+    )
+    db.add(attachment)
+    db.commit()
+    return RedirectResponse(f"/printers/{printer_id}", status_code=302)
+
+
+@router.get("/{printer_id}/attachments/{attachment_id}/view")
+def view_attachment(
+    printer_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    attachment = db.query(PrinterAttachment).filter(
+        PrinterAttachment.id == attachment_id,
+        PrinterAttachment.printer_id == printer_id,
+    ).first()
+    if not attachment:
+        return HTMLResponse("File not found", status_code=404)
+
+    file_path = os.path.join(UPLOAD_DIR, str(printer_id), attachment.filename)
+    if not os.path.exists(file_path):
+        return HTMLResponse("File not found on disk", status_code=404)
+
+    # PDFs and images open inline (new tab), others download
+    disposition = "inline" if attachment.is_pdf else "attachment"
+    return FileResponse(
+        path=file_path,
+        media_type=attachment.mime_type,
+        filename=attachment.original_filename,
+        headers={"Content-Disposition": f'{disposition}; filename="{attachment.original_filename}"'},
+    )
+
+
+@router.post("/{printer_id}/attachments/{attachment_id}/delete")
+def delete_attachment(
+    printer_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    attachment = db.query(PrinterAttachment).filter(
+        PrinterAttachment.id == attachment_id,
+        PrinterAttachment.printer_id == printer_id,
+    ).first()
+    if attachment:
+        # Delete file from disk
+        file_path = os.path.join(UPLOAD_DIR, str(printer_id), attachment.filename)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        db.delete(attachment)
         db.commit()
     return RedirectResponse(f"/printers/{printer_id}", status_code=302)

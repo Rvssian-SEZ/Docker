@@ -21,9 +21,7 @@
   {# ── Edit Form ── #}
   <div class="col-md-5">
     <div class="card bg-dark border-secondary">
-      <div class="card-header border-secondary">
-        <h6 class="mb-0">Printer Details</h6>
-      </div>
+      <div class="card-header border-secondary"><h6 class="mb-0">Printer Details</h6></div>
       <form method="post" action="/printers/{{ printer.id }}/edit">
         <div class="card-body">
           <div class="row g-3">
@@ -84,8 +82,7 @@
             </div>
             <div class="col-md-6">
               <label class="form-label small">Purchase Price</label>
-              <input type="text" name="purchase_price"
-                     value="{{ printer.purchase_price or '' }}"
+              <input type="text" name="purchase_price" value="{{ printer.purchase_price or '' }}"
                      class="form-control form-control-sm bg-dark text-white border-secondary">
             </div>
             <div class="col-md-6">
@@ -107,7 +104,7 @@
         <div class="card-footer border-secondary d-flex justify-content-between">
           <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
           <form method="post" action="/printers/{{ printer.id }}/delete"
-                onsubmit="return confirm('Delete this printer and all its repair records?')">
+                onsubmit="return confirm('Delete this printer and all its records?')">
             <button class="btn btn-outline-danger btn-sm"><i class="bi bi-trash"></i> Delete</button>
           </form>
         </div>
@@ -132,7 +129,7 @@
         <div class="card bg-dark border-secondary text-center p-3">
           <div class="text-muted small">Total Repairs</div>
           <div class="fs-5 fw-bold text-warning">
-            {% if printer.total_repair_cost > 0 %}${{ "%.2f"|format(printer.total_repair_cost) }}{% else %}$0.00{% endif %}
+            ${{ "%.2f"|format(printer.total_repair_cost) }}
           </div>
         </div>
       </div>
@@ -144,6 +141,67 @@
           </div>
         </div>
       </div>
+    </div>
+
+    {# ── Attachments ── #}
+    <div class="card bg-dark border-secondary mb-4">
+      <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">
+          <i class="bi bi-paperclip me-1"></i>Attachments
+          <span class="badge bg-secondary ms-1">{{ printer.attachments|length }}</span>
+        </h6>
+        <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
+                data-bs-target="#uploadModal">
+          <i class="bi bi-upload"></i> Upload
+        </button>
+      </div>
+
+      {% if printer.attachments %}
+      <div class="list-group list-group-flush">
+        {% for att in printer.attachments|sort(attribute='uploaded_at', reverse=True) %}
+        <div class="list-group-item bg-dark border-secondary d-flex justify-content-between align-items-center py-2">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi {{ att.icon }} fs-5"></i>
+            <div>
+              <a href="/printers/{{ printer.id }}/attachments/{{ att.id }}/view"
+                 target="_blank" class="text-decoration-none fw-bold">
+                {{ att.original_filename }}
+              </a>
+              <small class="text-muted d-block">
+                {{ att.file_size_display }}
+                · {{ att.uploaded_at.strftime('%Y-%m-%d') }}
+                · {{ att.uploaded_by.display_name if att.uploaded_by else "—" }}
+                {% if att.notes %} · {{ att.notes }}{% endif %}
+              </small>
+            </div>
+          </div>
+          <div class="d-flex gap-2">
+            <a href="/printers/{{ printer.id }}/attachments/{{ att.id }}/view"
+               target="_blank" class="btn btn-sm btn-outline-info" title="View in new tab">
+              <i class="bi bi-eye"></i>
+            </a>
+            <a href="/printers/{{ printer.id }}/attachments/{{ att.id }}/view"
+               download="{{ att.original_filename }}"
+               class="btn btn-sm btn-outline-secondary" title="Download">
+              <i class="bi bi-download"></i>
+            </a>
+            <form method="post"
+                  action="/printers/{{ printer.id }}/attachments/{{ att.id }}/delete"
+                  onsubmit="return confirm('Delete {{ att.original_filename }}?')">
+              <button class="btn btn-sm btn-outline-danger" title="Delete">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="card-body text-center text-muted py-4">
+        <i class="bi bi-paperclip fs-3 d-block mb-2"></i>
+        No attachments yet. Upload service manuals, invoices, or warranty docs.
+      </div>
+      {% endif %}
     </div>
 
     {# ── Repair Records ── #}
@@ -168,14 +226,10 @@
               <td><small>{{ repair.repair_date.strftime('%Y-%m-%d') }}</small></td>
               <td>
                 {{ repair.description }}
-                {% if repair.notes %}
-                  <small class="text-muted d-block">{{ repair.notes }}</small>
-                {% endif %}
+                {% if repair.notes %}<small class="text-muted d-block">{{ repair.notes }}</small>{% endif %}
               </td>
               <td>
-                {% if repair.cost %}
-                  <span class="text-warning">${{ "%.2f"|format(repair.cost) }}</span>
-                {% else %}—{% endif %}
+                {% if repair.cost %}<span class="text-warning">${{ "%.2f"|format(repair.cost) }}</span>{% else %}—{% endif %}
               </td>
               <td><small class="text-muted">{{ repair.document_ref or "—" }}</small></td>
               <td>
@@ -192,6 +246,42 @@
           </tbody>
         </table>
       </div>
+    </div>
+  </div>
+</div>
+
+{# ── Upload Modal ── #}
+<div class="modal fade" id="uploadModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title"><i class="bi bi-upload me-2"></i>Upload Attachment</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/printers/{{ printer.id }}/attachments/upload"
+            enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small">File *</label>
+            <input type="file" name="file" required
+                   class="form-control form-control-sm bg-dark text-white border-secondary"
+                   accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt">
+            <small class="text-muted">PDF, Word, Excel, images supported</small>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small">Notes</label>
+            <input type="text" name="notes"
+                   class="form-control form-control-sm bg-dark text-white border-secondary"
+                   placeholder="e.g. Service manual, Warranty certificate…">
+          </div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">
+            <i class="bi bi-upload me-1"></i> Upload
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 </div>
@@ -215,21 +305,18 @@
             </div>
             <div class="col-md-6">
               <label class="form-label small">Date</label>
-              <input type="date" name="repair_date"
-                     value="{{ today }}"
+              <input type="date" name="repair_date" value="{{ today }}"
                      class="form-control form-control-sm bg-dark text-white border-secondary">
             </div>
             <div class="col-md-6">
               <label class="form-label small">Amount Spent</label>
-              <input type="text" name="cost"
-                     class="form-control form-control-sm bg-dark text-white border-secondary"
-                     placeholder="e.g. 150.00">
+              <input type="text" name="cost" placeholder="e.g. 150.00"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
             </div>
             <div class="col-12">
               <label class="form-label small">Document Reference</label>
-              <input type="text" name="document_ref"
-                     class="form-control form-control-sm bg-dark text-white border-secondary"
-                     placeholder="Invoice number, filename, ticket ref…">
+              <input type="text" name="document_ref" placeholder="Invoice number, ticket ref…"
+                     class="form-control form-control-sm bg-dark text-white border-secondary">
             </div>
             <div class="col-12">
               <label class="form-label small">Notes</label>
