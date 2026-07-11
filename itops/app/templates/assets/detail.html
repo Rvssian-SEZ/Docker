@@ -10,17 +10,65 @@
     <h4 class="mb-0 mt-1"><i class="bi bi-pc-display me-2"></i>{{ asset.name }}</h4>
     <small class="text-muted">
       {{ asset.asset_tag or "No tag" }} · {{ asset.category.value if asset.category else "Uncategorised" }}
-      {% if asset.age_display %}
-        · <span class="text-info">{{ asset.age_display }} old</span>
-      {% endif %}
+      {% if asset.age_display %} · <span class="text-info">{{ asset.age_display }} old</span>{% endif %}
     </small>
   </div>
   <span class="badge badge-{{ asset.status.value }} fs-6">{{ asset.status.value }}</span>
 </div>
 
 <div class="row g-4">
-  {# ── Edit Form ── #}
+
+  {# ── Left column: photo + edit form ── #}
   <div class="col-md-5">
+
+    {# Photo panel #}
+    <div class="card bg-dark border-secondary mb-4">
+      <div class="card-body p-0">
+        {% set has_own_photo = asset.photo_filename %}
+        {% set has_model_photo = model_photo_asset %}
+
+        {% if has_own_photo or has_model_photo %}
+          <div class="position-relative">
+            <img src="/assets/{{ asset.id }}/photo"
+                 class="w-100 rounded-top"
+                 style="max-height: 260px; object-fit: cover;"
+                 alt="{{ asset.name }}">
+            {% if has_model_photo and not has_own_photo %}
+              <span class="position-absolute bottom-0 start-0 m-2 badge bg-dark bg-opacity-75">
+                <i class="bi bi-share me-1"></i>Shared model photo
+              </span>
+            {% endif %}
+            {% if asset.photo_is_model_photo %}
+              <span class="position-absolute bottom-0 end-0 m-2 badge bg-primary bg-opacity-75">
+                <i class="bi bi-star-fill me-1"></i>Model photo
+              </span>
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="text-center text-muted py-5">
+            <i class="bi bi-image fs-1 d-block mb-2"></i>
+            No photo yet
+          </div>
+        {% endif %}
+      </div>
+      <div class="card-footer border-secondary d-flex gap-2 justify-content-between">
+        <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal"
+                data-bs-target="#uploadPhotoModal">
+          <i class="bi bi-upload me-1"></i>
+          {% if has_own_photo %}Replace Photo{% else %}Upload Photo{% endif %}
+        </button>
+        {% if has_own_photo %}
+        <form method="post" action="/assets/{{ asset.id }}/photo/delete"
+              onsubmit="return confirm('Remove this photo?')">
+          <button class="btn btn-sm btn-outline-danger">
+            <i class="bi bi-trash"></i> Remove
+          </button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Edit form #}
     <div class="card bg-dark border-secondary">
       <div class="card-header border-secondary"><h6 class="mb-0">Asset Details</h6></div>
       <form method="post" action="/assets/{{ asset.id }}/edit">
@@ -101,6 +149,7 @@
 
   {# ── Right column ── #}
   <div class="col-md-7">
+
     {# Assignment & Status #}
     <div class="card bg-dark border-secondary mb-4">
       <div class="card-header border-secondary"><h6 class="mb-0"><i class="bi bi-person-check me-1"></i>Assignment</h6></div>
@@ -160,9 +209,7 @@
           <tbody>
             {% for d in asset.active_inventory %}
             <tr>
-              <td>
-                <a href="/inventory/{{ d.item.id }}" class="text-decoration-none">{{ d.item.name }}</a>
-              </td>
+              <td><a href="/inventory/{{ d.item.id }}" class="text-decoration-none">{{ d.item.name }}</a></td>
               <td><span class="badge bg-secondary">{{ d.item.category_label }}</span></td>
               <td>{{ d.quantity }}</td>
               <td><small>{{ d.deployed_at.strftime('%Y-%m-%d') }}</small></td>
@@ -177,11 +224,53 @@
               </td>
             </tr>
             {% else %}
-            <tr><td colspan="6" class="text-center text-muted py-3">No inventory deployed to this asset.</td></tr>
+            <tr><td colspan="6" class="text-center text-muted py-3">No inventory deployed.</td></tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
+    </div>
+  </div>
+</div>
+
+{# ── Photo Upload Modal ── #}
+<div class="modal fade" id="uploadPhotoModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title"><i class="bi bi-image me-2"></i>Upload Photo</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/assets/{{ asset.id }}/photo/upload"
+            enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small">Photo *</label>
+            <input type="file" name="file" required accept="image/*"
+                   class="form-control form-control-sm bg-dark text-white border-secondary">
+            <small class="text-muted">JPEG, PNG, WebP supported</small>
+          </div>
+          {% if asset.manufacturer and asset.model %}
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="set_model_photo"
+                   value="1" id="setModelPhoto">
+            <label class="form-check-label small" for="setModelPhoto">
+              Set as model photo for all
+              <strong>{{ asset.manufacturer }} {{ asset.model }}</strong> assets
+            </label>
+          </div>
+          <small class="text-muted d-block mt-1">
+            Other assets of the same model will automatically show this photo.
+          </small>
+          {% endif %}
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">
+            <i class="bi bi-upload me-1"></i> Upload
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 </div>

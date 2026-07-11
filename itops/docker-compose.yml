@@ -48,6 +48,7 @@ services:
       # Uncomment for live reload during development:
       # - ./app:/app
       - app_logs:/app/logs
+      - asset_uploads:/app/uploads/assets
       - printer_uploads:/app/uploads/printers
       - ./root_ca.crt:/usr/local/share/ca-certificates/root_ca.crt:ro
 
@@ -73,6 +74,7 @@ services:
 volumes:
   postgres_data:
   pgadmin_data:
+  asset_uploads:
   printer_uploads:
   app_logs:
 

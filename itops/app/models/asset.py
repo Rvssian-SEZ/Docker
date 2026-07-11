@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime, date
 
-from sqlalchemy import Column, Date, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from core.database import Base
@@ -48,6 +48,10 @@ class ITAsset(Base):
     supplier = Column(String, default="")
     notes = Column(Text, default="")
 
+    # Photo
+    photo_filename = Column(String, nullable=True)
+    photo_is_model_photo = Column(Boolean, default=False, nullable=False)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -74,7 +78,6 @@ class ITAsset(Base):
 
     @property
     def age_display(self):
-        """Human-readable age from purchase_date."""
         ref = self.purchase_date or (self.created_at.date() if self.created_at else None)
         if not ref:
             return None
@@ -89,5 +92,13 @@ class ITAsset(Base):
 
     @property
     def active_inventory(self):
-        """Returns currently deployed (not returned) inventory items."""
-        return [d for d in self.inventory_deployments if d.returned_at is None]
+        return [d for d in self.inventory_deployments if d.returned_at is None and not d.is_retired]
+
+    @property
+    def model_key(self):
+        """Key used to match assets of the same model."""
+        make = (self.manufacturer or "").strip().lower()
+        model = (self.model or "").strip().lower()
+        if make and model:
+            return f"{make}|{model}"
+        return None
