@@ -4,13 +4,46 @@
 {% block content %}
 <div class="page-header">
   <h4 class="mb-0"><i class="bi bi-people me-2"></i>Users</h4>
-  <small class="text-muted">Synced from Authentik — edit extended details below</small>
+  <div class="d-flex align-items-center gap-3">
+    {# ── Sync status ── #}
+    <div class="text-end">
+      {% if sync_state.last_sync %}
+        <small class="text-muted d-block">
+          Last sync: {{ sync_state.last_sync.strftime('%Y-%m-%d %H:%M') }} UTC
+          · {{ sync_state.last_count }} users
+        </small>
+      {% endif %}
+      {% if sync_state.last_error %}
+        <small class="text-danger d-block">
+          <i class="bi bi-exclamation-triangle"></i> {{ sync_state.last_error }}
+        </small>
+      {% endif %}
+      {% if sync_state.in_progress %}
+        <small class="text-info d-block">
+          <i class="bi bi-arrow-repeat"></i> Sync in progress…
+        </small>
+      {% endif %}
+    </div>
+    <form method="post" action="/users/sync">
+      <button type="submit" class="btn btn-outline-info btn-sm"
+              {% if sync_state.in_progress %}disabled{% endif %}>
+        <i class="bi bi-arrow-repeat"></i>
+        {% if sync_state.in_progress %}Syncing…{% else %}Sync from Authentik{% endif %}
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="alert alert-secondary py-2 small mb-3">
+  <i class="bi bi-info-circle me-1"></i>
+  Core identity (name, email) syncs from Authentik automatically.
+  Extended fields (phone, department, title, notes) are edited locally and never overwritten.
 </div>
 
 <form method="get" class="row g-2 mb-3">
   <div class="col-md-4">
     <input type="text" name="search" class="form-control form-control-sm"
-           placeholder="Name, username, email, department…" value="{{ search }}">
+           placeholder="Name, username, email, department, title…" value="{{ search }}">
   </div>
   <div class="col-auto">
     <button type="submit" class="btn btn-secondary btn-sm">Search</button>
@@ -30,8 +63,13 @@
       </thead>
       <tbody>
         {% for user in users %}
-        <tr>
-          <td><strong>{{ user.display_name }}</strong></td>
+        <tr class="{% if not user.is_active %}opacity-50{% endif %}">
+          <td>
+            <strong>{{ user.display_name }}</strong>
+            {% if not user.is_active %}
+              <span class="badge bg-secondary ms-1">Inactive</span>
+            {% endif %}
+          </td>
           <td><code class="text-secondary">{{ user.username }}</code></td>
           <td><small>{{ user.email }}</small></td>
           <td>{{ user.department or "—" }}</td>

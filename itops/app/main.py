@@ -1,3 +1,5 @@
+import asyncio
+from contextlib import asynccontextmanager
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Request
@@ -6,14 +8,25 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from core.config import settings
 from core.deps import RequiresLoginException
+from core.sync import sync_loop
 import models  # noqa: F401
 from routers import auth, users, assets, equipment, contracts, printers
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Start background tasks on startup."""
+    if settings.AUTHENTIK_API_TOKEN:
+        asyncio.create_task(sync_loop(interval_seconds=3600))
+    yield
+
 
 app = FastAPI(
     title="IT Ops Portal",
     version="1.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -25,10 +38,12 @@ app.add_middleware(
     same_site="lax",
 )
 
+
 @app.exception_handler(RequiresLoginException)
 def redirect_to_login(request: Request, exc: RequiresLoginException):
     params = urlencode({"next": exc.next_url})
     return RedirectResponse(f"/auth/login?{params}", status_code=302)
+
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(users.router, prefix="/users", tags=["users"])
@@ -37,9 +52,11 @@ app.include_router(equipment.router, prefix="/equipment", tags=["equipment"])
 app.include_router(contracts.router, prefix="/contracts", tags=["contracts"])
 app.include_router(printers.router, prefix="/printers", tags=["printers"])
 
+
 @app.get("/")
 def root():
     return RedirectResponse("/assets", status_code=302)
+
 
 @app.get("/health")
 def health():

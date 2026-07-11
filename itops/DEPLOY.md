@@ -100,3 +100,40 @@ App crash-looping
 
 ## Source
 https://github.com/Rvssian-SEZ/Docker/tree/main/itops
+
+
+---
+
+## Authentik User Sync
+
+The app can sync all Authentik users into the local DB automatically.
+Users appear in the directory without needing to log in first.
+
+### 1. Create an API token in Authentik
+
+1. Admin > Directory > Tokens and App passwords
+2. Create > Token
+   - Identifier: itops-sync
+   - User: your admin user
+   - Intent: API Token
+3. Copy the token key
+
+### 2. Add to .env
+
+    AUTHENTIK_API_TOKEN=your_token_here
+
+### 3. Add to docker-compose.yml environment section
+
+    AUTHENTIK_API_TOKEN: ${AUTHENTIK_API_TOKEN:-}
+
+### 4. Restart
+
+    docker compose down && docker compose up -d
+
+### Sync behaviour
+
+- Syncs automatically every hour in the background
+- Manual sync button available on the Users page
+- Syncs: username, email, full name, groups, is_active status
+- Also maps Authentik LDAP attributes: phone, department, title (if populated)
+- Locally edited fields are never overwritten if already set

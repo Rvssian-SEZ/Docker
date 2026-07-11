@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     AUTHENTIK_CLIENT_ID: str
     AUTHENTIK_CLIENT_SECRET: str
 
+    # Authentik API (for user sync)
+    # Create under Admin > Directory > Tokens & App passwords
+    AUTHENTIK_API_TOKEN: str = ""
+
     @property
     def authentik_authorize_url(self) -> str:
         return f"{self.AUTHENTIK_BASE_URL}/application/o/authorize/"
