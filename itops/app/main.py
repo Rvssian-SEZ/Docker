@@ -10,12 +10,11 @@ from core.config import settings
 from core.deps import RequiresLoginException
 from core.sync import sync_loop
 import models  # noqa: F401
-from routers import auth, users, assets, equipment, contracts, printers
+from routers import auth, users, assets, equipment, contracts, printers, inventory
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Start background tasks on startup."""
     if settings.AUTHENTIK_API_TOKEN:
         asyncio.create_task(sync_loop(interval_seconds=3600))
     yield
@@ -51,6 +50,7 @@ app.include_router(assets.router, prefix="/assets", tags=["assets"])
 app.include_router(equipment.router, prefix="/equipment", tags=["equipment"])
 app.include_router(contracts.router, prefix="/contracts", tags=["contracts"])
 app.include_router(printers.router, prefix="/printers", tags=["printers"])
+app.include_router(inventory.router, prefix="/inventory", tags=["inventory"])
 
 
 @app.get("/")

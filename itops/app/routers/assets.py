@@ -164,7 +164,7 @@ def edit_asset(
     asset.supplier = supplier
     asset.notes = notes
     db.commit()
-    return RedirectResponse("/assets", status_code=302)
+    return RedirectResponse(f"/assets/{asset_id}", status_code=302)
 
 
 @router.post("/{asset_id}/assign")
@@ -194,12 +194,31 @@ def update_status(
     current_user: User = Depends(require_user),
     status: str = Form(...),
 ):
+    from datetime import datetime
+    from models.inventory import InventoryDeployment
+
     asset = db.query(ITAsset).filter(ITAsset.id == asset_id).first()
     if not asset:
         return HTMLResponse("Asset not found", status_code=404)
-    asset.status = AssetStatus(status)
-    if asset.status != AssetStatus.assigned:
+
+    new_status = AssetStatus(status)
+    asset.status = new_status
+
+    if new_status != AssetStatus.assigned:
         asset.assigned_user_id = None
+
+    # Auto-retire active inventory deployments when asset is lost or retired
+    if new_status in (AssetStatus.retired, AssetStatus.lost):
+        active_deployments = db.query(InventoryDeployment).filter(
+            InventoryDeployment.asset_id == asset_id,
+            InventoryDeployment.returned_at == None,  # noqa: E711
+            InventoryDeployment.is_retired == False,  # noqa: E712
+        ).all()
+        for d in active_deployments:
+            d.is_retired = True
+            d.retired_at = datetime.utcnow()
+            d.notes = (d.notes + f"\nAuto-retired: asset marked as {new_status.value}").strip()
+
     db.commit()
     return RedirectResponse("/assets", status_code=302)
 
