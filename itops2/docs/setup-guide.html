@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ITOps v2 — Setup &amp; Deployment Guide</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#e6edf3;
+          --muted:#8b949e; --accent:#58a6ff; --ok:#3fb950; --warn:#d29922; --bad:#f85149; }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,Segoe UI,Roboto,sans-serif;
+         max-width:960px; margin:0 auto; padding:2rem 1.5rem; line-height:1.6; }
+  h1 { border-bottom:2px solid var(--accent); padding-bottom:.4rem; }
+  h2 { color:var(--accent); margin-top:2.5rem; border-bottom:1px solid var(--border); padding-bottom:.3rem; }
+  code, pre { background:var(--panel); border:1px solid var(--border); border-radius:6px; }
+  code { padding:.1rem .35rem; }
+  pre { padding:1rem; overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; margin:1rem 0; }
+  th,td { border:1px solid var(--border); padding:.5rem .75rem; text-align:left; }
+  th { background:var(--panel); }
+  .callout { border-left:4px solid var(--accent); background:var(--panel);
+             padding:.75rem 1rem; margin:1rem 0; border-radius:0 6px 6px 0; }
+  .callout.warn { border-color:var(--warn); }
+  .callout.danger { border-color:var(--bad); }
+  .step { display:inline-block; background:var(--accent); color:#0d1117; font-weight:700;
+          border-radius:50%; width:1.7rem; height:1.7rem; text-align:center; margin-right:.5rem; }
+  .todo { color:var(--warn); font-style:italic; }
+  .muted { color:var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>ITOps v2 — Setup &amp; Deployment Guide</h1>
+<p class="muted">Version 2.0.0-alpha.1 &middot; This guide is self-contained: a deployment at a client site should succeed using only this document.</p>
+
+<h2>1. Overview</h2>
+<p>ITOps v2 is a self-hosted IT asset management portal (assets, checkout/checkin, printers,
+licenses &amp; contracts, inventory) with multi-currency support, configurable role permissions,
+and three authentication options (OIDC, LDAP/LDAPS, local accounts). It ships as a Docker
+Compose stack: the application container and a dedicated PostgreSQL 16 container.</p>
+
+<h2>2. Prerequisites</h2>
+<table>
+<tr><th>Requirement</th><th>Notes</th></tr>
+<tr><td>Docker Engine + Compose v2</td><td>Any recent Linux host</td></tr>
+<tr><td>Free TCP port</td><td>Default <code>8004</code> (changeable in <code>docker-compose.yml</code>)</td></tr>
+<tr><td>Persistent storage</td><td><code>/opt/appdata/itops2/</code> — database data + attachments</td></tr>
+<tr><td>Reverse proxy (optional)</td><td>Any (Nginx Proxy Manager, Traefik…) for TLS termination</td></tr>
+<tr><td>SMTP relay (optional)</td><td>For notifications — unauthenticated relay or O365/Gmail</td></tr>
+</table>
+
+<h2>3. Installation</h2>
+<p><span class="step">1</span>Create the data directories:</p>
+<pre>mkdir -p /opt/appdata/itops2/{pgdata,attachments,certs}</pre>
+
+<p><span class="step">2</span>Place <code>docker-compose.yml</code> in <code>/opt/appdata/itops2/</code>
+(or clone the repo folder) and copy <code>.env.example</code> to <code>.env</code>.</p>
+
+<p><span class="step">3</span>Edit <code>.env</code>:</p>
+<div class="callout warn"><strong>Do not put inline comments on value lines.</strong>
+Set <code>SECRET_KEY</code> and <code>DB_PASSWORD</code> to long random strings, and write the
+DB password literally into <code>DATABASE_URL</code> as well — variable interpolation does not
+happen inside env files.</div>
+
+<p><span class="step">4</span>Start the stack:</p>
+<pre>docker compose up -d</pre>
+<p>Database migrations run automatically on startup. Verify with:</p>
+<pre>curl http://localhost:8004/healthz</pre>
+
+<h2>4. First login (break-glass admin)</h2>
+<p>On first boot the application creates a local administrator from
+<code>BREAKGLASS_USERNAME</code> / <code>BREAKGLASS_PASSWORD</code>.</p>
+<div class="callout danger">This account is a permanent break-glass account: it always
+authenticates locally, even when OIDC or LDAP is enabled, and cannot be deactivated.
+<strong>Change its password immediately after first login.</strong></div>
+
+<h2>5. Reverse proxy &amp; TLS <span class="todo">(expanded in Phase 2+)</span></h2>
+<p class="muted">Point your reverse proxy at port 8004. For internal PKI (e.g. Step-CA),
+mount the root certificate into <code>/opt/appdata/itops2/certs/</code> and set
+<code>CA_CERT_PATH</code> so outbound HTTPS calls (OIDC provider) are trusted.</p>
+
+<h2>6. Authentication providers <span class="todo">(Phase 3)</span></h2>
+<p class="muted">OIDC (e.g. Authentik) and generic LDAP/LDAPS configuration — Settings → Authentication.</p>
+
+<h2>7. Permissions <span class="todo">(Phase 3)</span></h2>
+<p class="muted">Four fixed roles (Admin, Manager, Technician, Viewer) with a configurable
+permission grid — Settings → Permissions.</p>
+
+<h2>8. Currency &amp; localisation <span class="todo">(Phase 4)</span></h2>
+<p class="muted">Default currency (SCR out of the box), manual dated exchange rates, UK date formats.</p>
+
+<h2>9. Notifications (SMTP) <span class="todo">(Phase 8)</span></h2>
+
+<h2>10. Importing from ITOps v1 <span class="todo">(Phase 9)</span></h2>
+
+<h2>11. Upgrades &amp; backups</h2>
+<pre>docker compose pull && docker compose up -d   # upgrade
+# backup = pg_dump of the itops2 database + /opt/appdata/itops2/attachments</pre>
+
+<h2>Appendix A — Environment variables</h2>
+<table>
+<tr><th>Variable</th><th>Purpose</th></tr>
+<tr><td><code>SECRET_KEY</code></td><td>Session signing key — long random string</td></tr>
+<tr><td><code>DB_PASSWORD</code></td><td>PostgreSQL password (compose + literal in DATABASE_URL)</td></tr>
+<tr><td><code>DATABASE_URL</code></td><td>Async SQLAlchemy URL (postgresql+asyncpg://…)</td></tr>
+<tr><td><code>BREAKGLASS_USERNAME</code> / <code>BREAKGLASS_PASSWORD</code></td><td>Permanent local admin</td></tr>
+<tr><td><code>CA_CERT_PATH</code></td><td>Internal CA root for outbound HTTPS (optional)</td></tr>
+<tr><td><code>DEBUG</code></td><td><code>false</code> in production</td></tr>
+</table>
+
+<p class="muted">Sections marked <span class="todo">(Phase N)</span> are filled in as each build phase completes.</p>
+
+</body>
+</html>

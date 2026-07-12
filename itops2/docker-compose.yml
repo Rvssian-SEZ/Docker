@@ -1,0 +1,46 @@
+# ITOps v2 — docker-test (192.168.110.50), external port 8004
+# Config lives at /opt/appdata/itops2/ per standard layout.
+services:
+  app:
+    build:
+      context: .
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+    image: ghcr.io/rvssian-sez/itops2:latest
+    container_name: itops2
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8004:8000"
+    volumes:
+      - /opt/appdata/itops2/attachments:/data/attachments
+      # Step-CA root for httpx -> Authentik (path referenced by CA_CERT_PATH)
+      - /opt/appdata/itops2/certs:/certs:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - itops_net
+
+  db:
+    image: postgres:16-alpine
+    container_name: itops2-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: itops2
+      POSTGRES_USER: itops2
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+    volumes:
+      - /opt/appdata/itops2/pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U itops2 -d itops2"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - itops_net
+
+networks:
+  itops_net:
+    # Shared with the future Helpdesk v2 / CRM v2 stacks.
+    name: itops2_net

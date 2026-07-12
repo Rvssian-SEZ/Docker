@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}About — {{ app_name }}{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Settings</h1>
+{% include "settings/_tabs.html" %}
+
+<div class="col-lg-6">
+  <table class="table">
+    <tr><th style="width:40%">Application version</th><td>{{ app_ver }}</td></tr>
+    <tr><th>Database schema revision</th><td><code>{{ schema_ver }}</code></td></tr>
+  </table>
+  <p class="text-secondary small">Quote both values when requesting support.</p>
+</div>
+{% endblock %}
