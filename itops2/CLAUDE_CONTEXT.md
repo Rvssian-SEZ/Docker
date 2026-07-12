@@ -79,8 +79,17 @@ search columns, async engine with pooling (already configured in app/core/db.py)
    when unchecked -> compare form.get(key) == "true").
    E2E tested on sqlite+aiosqlite (login, 403s, matrix gating, persistence,
    audit rows).
-3. ⬜ Permission enforcement (dependency + template helpers) + permission grid UI
-   + OIDC + LDAP providers.
+3. 🔶 PARTIAL — done: Permissions grid (Settings tab; per-checkbox HTMX
+   toggle saves, lockout guard: settings.manage locked for Admin), Users
+   page (create local users, inline role/company/active edit via
+   hx-trigger=change, admin password reset modal; deactivate-only — never
+   hard delete, audit rows reference users; break-glass: role locked,
+   cannot deactivate, password CAN change), /profile self password change
+   (min 10 chars). Permission checks hit DB per request — matrix edits
+   apply instantly. E2E: 24 checks green.
+   REMAINING (do in Claude Code against live Authentik/LDAP): OIDC provider,
+   generic LDAP/LDAPS (bind + create-on-first-login, group→role map from
+   auth.ldap.group_role_map JSON setting), Settings→Authentication tab.
 4. ⬜ Core lookups: companies, locations, manufacturers, categories, models,
    status labels + currency/rate tables.
 5. ⬜ Assets + checkout/checkin + audit wiring + attachments.

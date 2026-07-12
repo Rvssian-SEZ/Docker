@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Profile — {{ app_name }}{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">My profile</h1>
+<div class="col-lg-5">
+  <table class="table mb-4">
+    <tr><th style="width:35%">Username</th><td>{{ user.username }}</td></tr>
+    <tr><th>Role</th><td class="text-capitalize">{{ user.role }}</td></tr>
+  </table>
+
+  {% if is_local %}
+  <h2 class="h5 mb-3">Change password</h2>
+  <form hx-post="/profile/password" hx-target="#toast-area" hx-swap="innerHTML">
+    <div class="mb-3"><label class="form-label">Current password</label>
+      <input name="current_password" type="password" class="form-control" required></div>
+    <div class="mb-3"><label class="form-label">New password <span class="text-secondary">(min 10 chars)</span></label>
+      <input name="new_password" type="password" class="form-control" minlength="10" required></div>
+    <div class="mb-3"><label class="form-label">Confirm new password</label>
+      <input name="confirm_password" type="password" class="form-control" required></div>
+    <button class="btn btn-primary">Change password</button>
+  </form>
+  {% else %}
+  <div class="alert alert-info">Your account authenticates externally; manage your password in your identity provider.</div>
+  {% endif %}
+</div>
+{% endblock %}

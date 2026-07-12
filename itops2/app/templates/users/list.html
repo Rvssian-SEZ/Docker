@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Users — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">Users</h1>
+  {% if user.can('users.manage') %}
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createUser">
+    <i class="bi bi-person-plus me-1"></i>New user
+  </button>
+  {% endif %}
+</div>
+
+<table class="table table-hover align-middle">
+  <thead><tr>
+    <th>Username</th><th>Display name</th><th>Email</th><th>Auth</th><th>Role</th>
+    {% if multi_company %}<th>Company</th>{% endif %}
+    <th>Active</th>
+    {% if user.can('users.manage') %}<th></th>{% endif %}
+  </tr></thead>
+  <tbody>
+  {% for u in users %}
+    <tr>
+      <td>
+        {{ u.username }}
+        {% if u.is_breakglass %}<span class="badge text-bg-warning ms-1" title="Permanent local admin">break-glass</span>{% endif %}
+      </td>
+      <td>{{ u.display_name or '—' }}</td>
+      <td>{{ u.email or '—' }}</td>
+      <td><span class="badge text-bg-secondary">{{ u.auth_source.value }}</span></td>
+      {% if user.can('users.manage') %}
+      <td colspan="{{ 3 if multi_company else 2 }}">
+        <form hx-post="/users/{{ u.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+              hx-trigger="change" class="d-flex gap-2 align-items-center">
+          <select name="role_id" class="form-select form-select-sm" style="width:auto"
+                  {{ 'disabled' if u.is_breakglass }}>
+            {% for r in roles %}
+            <option value="{{ r.id }}" {{ 'selected' if r.id == u.role_id }} class="text-capitalize">{{ r.name.value }}</option>
+            {% endfor %}
+          </select>
+          {% if u.is_breakglass %}<input type="hidden" name="role_id" value="{{ u.role_id }}">{% endif %}
+          {% if multi_company %}
+          <select name="company_id" class="form-select form-select-sm" style="width:auto">
+            <option value="">— no company —</option>
+            {% for c in companies %}
+            <option value="{{ c.id }}" {{ 'selected' if c.id == u.company_id }}>{{ c.name }}</option>
+            {% endfor %}
+          </select>
+          {% endif %}
+          <div class="form-check form-switch mb-0">
+            <input class="form-check-input" type="checkbox" name="is_active" value="true"
+                   {{ 'checked' if u.is_active }} {{ 'disabled' if u.is_breakglass }}>
+            {% if u.is_breakglass %}<input type="hidden" name="is_active" value="true">{% endif %}
+          </div>
+        </form>
+      </td>
+      <td>
+        {% if u.auth_source.value == 'local' %}
+        <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal"
+                data-bs-target="#resetPw" data-userid="{{ u.id }}" data-username="{{ u.username }}">
+          <i class="bi bi-key"></i>
+        </button>
+        {% endif %}
+      </td>
+      {% else %}
+      <td class="text-capitalize">{{ u.role.name.value }}</td>
+      {% if multi_company %}<td>{{ u.company.name if u.company else '—' }}</td>{% endif %}
+      <td>{{ '✓' if u.is_active else '✗' }}</td>
+      {% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if user.can('users.manage') %}
+<!-- Create user modal -->
+<div class="modal fade" id="createUser" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form hx-post="/users/create" hx-target="#toast-area" hx-swap="innerHTML">
+      <div class="modal-header"><h5 class="modal-title">New local user</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-3"><label class="form-label">Username</label>
+          <input name="username" class="form-control" required></div>
+        <div class="mb-3"><label class="form-label">Display name</label>
+          <input name="display_name" class="form-control"></div>
+        <div class="mb-3"><label class="form-label">Email</label>
+          <input name="email" type="email" class="form-control"></div>
+        <div class="mb-3"><label class="form-label">Password <span class="text-secondary">(min 10 chars)</span></label>
+          <input name="password" type="password" class="form-control" minlength="10" required></div>
+        <div class="mb-3"><label class="form-label">Role</label>
+          <select name="role_id" class="form-select">
+            {% for r in roles %}<option value="{{ r.id }}" class="text-capitalize">{{ r.name.value }}</option>{% endfor %}
+          </select></div>
+        {% if multi_company %}
+        <div class="mb-3"><label class="form-label">Company</label>
+          <select name="company_id" class="form-select">
+            <option value="">— no company —</option>
+            {% for c in companies %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+          </select></div>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary">Create</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+
+<!-- Reset password modal -->
+<div class="modal fade" id="resetPw" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form id="resetPwForm" hx-target="#toast-area" hx-swap="innerHTML">
+      <div class="modal-header"><h5 class="modal-title">Reset password for <span id="resetPwUser"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input name="new_password" type="password" class="form-control"
+               placeholder="New password (min 10 chars)" minlength="10" required>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" data-bs-dismiss="modal">Reset</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+<script>
+document.getElementById('resetPw')?.addEventListener('show.bs.modal', e => {
+  const btn = e.relatedTarget;
+  document.getElementById('resetPwUser').textContent = btn.dataset.username;
+  const form = document.getElementById('resetPwForm');
+  form.setAttribute('hx-post', `/users/${btn.dataset.userid}/reset-password`);
+  htmx.process(form);
+});
+</script>
+{% endif %}
+{% endblock %}
