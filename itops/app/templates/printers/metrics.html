@@ -8,169 +8,191 @@
       <i class="bi bi-arrow-left"></i> Back to Printers
     </a>
     <h4 class="mb-0 mt-1"><i class="bi bi-bar-chart me-2"></i>Printer Spend Metrics</h4>
-    <small class="text-muted">All printers combined — purchases and repairs by year · Totals show numeric values only</small>
+    <small class="text-muted">All printers combined · grouped by currency · no conversion applied</small>
   </div>
 </div>
 
-{# ── All-time summary cards ── #}
+{# ── Summary cards ── #}
 <div class="row g-3 mb-4">
-  <div class="col-md-3">
+  <div class="col-md-2">
     <div class="card bg-dark border-secondary text-center p-3">
       <div class="text-muted small">Total Printers</div>
       <div class="fs-3 fw-bold text-white">{{ total_printers }}</div>
     </div>
   </div>
-  <div class="col-md-3">
+  <div class="col-md-2">
     <div class="card bg-dark border-secondary text-center p-3">
-      <div class="text-muted small">Total Purchase Spend</div>
-      <div class="fs-3 fw-bold text-info">{{ "%.2f"|format(total_purchase) }}</div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="card bg-dark border-secondary text-center p-3">
-      <div class="text-muted small">Total Repair Spend</div>
-      <div class="fs-3 fw-bold text-warning">{{ "%.2f"|format(total_repairs) }}</div>
-      <small class="text-muted">{{ total_repair_records }} repair(s)</small>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="card bg-dark border-secondary text-center p-3">
-      <div class="text-muted small">All-Time Total Spend</div>
-      <div class="fs-3 fw-bold text-danger">{{ "%.2f"|format(total_combined) }}</div>
+      <div class="text-muted small">Total Repairs</div>
+      <div class="fs-3 fw-bold text-white">{{ total_repair_records }}</div>
     </div>
   </div>
 </div>
 
-{% if yearly %}
+{# ── Per-currency breakdown ── #}
+{% if currency_breakdown %}
+<div class="row g-3 mb-4">
+  {% for c in currency_breakdown %}
+  <div class="col-md-4">
+    <div class="card bg-dark border-secondary">
+      <div class="card-header border-secondary">
+        <h6 class="mb-0">
+          <span class="fs-5 me-1">{{ c.symbol }}</span>
+          {{ c.name }} ({{ c.code }})
+        </h6>
+      </div>
+      <div class="card-body">
+        <div class="row g-2 text-center">
+          <div class="col-4">
+            <div class="text-muted small">Purchases</div>
+            <div class="fw-bold text-info">{{ c.symbol }}{{ "%.2f"|format(c.purchase) }}</div>
+          </div>
+          <div class="col-4">
+            <div class="text-muted small">Repairs</div>
+            <div class="fw-bold text-warning">{{ c.symbol }}{{ "%.2f"|format(c.repairs) }}</div>
+          </div>
+          <div class="col-4">
+            <div class="text-muted small">Total</div>
+            <div class="fw-bold text-white">{{ c.symbol }}{{ "%.2f"|format(c.total) }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
 
-{# ── Bar Chart ── #}
+{# ── Yearly breakdown per currency ── #}
+{% if all_years %}
 <div class="card bg-dark border-secondary mb-4">
   <div class="card-header border-secondary">
-    <h6 class="mb-0">Annual Spend Breakdown</h6>
-  </div>
-  <div class="card-body">
-    <canvas id="spendChart" style="max-height: 320px;"></canvas>
-  </div>
-</div>
-
-{# ── Yearly table ── #}
-<div class="card bg-dark border-secondary">
-  <div class="card-header border-secondary">
-    <h6 class="mb-0">Year-by-Year Detail</h6>
+    <h6 class="mb-0">Year-by-Year Breakdown by Currency</h6>
   </div>
   <div class="table-responsive">
     <table class="table table-dark table-sm mb-0">
       <thead class="text-secondary">
         <tr>
           <th>Year</th>
-          <th>Printers Purchased</th>
-          <th>Purchase Spend</th>
-          <th>Repairs</th>
-          <th>Repair Spend</th>
-          <th>Combined</th>
+          {% for c in currency_breakdown %}
+          <th class="text-center" colspan="2">
+            {{ c.symbol }} {{ c.code }}
+          </th>
+          {% endfor %}
+        </tr>
+        <tr class="text-secondary" style="font-size:.75rem;">
+          <th></th>
+          {% for c in currency_breakdown %}
+          <th class="text-info">Purchase</th>
+          <th class="text-warning">Repairs</th>
+          {% endfor %}
         </tr>
       </thead>
       <tbody>
-        {% for row in yearly|sort(attribute='year', reverse=True) %}
+        {% for year in all_years|sort(reverse=True) %}
         <tr>
-          <td><strong>{{ row.year }}</strong></td>
-          <td>
-            {% if row.purchase_count %}
-              <span class="badge bg-secondary">{{ row.purchase_count }}</span>
+          <td><strong>{{ year }}</strong></td>
+          {% for c in currency_breakdown %}
+          {% set yr_data = yearly_by_currency.get(year, {}).get(c.code, {}) %}
+          <td class="text-info">
+            {% if yr_data.get('purchase', 0) > 0 %}
+              {{ c.symbol }}{{ "%.2f"|format(yr_data.purchase) }}
             {% else %}—{% endif %}
           </td>
-          <td>
-            {% if row.purchase_total > 0 %}
-              <span class="text-info">{{ "%.2f"|format(row.purchase_total) }}</span>
+          <td class="text-warning">
+            {% if yr_data.get('repairs', 0) > 0 %}
+              {{ c.symbol }}{{ "%.2f"|format(yr_data.repairs) }}
             {% else %}—{% endif %}
           </td>
-          <td>
-            {% if row.repair_count %}
-              <span class="badge bg-secondary">{{ row.repair_count }}</span>
-            {% else %}—{% endif %}
-          </td>
-          <td>
-            {% if row.repair_total > 0 %}
-              <span class="text-warning">{{ "%.2f"|format(row.repair_total) }}</span>
-            {% else %}—{% endif %}
-          </td>
-          <td>
-            <strong class="text-white">{{ "%.2f"|format(row.combined) }}</strong>
-          </td>
+          {% endfor %}
         </tr>
         {% endfor %}
       </tbody>
       <tfoot class="border-top border-secondary">
         <tr>
           <td><strong>Total</strong></td>
-          <td></td>
-          <td><strong class="text-info">{{ "%.2f"|format(total_purchase) }}</strong></td>
-          <td></td>
-          <td><strong class="text-warning">{{ "%.2f"|format(total_repairs) }}</strong></td>
-          <td><strong class="text-danger">{{ "%.2f"|format(total_combined) }}</strong></td>
+          {% for c in currency_breakdown %}
+          <td><strong class="text-info">{{ c.symbol }}{{ "%.2f"|format(c.purchase) }}</strong></td>
+          <td><strong class="text-warning">{{ c.symbol }}{{ "%.2f"|format(c.repairs) }}</strong></td>
+          {% endfor %}
         </tr>
       </tfoot>
     </table>
   </div>
 </div>
 
+{# ── Bar chart per currency ── #}
+{% for c in currency_breakdown %}
+<div class="card bg-dark border-secondary mb-3">
+  <div class="card-header border-secondary">
+    <h6 class="mb-0">{{ c.symbol }} {{ c.name }} — Annual Spend</h6>
+  </div>
+  <div class="card-body">
+    <canvas id="chart_{{ c.code }}" style="max-height: 220px;"></canvas>
+  </div>
+</div>
+{% endfor %}
+
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-const currency_symbol = '{{ currency.symbol }}';
-const ctx = document.getElementById('spendChart');
-const years = {{ all_years | tojson }};
-const purchases = {{ yearly | map(attribute='purchase_total') | list | tojson }};
-const repairs = {{ yearly | map(attribute='repair_total') | list | tojson }};
+const yearlyData = {{ yearly_by_currency | tojson }};
+const allYears = {{ all_years | tojson }};
 
-new Chart(ctx, {
-  type: 'bar',
-  data: {
-    labels: years,
-    datasets: [
-      {
-        label: 'Purchase Spend',
-        data: purchases,
-        backgroundColor: 'rgba(13, 202, 240, 0.7)',
-        borderColor: 'rgba(13, 202, 240, 1)',
-        borderWidth: 1,
+{% for c in currency_breakdown %}
+(function() {
+  const code = "{{ c.code }}";
+  const symbol = "{{ c.symbol }}";
+  const purchases = allYears.map(y => (yearlyData[y] && yearlyData[y][code]) ? yearlyData[y][code].purchase : 0);
+  const repairs = allYears.map(y => (yearlyData[y] && yearlyData[y][code]) ? yearlyData[y][code].repairs : 0);
+  new Chart(document.getElementById('chart_' + code), {
+    type: 'bar',
+    data: {
+      labels: allYears,
+      datasets: [
+        {
+          label: 'Purchase Spend',
+          data: purchases,
+          backgroundColor: 'rgba(13, 202, 240, 0.7)',
+          borderColor: 'rgba(13, 202, 240, 1)',
+          borderWidth: 1,
+        },
+        {
+          label: 'Repair Spend',
+          data: repairs,
+          backgroundColor: 'rgba(255, 193, 7, 0.7)',
+          borderColor: 'rgba(255, 193, 7, 1)',
+          borderWidth: 1,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { labels: { color: '#adb5bd' } },
+        tooltip: {
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${symbol}${ctx.parsed.y.toFixed(2)}`
+          }
+        }
       },
-      {
-        label: 'Repair Spend',
-        data: repairs,
-        backgroundColor: 'rgba(255, 193, 7, 0.7)',
-        borderColor: 'rgba(255, 193, 7, 1)',
-        borderWidth: 1,
-      }
-    ]
-  },
-  options: {
-    responsive: true,
-    plugins: {
-      legend: { labels: { color: '#adb5bd' } },
-      tooltip: {
-        callbacks: {
-          label: ctx => `${ctx.dataset.label}: ${currency_symbol}${ctx.parsed.y.toFixed(2)}`
+      scales: {
+        x: { ticks: { color: '#6c757d' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: {
+          ticks: { color: '#6c757d', callback: val => symbol + val.toLocaleString() },
+          grid: { color: 'rgba(255,255,255,0.05)' }
         }
       }
-    },
-    scales: {
-      x: { ticks: { color: '#6c757d' }, grid: { color: 'rgba(255,255,255,0.05)' } },
-      y: {
-        ticks: {
-          color: '#6c757d',
-          callback: val => currency_symbol + val.toLocaleString()
-        },
-        grid: { color: 'rgba(255,255,255,0.05)' }
-      }
     }
-  }
-});
+  });
+})();
+{% endfor %}
 </script>
+
+{% endif %}
 
 {% else %}
 <div class="text-center text-muted py-5">
   <i class="bi bi-bar-chart fs-1 d-block mb-3"></i>
-  No spend data yet. Add purchase prices to printers and log repair costs to see metrics here.
+  No spend data yet. Add purchase prices and repair costs to printers to see metrics here.
+  <small class="d-block mt-2">Use formats like: <code>1000 SCR</code>, <code>500 USD</code>, <code>£200</code></small>
 </div>
 {% endif %}
 

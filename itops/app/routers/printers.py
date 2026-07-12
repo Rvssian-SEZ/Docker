@@ -311,70 +311,97 @@ def printer_metrics(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    from sqlalchemy import extract, func
-    from models.printer import PrinterRepair
+    from models.printer import PrinterRepair, _parse_amount, _detect_currency
 
-    # Purchase spend by year
+    CURRENCY_INFO = {
+        "SCR": {"symbol": "₨", "name": "Seychelles Rupee"},
+        "USD": {"symbol": "$", "name": "US Dollar"},
+        "GBP": {"symbol": "£", "name": "Pound Sterling"},
+    }
+
+    printers = db.query(Printer).all()
+    all_repairs = db.query(PrinterRepair).all()
+
+    # ── Per-currency totals ──────────────────────────────────────────────────
+    currency_totals = {}
+    for p in printers:
+        if p.purchase_price:
+            cur = _detect_currency(p.purchase_price)
+            amt = _parse_amount(p.purchase_price) or 0
+            if cur not in currency_totals:
+                currency_totals[cur] = {"purchase": 0, "repairs": 0}
+            currency_totals[cur]["purchase"] += amt
+
+    for r in all_repairs:
+        if r.cost:
+            cur = _detect_currency(r.cost)
+            amt = _parse_amount(r.cost) or 0
+            if cur not in currency_totals:
+                currency_totals[cur] = {"purchase": 0, "repairs": 0}
+            currency_totals[cur]["repairs"] += amt
+
+    # Build display list in consistent order
+    currency_breakdown = []
+    for code in ["SCR", "USD", "GBP"]:
+        if code in currency_totals:
+            info = CURRENCY_INFO.get(code, {"symbol": code, "name": code})
+            totals = currency_totals[code]
+            currency_breakdown.append({
+                "code": code,
+                "symbol": info["symbol"],
+                "name": info["name"],
+                "purchase": totals["purchase"],
+                "repairs": totals["repairs"],
+                "total": totals["purchase"] + totals["repairs"],
+            })
+
+    # ── Yearly breakdown (all currencies combined numerically) ──────────────
+    from sqlalchemy import extract, func
     purchase_rows = db.query(
         extract("year", Printer.purchase_date).label("year"),
-        func.sum(Printer.purchase_price).label("total"),
         func.count(Printer.id).label("count"),
     ).filter(
         Printer.purchase_date != None,  # noqa: E711
-        Printer.purchase_price != None,  # noqa: E711
     ).group_by("year").order_by("year").all()
 
-    # Repair spend by year
     repair_rows = db.query(
         extract("year", PrinterRepair.repair_date).label("year"),
-        func.sum(PrinterRepair.cost).label("total"),
         func.count(PrinterRepair.id).label("count"),
-    ).filter(
-        PrinterRepair.cost != None,  # noqa: E711
     ).group_by("year").order_by("year").all()
 
-    # All-time totals
-    total_purchase = db.query(func.sum(Printer.purchase_price)).filter(
-        Printer.purchase_price != None  # noqa: E711
-    ).scalar() or 0
-
-    total_repairs = db.query(func.sum(PrinterRepair.cost)).filter(
-        PrinterRepair.cost != None  # noqa: E711
-    ).scalar() or 0
-
-    total_printers = db.query(func.count(Printer.id)).scalar() or 0
-    total_repair_records = db.query(func.count(PrinterRepair.id)).scalar() or 0
-
-    # Build unified year set
     all_years = sorted(set(
         [int(r.year) for r in purchase_rows] +
         [int(r.year) for r in repair_rows]
     ))
 
-    purchase_by_year = {int(r.year): {"total": float(r.total or 0), "count": r.count} for r in purchase_rows}
-    repair_by_year = {int(r.year): {"total": float(r.total or 0), "count": r.count} for r in repair_rows}
+    # Per-year, per-currency breakdown
+    yearly_by_currency = {}  # {year: {currency: {purchase, repairs}}}
+    for p in printers:
+        if p.purchase_date and p.purchase_price:
+            year = p.purchase_date.year
+            cur = _detect_currency(p.purchase_price)
+            amt = _parse_amount(p.purchase_price) or 0
+            yearly_by_currency.setdefault(year, {}).setdefault(cur, {"purchase": 0, "repairs": 0})
+            yearly_by_currency[year][cur]["purchase"] += amt
 
-    yearly = []
-    for year in all_years:
-        p = purchase_by_year.get(year, {"total": 0, "count": 0})
-        r = repair_by_year.get(year, {"total": 0, "count": 0})
-        yearly.append({
-            "year": year,
-            "purchase_total": p["total"],
-            "purchase_count": p["count"],
-            "repair_total": r["total"],
-            "repair_count": r["count"],
-            "combined": p["total"] + r["total"],
-        })
+    for r in all_repairs:
+        year = r.repair_date.year
+        cur = _detect_currency(r.cost) if r.cost else "SCR"
+        amt = _parse_amount(r.cost) or 0
+        yearly_by_currency.setdefault(year, {}).setdefault(cur, {"purchase": 0, "repairs": 0})
+        yearly_by_currency[year][cur]["repairs"] += amt
+
+    # All-time counts
+    total_printers = db.query(func.count(Printer.id)).scalar() or 0
+    total_repair_records = len(all_repairs)
 
     return templates.TemplateResponse(request, "printers/metrics.html", {
-        "yearly": yearly,
+        "currency_breakdown": currency_breakdown,
+        "yearly_by_currency": yearly_by_currency,
         "all_years": all_years,
-        "total_purchase": float(total_purchase),
-        "total_repairs": float(total_repairs),
-        "total_combined": float(total_purchase) + float(total_repairs),
         "total_printers": total_printers,
         "total_repair_records": total_repair_records,
+        "currency_info": CURRENCY_INFO,
         "current_user": current_user,
         "currency": get_currency(request),
         "currencies": all_currencies(),

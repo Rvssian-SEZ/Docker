@@ -15,6 +15,19 @@ class PrinterStatus(str, enum.Enum):
     retired = "retired"
 
 
+
+def _detect_currency(value) -> str:
+    """Detect currency from a free-text amount. Defaults to SCR."""
+    if not value:
+        return "SCR"
+    v = str(value).upper()
+    if any(x in v for x in ["GBP", "£", "POUND"]):
+        return "GBP"
+    if any(x in v for x in ["USD", "$"]):
+        return "USD"
+    # SCR, Rs, ₨, or no currency marker → SCR
+    return "SCR"
+
 def _parse_amount(value) -> float | None:
     """Extract a numeric value from free-text like '1000 SCR', '$500', '£200'."""
     if not value:
@@ -65,6 +78,28 @@ class Printer(Base):
     @property
     def tco(self) -> float:
         return (_parse_amount(self.purchase_price) or 0) + self.total_repair_cost
+
+
+    @property
+    def repair_costs_by_currency(self) -> dict:
+        """Returns {currency_code: total} for all repair costs."""
+        totals = {}
+        symbols = {"SCR": "₨", "USD": "$", "GBP": "£"}
+        for r in self.repairs:
+            if r.cost:
+                cur = _detect_currency(r.cost)
+                amt = _parse_amount(r.cost) or 0
+                totals[cur] = totals.get(cur, 0) + amt
+        return {k: {"total": v, "symbol": symbols.get(k, k)} for k, v in totals.items()}
+
+    @property
+    def purchase_currency(self) -> dict:
+        """Returns {symbol, code} for the purchase price currency."""
+        symbols = {"SCR": "₨", "USD": "$", "GBP": "£"}
+        if not self.purchase_price:
+            return {"symbol": "₨", "code": "SCR"}
+        code = _detect_currency(self.purchase_price)
+        return {"symbol": symbols.get(code, code), "code": code}
 
     @property
     def has_mixed_currencies(self) -> bool:

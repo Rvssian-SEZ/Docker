@@ -118,27 +118,54 @@
     {# ── Cost Summary ── #}
     <div class="row g-3 mb-4">
       <div class="col-4">
-        <div class="card bg-dark border-secondary text-center p-3">
-          <div class="text-muted small">Purchase Price</div>
-          <div class="fs-5 fw-bold text-white">
-            {{ printer.purchase_price or "—" }}
-          </div>
+        <div class="card bg-dark border-secondary p-3 h-100">
+          <div class="text-muted small mb-2">Purchase Price</div>
+          {% if printer.purchase_price %}
+            <div class="fw-bold text-white">
+              {{ printer.purchase_currency.symbol }}{{ printer.purchase_price | replace('SCR','') | replace('USD','') | replace('GBP','') | replace('Rs','') | replace('£','') | replace('$','') | replace('₨','') | trim }}
+            </div>
+            <small class="text-muted">{{ printer.purchase_currency.code }}</small>
+          {% else %}
+            <div class="text-muted">—</div>
+          {% endif %}
         </div>
       </div>
       <div class="col-4">
-        <div class="card bg-dark border-secondary text-center p-3">
-          <div class="text-muted small">Total Repairs</div>
-          <div class="fs-5 fw-bold text-warning">
-            {{ "%.2f"|format(printer.total_repair_cost) }}
-          </div>
+        <div class="card bg-dark border-secondary p-3 h-100">
+          <div class="text-muted small mb-2">Total Repairs</div>
+          {% if printer.repair_costs_by_currency %}
+            {% for code, info in printer.repair_costs_by_currency.items() %}
+              <div class="fw-bold text-warning">{{ info.symbol }}{{ "%.2f"|format(info.total) }}</div>
+              <small class="text-muted">{{ code }}</small>
+            {% endfor %}
+          {% else %}
+            <div class="text-muted">—</div>
+          {% endif %}
         </div>
       </div>
       <div class="col-4">
-        <div class="card bg-dark border-secondary text-center p-3">
-          <div class="text-muted small">Total TCO</div>
-          <div class="fs-5 fw-bold text-info">
-            {% if printer.tco > 0 %}{{ "%.2f"|format(printer.tco) }}{% else %}—{% endif %}
-          </div>
+        <div class="card bg-dark border-secondary p-3 h-100">
+          <div class="text-muted small mb-2">Total TCO</div>
+          {% if printer.has_mixed_currencies %}
+            <span class="badge bg-secondary mb-2">Mixed currencies</span>
+            {% if printer.purchase_price %}
+              <div class="fw-bold text-info">
+                {{ printer.purchase_currency.symbol }}{{ printer.purchase_price | replace('SCR','') | replace('USD','') | replace('GBP','') | replace('Rs','') | replace('£','') | replace('$','') | replace('₨','') | trim }}
+              </div>
+              <small class="text-muted mb-1 d-block">{{ printer.purchase_currency.code }} purchase</small>
+            {% endif %}
+            {% for code, info in printer.repair_costs_by_currency.items() %}
+              <div class="fw-bold text-warning">{{ info.symbol }}{{ "%.2f"|format(info.total) }}</div>
+              <small class="text-muted d-block">{{ code }} repairs</small>
+            {% endfor %}
+          {% elif printer.tco > 0 %}
+            <div class="fw-bold text-info">
+              {{ printer.purchase_currency.symbol }}{{ "%.2f"|format(printer.tco) }}
+            </div>
+            <small class="text-muted">{{ printer.purchase_currency.code }}</small>
+          {% else %}
+            <div class="text-muted">—</div>
+          {% endif %}
         </div>
       </div>
     </div>
