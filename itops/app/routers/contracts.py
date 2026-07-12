@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from core.deps import get_db, require_user
+from core.currency import get_currency, all_currencies
 from models.contract import BillingCycle, Contract, ContractStatus, ContractType
 from models.user import User
 
@@ -36,9 +37,11 @@ def list_contracts(
 
     contracts = query.order_by(Contract.renewal_date.asc().nullslast()).all()
 
+    # Apply status filter after fetching (status is computed)
     if filter_status:
         contracts = [c for c in contracts if c.computed_status.value == filter_status]
 
+    # Counts for alert banner
     expiring = [c for c in contracts if c.computed_status == ContractStatus.expiring_soon]
     expired = [c for c in contracts if c.computed_status == ContractStatus.expired]
 
@@ -58,19 +61,9 @@ def list_contracts(
         "expired_count": len(expired),
         "current_user": current_user,
         "today": date.today().isoformat(),
+        "currency": get_currency(request),
+        "currencies": all_currencies(),
     })
-
-
-def _parse_date(s):
-    return date.fromisoformat(s) if s else None
-
-def _parse_enum(enum_class, value):
-    if not value:
-        return None
-    for member in enum_class:
-        if member.value == value or member.name == value:
-            return member
-    return None
 
 
 @router.post("/new")
@@ -90,17 +83,20 @@ def create_contract(
     owner_id: str = Form(""),
     notes: str = Form(""),
 ):
+    def parse_date(s):
+        return date.fromisoformat(s) if s else None
+
     contract = Contract(
         name=name,
-        contract_type=_parse_enum(ContractType, contract_type),
+        contract_type=contract_type,
         vendor_name=vendor_name,
         vendor_contact_name=vendor_contact_name,
         vendor_contact_email=vendor_contact_email,
         vendor_contact_phone=vendor_contact_phone,
         cost=cost,
-        billing_cycle=_parse_enum(BillingCycle, billing_cycle),
-        start_date=_parse_date(start_date),
-        renewal_date=_parse_date(renewal_date),
+        billing_cycle=billing_cycle or None,
+        start_date=parse_date(start_date),
+        renewal_date=parse_date(renewal_date),
         owner_id=int(owner_id) if owner_id else None,
         notes=notes,
     )
@@ -128,22 +124,25 @@ def edit_contract(
     status: str = Form(""),
     notes: str = Form(""),
 ):
+    def parse_date(s):
+        return date.fromisoformat(s) if s else None
+
     contract = db.query(Contract).filter(Contract.id == contract_id).first()
     if not contract:
         return HTMLResponse("Contract not found", status_code=404)
 
     contract.name = name
-    contract.contract_type = _parse_enum(ContractType, contract_type)
+    contract.contract_type = contract_type
     contract.vendor_name = vendor_name
     contract.vendor_contact_name = vendor_contact_name
     contract.vendor_contact_email = vendor_contact_email
     contract.vendor_contact_phone = vendor_contact_phone
     contract.cost = cost
-    contract.billing_cycle = _parse_enum(BillingCycle, billing_cycle)
-    contract.start_date = _parse_date(start_date)
-    contract.renewal_date = _parse_date(renewal_date)
+    contract.billing_cycle = billing_cycle or None
+    contract.start_date = parse_date(start_date)
+    contract.renewal_date = parse_date(renewal_date)
     contract.owner_id = int(owner_id) if owner_id else None
-    contract.status = _parse_enum(ContractStatus, status) or ContractStatus.active
+    contract.status = status if status else ContractStatus.active
     contract.notes = notes
     db.commit()
     return RedirectResponse("/contracts", status_code=302)

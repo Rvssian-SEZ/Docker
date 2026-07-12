@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from core.deps import get_db, require_user
+from core.currency import get_currency, all_currencies
 from models.inventory import (
     InventoryItem, InventoryDeployment, StockReceipt, InventoryCategory,
     CATEGORY_LABELS, CATEGORY_SHELF_LIFE,
@@ -49,6 +50,7 @@ def list_inventory(
         "category_labels": CATEGORY_LABELS,
         "category_shelf_life": CATEGORY_SHELF_LIFE,
         "current_user": current_user,
+        "currencies": all_currencies(),
     })
 
 
@@ -73,6 +75,7 @@ def item_detail(
         "categories": InventoryCategory,
         "category_labels": CATEGORY_LABELS,
         "current_user": current_user,
+        "currencies": all_currencies(),
     })
 
 

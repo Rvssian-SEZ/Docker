@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from core.deps import get_db, require_user
+from core.currency import get_currency, all_currencies
 from models.asset import AssetCategory, AssetStatus, ITAsset
 from models.user import User
 
@@ -76,6 +77,8 @@ def list_assets(
         "categories": AssetCategory,
         "current_user": current_user,
         "now_date": date.today().isoformat(),
+        "currency": get_currency(request),
+        "currencies": all_currencies(),
     })
 
 
@@ -142,6 +145,8 @@ def asset_detail(
         "categories": AssetCategory,
         "model_photo_asset": model_photo_asset,
         "current_user": current_user,
+        "currency": get_currency(request),
+        "currencies": all_currencies(),
     })
 
 

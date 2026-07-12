@@ -4,8 +4,7 @@
 {% block content %}
 <div class="page-header">
   <h4 class="mb-0"><i class="bi bi-printer me-2"></i>Printers</h4>
-  <a href="/printers/metrics" class="btn btn-outline-info btn-sm"><i class="bi bi-bar-chart me-1"></i>Metrics</a>
-    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addPrinterModal">
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addPrinterModal">
     <i class="bi bi-plus-lg"></i> Add Printer
   </button>
 </div>
@@ -60,12 +59,12 @@
           <td>
             <span class="badge bg-secondary">{{ p.repairs|length }}</span>
             {% if p.total_repair_cost > 0 %}
-              <small class="text-warning ms-1">${{ "%.2f"|format(p.total_repair_cost) }}</small>
+              <small class="text-warning ms-1">{{ "%.2f"|format(p.total_repair_cost) }}</small>
             {% endif %}
           </td>
           <td>
             {% if p.tco > 0 %}
-              <small class="text-info">${{ "%.2f"|format(p.tco) }}</small>
+              <small class="text-info">{{ "%.2f"|format(p.tco) }}</small>
             {% else %}—{% endif %}
           </td>
           <td>

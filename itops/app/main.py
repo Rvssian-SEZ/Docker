@@ -10,7 +10,7 @@ from core.config import settings
 from core.deps import RequiresLoginException
 from core.sync import sync_loop
 import models  # noqa: F401
-from routers import auth, users, assets, equipment, contracts, printers, inventory
+from routers import auth, users, assets, equipment, contracts, printers, inventory, settings as settings_router
 
 
 @asynccontextmanager
@@ -51,6 +51,7 @@ app.include_router(equipment.router, prefix="/equipment", tags=["equipment"])
 app.include_router(contracts.router, prefix="/contracts", tags=["contracts"])
 app.include_router(printers.router, prefix="/printers", tags=["printers"])
 app.include_router(inventory.router, prefix="/inventory", tags=["inventory"])
+app.include_router(settings_router.router, prefix="/settings", tags=["settings"])
 
 
 @app.get("/")

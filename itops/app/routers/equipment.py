@@ -6,6 +6,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from core.deps import get_db, require_user
+from core.currency import get_currency, all_currencies
 from models.equipment import Equipment, EquipmentStatus, LendingRecord
 from models.user import User
 
@@ -40,6 +41,7 @@ def list_equipment(
         "filter_status": status,
         "statuses": EquipmentStatus,
         "current_user": current_user,
+        "currencies": all_currencies(),
     })
 
 
@@ -64,46 +66,6 @@ def create_equipment(
         notes=notes,
     )
     db.add(eq)
-    db.commit()
-    return RedirectResponse("/equipment", status_code=302)
-
-
-@router.post("/{equipment_id}/edit")
-def edit_equipment(
-    equipment_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_user),
-    name: str = Form(...),
-    category: str = Form(""),
-    serial_number: str = Form(""),
-    asset_tag: str = Form(""),
-    location: str = Form(""),
-    notes: str = Form(""),
-):
-    eq = db.query(Equipment).filter(Equipment.id == equipment_id).first()
-    if not eq:
-        return HTMLResponse("Equipment not found", status_code=404)
-    eq.name = name
-    eq.category = category
-    eq.serial_number = serial_number
-    eq.asset_tag = asset_tag or None
-    eq.location = location
-    eq.notes = notes
-    db.commit()
-    return RedirectResponse("/equipment", status_code=302)
-
-
-@router.post("/{equipment_id}/status")
-def update_status(
-    equipment_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_user),
-    status: str = Form(...),
-):
-    eq = db.query(Equipment).filter(Equipment.id == equipment_id).first()
-    if not eq:
-        return HTMLResponse("Equipment not found", status_code=404)
-    eq.status = EquipmentStatus(status)
     db.commit()
     return RedirectResponse("/equipment", status_code=302)
 
@@ -134,6 +96,7 @@ def lending_list(
         "equipment_list": equipment_list,
         "show": show,
         "current_user": current_user,
+        "currencies": all_currencies(),
     })
 
 

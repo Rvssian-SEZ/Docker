@@ -4,6 +4,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from core.deps import get_db, require_user
+from core.currency import get_currency, all_currencies
 from core.sync import sync_users_from_authentik, get_sync_state
 from models.user import User
 
@@ -71,6 +72,7 @@ def user_detail(
     return templates.TemplateResponse(request, "users/detail.html", {
         "user": user,
         "current_user": current_user,
+        "currencies": all_currencies(),
     })
 
 

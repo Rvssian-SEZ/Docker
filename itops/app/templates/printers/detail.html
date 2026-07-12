@@ -121,7 +121,7 @@
         <div class="card bg-dark border-secondary text-center p-3">
           <div class="text-muted small">Purchase Price</div>
           <div class="fs-5 fw-bold text-white">
-            {% if printer.purchase_price %}${{ "%.2f"|format(printer.purchase_price) }}{% else %}—{% endif %}
+            {{ printer.purchase_price or "—" }}
           </div>
         </div>
       </div>
@@ -129,7 +129,7 @@
         <div class="card bg-dark border-secondary text-center p-3">
           <div class="text-muted small">Total Repairs</div>
           <div class="fs-5 fw-bold text-warning">
-            ${{ "%.2f"|format(printer.total_repair_cost) }}
+            {{ "%.2f"|format(printer.total_repair_cost) }}
           </div>
         </div>
       </div>
@@ -137,7 +137,7 @@
         <div class="card bg-dark border-secondary text-center p-3">
           <div class="text-muted small">Total TCO</div>
           <div class="fs-5 fw-bold text-info">
-            {% if printer.tco > 0 %}${{ "%.2f"|format(printer.tco) }}{% else %}—{% endif %}
+            {% if printer.tco > 0 %}{{ "%.2f"|format(printer.tco) }}{% else %}—{% endif %}
           </div>
         </div>
       </div>
@@ -229,7 +229,7 @@
                 {% if repair.notes %}<small class="text-muted d-block">{{ repair.notes }}</small>{% endif %}
               </td>
               <td>
-                {% if repair.cost %}<span class="text-warning">${{ "%.2f"|format(repair.cost) }}</span>{% else %}—{% endif %}
+                {% if repair.cost %}<span class="text-warning">{{ repair.cost }}</span>{% else %}—{% endif %}
               </td>
               <td><small class="text-muted">{{ repair.document_ref or "—" }}</small></td>
               <td>
@@ -310,7 +310,7 @@
             </div>
             <div class="col-md-6">
               <label class="form-label small">Amount Spent</label>
-              <input type="text" name="cost" placeholder="e.g. 150.00"
+              <input type="text" name="cost" placeholder="e.g. 250 SCR, 150 USD"
                      class="form-control form-control-sm bg-dark text-white border-secondary">
             </div>
             <div class="col-12">

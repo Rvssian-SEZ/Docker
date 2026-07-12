@@ -75,7 +75,7 @@
         {% set days = c.days_until_renewal %}
         <tr class="{% if c.computed_status.value == 'expired' %}table-danger{% elif c.computed_status.value == 'expiring_soon' %}table-warning{% endif %}">
           <td><strong>{{ c.name }}</strong></td>
-          <td><small class="text-muted">{{ c.type_label }}</small></td>
+          <td><small class="text-muted">{{ c.contract_type.value }}</small></td>
           <td>
             {{ c.vendor_name or "—" }}
             {% if c.vendor_contact_email %}
@@ -87,7 +87,7 @@
           <td>
             {% if c.cost %}
               <span class="text-success">{{ c.cost }}</span>
-              {% if c.billing_cycle %}<small class="text-muted"> / {{ c.cycle_label }}</small>{% endif %}
+              {% if c.billing_cycle %}<small class="text-muted"> / {{ c.billing_cycle.value }}</small>{% endif %}
             {% else %}—{% endif %}
           </td>
           <td><small>{{ c.billing_cycle.value if c.billing_cycle else "—" }}</small></td>

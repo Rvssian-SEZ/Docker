@@ -39,7 +39,7 @@
       padding: .75rem 1rem; border-top: 1px solid rgba(255,255,255,.07);
       font-size: .8rem; color: #6c757d;
     }
-    .sidebar-footer .username { color: #adb5bd; font-weight: 500; }
+    .sidebar-footer .username { color: #adb5bd; font-weight: 500; margin-bottom: .4rem; }
     .main-content { margin-left: var(--sidebar-width); min-height: 100vh; padding: 1.5rem 2rem; }
     .page-header {
       display: flex; align-items: center; justify-content: space-between;
@@ -56,6 +56,7 @@
     .badge-offline     { background-color: #dc3545; }
     .badge-overdue     { background-color: #dc3545; }
     table { font-size: .875rem; }
+    .currency-btn { font-size: .7rem; padding: .15rem .35rem; }
   </style>
 </head>
 <body>
@@ -87,6 +88,22 @@
   </div>
   <div class="sidebar-footer">
     <div class="username"><i class="bi bi-person-circle me-1"></i>{{ current_user.display_name }}</div>
+
+    {# ── Currency switcher ── #}
+    <div class="d-flex align-items-center gap-1 mb-2">
+      <small class="text-muted me-1">Currency:</small>
+      {% set current_currency = request.session.get('currency', 'SCR') %}
+      {% for code, info in currencies.items() %}
+      <form method="post" action="/settings/currency" class="d-inline">
+        <input type="hidden" name="currency" value="{{ code }}">
+        <button type="submit"
+                class="btn btn-sm currency-btn {% if current_currency == code %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+          {{ info.symbol }} {{ code }}
+        </button>
+      </form>
+      {% endfor %}
+    </div>
+
     <a href="/auth/logout" class="text-danger text-decoration-none small">
       <i class="bi bi-box-arrow-right"></i> Sign out
     </a>
