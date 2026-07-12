@@ -62,6 +62,109 @@ def list_printers(
     })
 
 
+
+@router.get("/metrics", response_class=HTMLResponse)
+def printer_metrics(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    from models.printer import PrinterRepair, _parse_amount, _detect_currency
+
+    CURRENCY_INFO = {
+        "SCR": {"symbol": "₨", "name": "Seychelles Rupee"},
+        "USD": {"symbol": "$", "name": "US Dollar"},
+        "GBP": {"symbol": "£", "name": "Pound Sterling"},
+    }
+
+    printers = db.query(Printer).all()
+    all_repairs = db.query(PrinterRepair).all()
+
+    # ── Per-currency totals ──────────────────────────────────────────────────
+    currency_totals = {}
+    for p in printers:
+        if p.purchase_price:
+            cur = _detect_currency(p.purchase_price)
+            amt = _parse_amount(p.purchase_price) or 0
+            if cur not in currency_totals:
+                currency_totals[cur] = {"purchase": 0, "repairs": 0}
+            currency_totals[cur]["purchase"] += amt
+
+    for r in all_repairs:
+        if r.cost:
+            cur = _detect_currency(r.cost)
+            amt = _parse_amount(r.cost) or 0
+            if cur not in currency_totals:
+                currency_totals[cur] = {"purchase": 0, "repairs": 0}
+            currency_totals[cur]["repairs"] += amt
+
+    # Build display list in consistent order
+    currency_breakdown = []
+    for code in ["SCR", "USD", "GBP"]:
+        if code in currency_totals:
+            info = CURRENCY_INFO.get(code, {"symbol": code, "name": code})
+            totals = currency_totals[code]
+            currency_breakdown.append({
+                "code": code,
+                "symbol": info["symbol"],
+                "name": info["name"],
+                "purchase": totals["purchase"],
+                "repairs": totals["repairs"],
+                "total": totals["purchase"] + totals["repairs"],
+            })
+
+    # ── Yearly breakdown (all currencies combined numerically) ──────────────
+    from sqlalchemy import extract, func
+    purchase_rows = db.query(
+        extract("year", Printer.purchase_date).label("year"),
+        func.count(Printer.id).label("count"),
+    ).filter(
+        Printer.purchase_date != None,  # noqa: E711
+    ).group_by("year").order_by("year").all()
+
+    repair_rows = db.query(
+        extract("year", PrinterRepair.repair_date).label("year"),
+        func.count(PrinterRepair.id).label("count"),
+    ).group_by("year").order_by("year").all()
+
+    all_years = sorted(set(
+        [int(r.year) for r in purchase_rows] +
+        [int(r.year) for r in repair_rows]
+    ))
+
+    # Per-year, per-currency breakdown
+    yearly_by_currency = {}  # {year: {currency: {purchase, repairs}}}
+    for p in printers:
+        if p.purchase_date and p.purchase_price:
+            year = p.purchase_date.year
+            cur = _detect_currency(p.purchase_price)
+            amt = _parse_amount(p.purchase_price) or 0
+            yearly_by_currency.setdefault(year, {}).setdefault(cur, {"purchase": 0, "repairs": 0})
+            yearly_by_currency[year][cur]["purchase"] += amt
+
+    for r in all_repairs:
+        year = r.repair_date.year
+        cur = _detect_currency(r.cost) if r.cost else "SCR"
+        amt = _parse_amount(r.cost) or 0
+        yearly_by_currency.setdefault(year, {}).setdefault(cur, {"purchase": 0, "repairs": 0})
+        yearly_by_currency[year][cur]["repairs"] += amt
+
+    # All-time counts
+    total_printers = db.query(func.count(Printer.id)).scalar() or 0
+    total_repair_records = len(all_repairs)
+
+    return templates.TemplateResponse(request, "printers/metrics.html", {
+        "currency_breakdown": currency_breakdown,
+        "yearly_by_currency": yearly_by_currency,
+        "all_years": all_years,
+        "total_printers": total_printers,
+        "total_repair_records": total_repair_records,
+        "currency_info": CURRENCY_INFO,
+        "current_user": current_user,
+        "currency": get_currency(request),
+        "currencies": all_currencies(),
+    })
+
 @router.get("/{printer_id}", response_class=HTMLResponse)
 def printer_detail(
     printer_id: int,
@@ -304,105 +407,3 @@ def delete_attachment(
         db.commit()
     return RedirectResponse(f"/printers/{printer_id}", status_code=302)
 
-
-@router.get("/metrics", response_class=HTMLResponse)
-def printer_metrics(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_user),
-):
-    from models.printer import PrinterRepair, _parse_amount, _detect_currency
-
-    CURRENCY_INFO = {
-        "SCR": {"symbol": "₨", "name": "Seychelles Rupee"},
-        "USD": {"symbol": "$", "name": "US Dollar"},
-        "GBP": {"symbol": "£", "name": "Pound Sterling"},
-    }
-
-    printers = db.query(Printer).all()
-    all_repairs = db.query(PrinterRepair).all()
-
-    # ── Per-currency totals ──────────────────────────────────────────────────
-    currency_totals = {}
-    for p in printers:
-        if p.purchase_price:
-            cur = _detect_currency(p.purchase_price)
-            amt = _parse_amount(p.purchase_price) or 0
-            if cur not in currency_totals:
-                currency_totals[cur] = {"purchase": 0, "repairs": 0}
-            currency_totals[cur]["purchase"] += amt
-
-    for r in all_repairs:
-        if r.cost:
-            cur = _detect_currency(r.cost)
-            amt = _parse_amount(r.cost) or 0
-            if cur not in currency_totals:
-                currency_totals[cur] = {"purchase": 0, "repairs": 0}
-            currency_totals[cur]["repairs"] += amt
-
-    # Build display list in consistent order
-    currency_breakdown = []
-    for code in ["SCR", "USD", "GBP"]:
-        if code in currency_totals:
-            info = CURRENCY_INFO.get(code, {"symbol": code, "name": code})
-            totals = currency_totals[code]
-            currency_breakdown.append({
-                "code": code,
-                "symbol": info["symbol"],
-                "name": info["name"],
-                "purchase": totals["purchase"],
-                "repairs": totals["repairs"],
-                "total": totals["purchase"] + totals["repairs"],
-            })
-
-    # ── Yearly breakdown (all currencies combined numerically) ──────────────
-    from sqlalchemy import extract, func
-    purchase_rows = db.query(
-        extract("year", Printer.purchase_date).label("year"),
-        func.count(Printer.id).label("count"),
-    ).filter(
-        Printer.purchase_date != None,  # noqa: E711
-    ).group_by("year").order_by("year").all()
-
-    repair_rows = db.query(
-        extract("year", PrinterRepair.repair_date).label("year"),
-        func.count(PrinterRepair.id).label("count"),
-    ).group_by("year").order_by("year").all()
-
-    all_years = sorted(set(
-        [int(r.year) for r in purchase_rows] +
-        [int(r.year) for r in repair_rows]
-    ))
-
-    # Per-year, per-currency breakdown
-    yearly_by_currency = {}  # {year: {currency: {purchase, repairs}}}
-    for p in printers:
-        if p.purchase_date and p.purchase_price:
-            year = p.purchase_date.year
-            cur = _detect_currency(p.purchase_price)
-            amt = _parse_amount(p.purchase_price) or 0
-            yearly_by_currency.setdefault(year, {}).setdefault(cur, {"purchase": 0, "repairs": 0})
-            yearly_by_currency[year][cur]["purchase"] += amt
-
-    for r in all_repairs:
-        year = r.repair_date.year
-        cur = _detect_currency(r.cost) if r.cost else "SCR"
-        amt = _parse_amount(r.cost) or 0
-        yearly_by_currency.setdefault(year, {}).setdefault(cur, {"purchase": 0, "repairs": 0})
-        yearly_by_currency[year][cur]["repairs"] += amt
-
-    # All-time counts
-    total_printers = db.query(func.count(Printer.id)).scalar() or 0
-    total_repair_records = len(all_repairs)
-
-    return templates.TemplateResponse(request, "printers/metrics.html", {
-        "currency_breakdown": currency_breakdown,
-        "yearly_by_currency": yearly_by_currency,
-        "all_years": all_years,
-        "total_printers": total_printers,
-        "total_repair_records": total_repair_records,
-        "currency_info": CURRENCY_INFO,
-        "current_user": current_user,
-        "currency": get_currency(request),
-        "currencies": all_currencies(),
-    })

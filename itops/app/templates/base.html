@@ -89,21 +89,6 @@
   <div class="sidebar-footer">
     <div class="username"><i class="bi bi-person-circle me-1"></i>{{ current_user.display_name }}</div>
 
-    {# ── Currency switcher ── #}
-    <div class="d-flex align-items-center gap-1 mb-2">
-      <small class="text-muted me-1">Currency:</small>
-      {% set current_currency = request.session.get('currency', 'SCR') %}
-      {% for code, info in currencies.items() %}
-      <form method="post" action="/settings/currency" class="d-inline">
-        <input type="hidden" name="currency" value="{{ code }}">
-        <button type="submit"
-                class="btn btn-sm currency-btn {% if current_currency == code %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-          {{ info.symbol }} {{ code }}
-        </button>
-      </form>
-      {% endfor %}
-    </div>
-
     <a href="/auth/logout" class="text-danger text-decoration-none small">
       <i class="bi bi-box-arrow-right"></i> Sign out
     </a>
