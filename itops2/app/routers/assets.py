@@ -1,13 +1,26 @@
 """Assets: the core inventory record. List + detail/edit page (too many
-fields for Catalog's inline-row pattern) — checkout/checkin (Phase 5
-chunk 4) and attachments (chunk 5) both live on the detail page.
+fields for Catalog's inline-row pattern) — checkout/checkin and
+attachments (Phase 5 chunk 5) both live on the detail page.
 
 Status lifecycle rules:
-- status_type == deployed is reachable ONLY via checkout (never through
-  this general create/edit form — the dropdown here excludes it).
-- Editing status while checked_out_at IS NOT NULL is rejected: must
-  checkin first (keeps the checked_out_at <-> deployed invariant intact;
-  the DB can't enforce this cross-table itself).
+- status_type == deployed is reachable ONLY via checkout — never through
+  the general create/edit form (its dropdown excludes it), and never
+  through checkin (its dropdown also excludes it, so a checkin can't
+  silently re-enter "deployed" without a real matching checkout).
+- Editing status via the general edit form while checked_out_at IS NOT
+  NULL is rejected: must checkin first (keeps the checked_out_at <->
+  deployed invariant intact; the DB can't enforce this cross-table
+  itself).
+- Checkout: allowed only when status_type == deployable and not already
+  checked out. Exactly one of target_user_id/target_location_id/
+  target_asset_id must be given, plus a destination status restricted
+  to status_type == deployed (if only one such label exists, it's the
+  only <option> and thus pre-selected for free — no extra code needed).
+  Opens a core_checkouts row.
+- Checkin: allowed only when currently checked out. Destination status
+  is any non-deployed label (same pool as the general edit form).
+  Closes the open core_checkouts row and clears the denormalized
+  checked_out_to_* pointer on the asset.
 - status_type == archived assets are read-only except for a restore
   action (submit a non-archived status_label_id and nothing else).
   Audit action is "archive"/"restore" when a transition crosses that
@@ -22,7 +35,7 @@ delete is attempted. See CLAUDE.md for why attachments and checkout
 targets use two different polymorphism styles.
 """
 
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -39,11 +52,13 @@ from app.core.models import (
     AssetModel,
     Attachment,
     AuditLog,
+    Checkout,
     Company,
     Currency,
     Location,
     StatusLabel,
     StatusType,
+    User,
 )
 from app.core.settings_store import load_settings
 from app.templating import templates
@@ -318,12 +333,52 @@ async def asset_detail(
         )
     ctx = await _form_context(db)
     store = await load_settings(db)
+    is_checked_out = asset.checked_out_at is not None
+    deployed_labels = (
+        (
+            await db.execute(
+                select(StatusLabel).where(StatusLabel.status_type == StatusType.deployed).order_by(StatusLabel.name)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    other_users = (await db.execute(select(User).where(User.is_active.is_(True)).order_by(User.username))).scalars().all()
+    other_assets = (
+        (await db.execute(select(Asset).where(Asset.id != asset_id).order_by(Asset.asset_tag))).scalars().all()
+    )
+    history = (
+        (
+            await db.execute(
+                select(Checkout)
+                .options(
+                    selectinload(Checkout.target_user),
+                    selectinload(Checkout.target_location),
+                    selectinload(Checkout.target_asset),
+                )
+                .where(Checkout.asset_id == asset_id)
+                .order_by(Checkout.checked_out_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
     ctx.update(
         {
             "user": user,
             "asset": asset,
             "is_archived": asset.status_label.status_type == StatusType.archived,
-            "is_checked_out": asset.checked_out_at is not None,
+            "is_checked_out": is_checked_out,
+            "can_checkout": (
+                not is_checked_out
+                and asset.status_label.status_type == StatusType.deployable
+                and bool(deployed_labels)
+            ),
+            "deployed_labels": deployed_labels,
+            "checkout_users": other_users,
+            "checkout_assets": other_assets,
+            "checkout_locations": ctx["locations"],
+            "checkout_history": history,
             "effective_depreciation_months": _effective_months(
                 asset.depreciation_months_override,
                 asset.model.depreciation_months,
@@ -482,3 +537,144 @@ async def asset_delete(
         await db.rollback()
         return _toast(request, False, f"Cannot delete '{tag}': it has checkout history — archive it instead.")
     return _redirect("/assets")
+
+
+# ---- checkout / checkin ----
+
+@router.post("/{asset_id}/checkout", response_class=HTMLResponse)
+async def asset_checkout(
+    request: Request,
+    asset_id: int,
+    target_user_id: str = Form(""),
+    target_location_id: str = Form(""),
+    target_asset_id: str = Form(""),
+    status_label_id: int = Form(...),
+    expected_checkin_at: str = Form(""),
+    notes: str = Form(""),
+    user: CurrentUser = Depends(require("checkout.perform")),
+    db: AsyncSession = Depends(get_db),
+):
+    asset = await db.get(Asset, asset_id, options=[selectinload(Asset.status_label)])
+    if asset is None:
+        return _toast(request, False, "Asset not found.")
+    if asset.status_label.status_type != StatusType.deployable:
+        return _toast(request, False, "Only deployable assets can be checked out.")
+    if asset.checked_out_at is not None:
+        return _toast(request, False, "Already checked out.")
+
+    targets = {
+        "user": int(target_user_id) if target_user_id.isdigit() else None,
+        "location": int(target_location_id) if target_location_id.isdigit() else None,
+        "asset": int(target_asset_id) if target_asset_id.isdigit() else None,
+    }
+    chosen = [(kind, tid) for kind, tid in targets.items() if tid is not None]
+    if len(chosen) != 1:
+        return _toast(request, False, "Pick exactly one target: user, location, or asset.")
+    target_kind, target_id = chosen[0]
+
+    if target_kind == "user" and await db.get(User, target_id) is None:
+        return _toast(request, False, "Unknown user.")
+    if target_kind == "location" and await db.get(Location, target_id) is None:
+        return _toast(request, False, "Unknown location.")
+    if target_kind == "asset":
+        if target_id == asset_id:
+            return _toast(request, False, "An asset cannot be checked out to itself.")
+        if await db.get(Asset, target_id) is None:
+            return _toast(request, False, "Unknown target asset.")
+
+    dest_status = await db.get(StatusLabel, status_label_id)
+    if dest_status is None or dest_status.status_type != StatusType.deployed:
+        return _toast(request, False, "Pick a valid deployed-type status.")
+
+    exp_date, err = _parse_optional_date(expected_checkin_at, "Expected checkin date")
+    if err:
+        return _toast(request, False, err)
+
+    now = datetime.now(timezone.utc)
+    asset.checked_out_to_user_id = targets["user"]
+    asset.checked_out_to_location_id = targets["location"]
+    asset.checked_out_to_asset_id = targets["asset"]
+    asset.checked_out_at = now
+    asset.status_label_id = status_label_id
+
+    db.add(
+        Checkout(
+            asset_id=asset_id,
+            target_user_id=targets["user"],
+            target_location_id=targets["location"],
+            target_asset_id=targets["asset"],
+            status_label_id_at_checkout=status_label_id,
+            checked_out_at=now,
+            checked_out_by=user.id,
+            expected_checkin_at=exp_date,
+            notes=notes.strip() or None,
+        )
+    )
+    db.add(
+        AuditLog(
+            user_id=user.id, action="checkout", entity_type="asset", entity_id=str(asset_id),
+            detail=f"checked out to {target_kind}:{target_id}",
+        )
+    )
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Partial unique index on core_checkouts (one open checkout per
+        # asset) caught a race — extremely unlikely at this app's scale,
+        # but fail safe rather than corrupt state.
+        await db.rollback()
+        return _toast(request, False, "Already checked out (concurrent request) — refresh and try again.")
+    return _refresh()
+
+
+@router.post("/{asset_id}/checkin", response_class=HTMLResponse)
+async def asset_checkin(
+    request: Request,
+    asset_id: int,
+    status_label_id: int = Form(...),
+    notes: str = Form(""),
+    user: CurrentUser = Depends(require("checkout.perform")),
+    db: AsyncSession = Depends(get_db),
+):
+    asset = await db.get(Asset, asset_id, options=[selectinload(Asset.status_label)])
+    if asset is None:
+        return _toast(request, False, "Asset not found.")
+    if asset.checked_out_at is None or asset.status_label.status_type != StatusType.deployed:
+        return _toast(request, False, "This asset is not currently checked out.")
+
+    dest_status = await db.get(StatusLabel, status_label_id)
+    if dest_status is None:
+        return _toast(request, False, "Unknown status label.")
+    if dest_status.status_type == StatusType.deployed:
+        return _toast(request, False, "Pick a non-deployed status to checkin to.")
+
+    open_checkout = (
+        await db.execute(
+            select(Checkout).where(Checkout.asset_id == asset_id, Checkout.checked_in_at.is_(None))
+        )
+    ).scalar_one_or_none()
+    if open_checkout is None:
+        return _toast(request, False, "No open checkout found for this asset.")
+
+    now = datetime.now(timezone.utc)
+    checkin_notes = notes.strip() or None
+    open_checkout.checked_in_at = now
+    open_checkout.checked_in_by = user.id
+    open_checkout.checkin_status_label_id = status_label_id
+    if checkin_notes:
+        open_checkout.notes = f"{open_checkout.notes}\n{checkin_notes}" if open_checkout.notes else checkin_notes
+
+    asset.checked_out_to_user_id = None
+    asset.checked_out_to_location_id = None
+    asset.checked_out_to_asset_id = None
+    asset.checked_out_at = None
+    asset.status_label_id = status_label_id
+
+    db.add(
+        AuditLog(
+            user_id=user.id, action="checkin", entity_type="asset", entity_id=str(asset_id),
+            detail=f"checked in -> {dest_status.name}",
+        )
+    )
+    await db.commit()
+    return _refresh()

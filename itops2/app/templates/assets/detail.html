@@ -33,6 +33,82 @@
   since {{ asset.checked_out_at.strftime('%Y-%m-%d %H:%M') }}.
   Checkin before changing status.
 </div>
+
+{% if user.can('checkout.perform') %}
+<form hx-post="/assets/{{ asset.id }}/checkin" hx-target="#toast-area" hx-swap="innerHTML" class="col-lg-6 mb-4">
+  <h2 class="h6">Checkin</h2>
+  <div class="mb-2">
+    <label class="form-label">Status on return</label>
+    <select name="status_label_id" class="form-select" required>
+      {% for s in status_labels %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="mb-2">
+    <label class="form-label">Notes</label>
+    <textarea name="notes" class="form-control" rows="2"></textarea>
+  </div>
+  <button class="btn btn-primary">Checkin</button>
+</form>
+{% endif %}
+{% endif %}
+
+{% if can_checkout and user.can('checkout.perform') %}
+<div class="card mb-4 col-lg-8"><div class="card-body">
+  <h2 class="h6">Checkout</h2>
+  <form id="checkoutForm" hx-post="/assets/{{ asset.id }}/checkout" hx-target="#toast-area" hx-swap="innerHTML">
+    <div class="row">
+      <div class="col-md-4 mb-2">
+        <label class="form-label">To user</label>
+        <select name="target_user_id" class="form-select checkout-target">
+          <option value="">—</option>
+          {% for u in checkout_users %}<option value="{{ u.id }}">{{ u.display_name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4 mb-2">
+        <label class="form-label">To location</label>
+        <select name="target_location_id" class="form-select checkout-target">
+          <option value="">—</option>
+          {% for l in checkout_locations %}<option value="{{ l.id }}">{{ l.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4 mb-2">
+        <label class="form-label">To asset</label>
+        <select name="target_asset_id" class="form-select checkout-target">
+          <option value="">—</option>
+          {% for a in checkout_assets %}<option value="{{ a.id }}">{{ a.asset_tag }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-md-4 mb-2">
+        <label class="form-label">Status once checked out</label>
+        <select name="status_label_id" class="form-select" required>
+          {% for s in deployed_labels %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4 mb-2">
+        <label class="form-label">Expected checkin date</label>
+        <input name="expected_checkin_at" type="date" class="form-control">
+      </div>
+    </div>
+    <div class="mb-2">
+      <label class="form-label">Notes</label>
+      <textarea name="notes" class="form-control" rows="2"></textarea>
+    </div>
+    <button class="btn btn-primary">Checkout</button>
+  </form>
+</div></div>
+<script>
+(function () {
+  const form = document.getElementById('checkoutForm');
+  if (!form) return;
+  const targets = form.querySelectorAll('.checkout-target');
+  targets.forEach(sel => sel.addEventListener('change', () => {
+    const chosen = sel.value !== '';
+    targets.forEach(other => { if (other !== sel) other.disabled = chosen; });
+  }));
+})();
+</script>
 {% endif %}
 
 {% if not user.can('assets.edit') %}
@@ -54,5 +130,29 @@
 {% with form_action="/assets/" ~ asset.id ~ "/update", submit_label="Save" %}
   {% include "assets/_fields.html" %}
 {% endwith %}
+{% endif %}
+
+{% if checkout_history %}
+<h2 class="h6 mt-4">Checkout history</h2>
+<table class="table table-sm col-lg-10">
+  <thead><tr>
+    <th>Target</th><th>Out</th><th>Expected in</th><th>In</th><th>Notes</th>
+  </tr></thead>
+  <tbody>
+  {% for c in checkout_history %}
+    <tr>
+      <td>
+        {% if c.target_user %}{{ c.target_user.display_name }}
+        {% elif c.target_location %}{{ c.target_location.name }}
+        {% elif c.target_asset %}{{ c.target_asset.asset_tag }}{% endif %}
+      </td>
+      <td>{{ c.checked_out_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td>{{ c.expected_checkin_at if c.expected_checkin_at else '—' }}</td>
+      <td>{{ c.checked_in_at.strftime('%Y-%m-%d %H:%M') if c.checked_in_at else '— open —' }}</td>
+      <td class="text-secondary small">{{ c.notes or '' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
 {% endif %}
 {% endblock %}
