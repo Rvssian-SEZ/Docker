@@ -51,6 +51,9 @@ DEFAULTS: dict[str, tuple[str, str]] = {
     # Depreciation / warranty policy
     "depreciation.default_months": ("36", "int"),
     "warranty.alert_days": ("30", "int"),
+    # Contracts: separate key from warranty.alert_days (same pattern, own
+    # value) -- a shared key would silently couple two unrelated concerns.
+    "contracts.renewal_alert_days": ("30", "int"),
 }
 
 

@@ -42,6 +42,7 @@ GENERAL_KEYS = [
     "company.scoped_users",
     "depreciation.default_months",
     "warranty.alert_days",
+    "contracts.renewal_alert_days",
 ]
 
 LABELS = {
@@ -53,6 +54,9 @@ LABELS = {
     "company.scoped_users": ("Scope users to their company", "Users only see their own company's data"),
     "depreciation.default_months": ("Default depreciation period (months)", "Used when a model has no override"),
     "warranty.alert_days": ("Warranty alert lead time (days)", "Notify this many days before expiry"),
+    "contracts.renewal_alert_days": (
+        "Contract renewal alert lead time (days)", "Flag contracts as 'expiring soon' this many days before renewal",
+    ),
 }
 
 

@@ -425,3 +425,92 @@ class PrinterDetails(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     asset: Mapped[Asset] = relationship(foreign_keys=[asset_id])
+
+
+class ContractType(str, enum.Enum):
+    license = "license"
+    contract = "contract"
+    subscription = "subscription"
+
+
+class Contract(Base):
+    """Licenses & Contracts: ONE unified simple module, deliberately NOT
+    Snipe-IT seat-tracking. vendor is free text (external parties, not
+    accounts in this system). end_date is the renewal/expiry date the
+    list view sorts by and flags "expiring soon" against (see
+    contracts.renewal_alert_days setting) — required, unlike start_date,
+    since a contract you can't track toward renewal isn't useful here.
+    cost requires a currency, same rule as everywhere else. Optional M2M
+    coverage of assets via core_contract_assets (a support contract can
+    cover several assets) — the one CASCADE-delete relationship in this
+    schema; see core_contract_assets and CLAUDE.md for why.
+    """
+
+    __tablename__ = "core_contracts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), index=True)
+    contract_type: Mapped[ContractType] = mapped_column(Enum(ContractType, name="core_contract_type"))
+    vendor: Mapped[str | None] = mapped_column(String(200))
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("core_companies.id"), index=True)
+    location_id: Mapped[int | None] = mapped_column(ForeignKey("core_locations.id"), index=True)
+    start_date: Mapped[date | None] = mapped_column(Date)
+    end_date: Mapped[date] = mapped_column(Date, index=True)
+    cost: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    currency: Mapped[str | None] = mapped_column(ForeignKey("core_currencies.code"))
+    renewal_period_months: Mapped[int | None] = mapped_column(Integer)
+    auto_renews: Mapped[bool] = mapped_column(Boolean, default=False)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int] = mapped_column(ForeignKey("core_users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    company: Mapped[Company | None] = relationship(foreign_keys=[company_id])
+    location: Mapped[Location | None] = relationship(foreign_keys=[location_id])
+
+
+class ContractAsset(Base):
+    """M2M join: which assets a contract covers. CASCADE on both FKs —
+    the one deliberate exception to this app's "block deletion, never
+    cascade" convention (Catalog, Assets vs checkout/attachments/
+    maintenance). A coverage link isn't itself a record worth preserving
+    once either side is gone, unlike checkout history or maintenance
+    records — so neither a contract nor an asset should ever be blocked
+    from deletion just because a link row exists.
+    """
+
+    __tablename__ = "core_contract_assets"
+
+    contract_id: Mapped[int] = mapped_column(ForeignKey("core_contracts.id", ondelete="CASCADE"), primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("core_assets.id", ondelete="CASCADE"), primary_key=True)
+
+    contract: Mapped[Contract] = relationship(foreign_keys=[contract_id])
+    asset: Mapped[Asset] = relationship(foreign_keys=[asset_id])
+
+
+class InventoryItem(Base):
+    """Quantity-tracked consumables/spares, sharing the same category
+    tree as Assets (core_categories). Adjustments are +/- deltas applied
+    in place to `quantity`, each writing a core_audit_log row with the
+    delta and a reason — no separate ledger table, since (unlike
+    Checkout/Maintenance) there's no richer per-event data to store than
+    "quantity changed by N, because X", and the audit log already
+    captures who/when for free.
+    """
+
+    __tablename__ = "core_inventory_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), index=True)
+    category_id: Mapped[int] = mapped_column(ForeignKey("core_categories.id"), index=True)
+    location_id: Mapped[int | None] = mapped_column(ForeignKey("core_locations.id"), index=True)
+    quantity: Mapped[int] = mapped_column(Integer, default=0)
+    min_quantity: Mapped[int | None] = mapped_column(Integer)
+    unit_cost: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    currency: Mapped[str | None] = mapped_column(ForeignKey("core_currencies.code"))
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    category: Mapped[Category] = relationship(foreign_keys=[category_id])
+    location: Mapped[Location | None] = relationship(foreign_keys=[location_id])
