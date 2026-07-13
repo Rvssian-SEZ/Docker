@@ -44,10 +44,8 @@ design, but shipping an ITAM tool with a genuinely unbounded upload
 endpoint is asking for an accidental full disk.
 """
 
-import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -56,8 +54,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.attachments import MAX_ATTACHMENT_SIZE, attachment_dir, save_upload
 from app.core.auth import CurrentUser, require
-from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.models import (
     Asset,
@@ -68,6 +66,8 @@ from app.core.models import (
     Company,
     Currency,
     Location,
+    Maintenance,
+    MaintenanceType,
     StatusLabel,
     StatusType,
     User,
@@ -76,8 +76,6 @@ from app.core.settings_store import load_settings
 from app.templating import templates
 
 router = APIRouter(prefix="/assets")
-
-MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25 MB
 
 
 # ---- helpers ----
@@ -202,34 +200,6 @@ def _effective_months(override: int | None, model_value: int | None, global_defa
         if value is not None:
             return value
     return None
-
-
-def _attachment_dir(entity_type: str, entity_id: str) -> Path:
-    return Path(get_settings().attachments_dir) / entity_type / entity_id
-
-
-async def _save_upload(upload: UploadFile, entity_type: str, entity_id: str) -> tuple[str, int, str | None]:
-    """Streams the upload to disk under a UUID-based name (never trust the
-    original filename for the on-disk path). Returns
-    (stored_filename, size_bytes, error)."""
-    ext = Path(upload.filename or "").suffix
-    stored_name = f"{uuid.uuid4()}{ext}"
-    directory = _attachment_dir(entity_type, entity_id)
-    directory.mkdir(parents=True, exist_ok=True)
-    dest = directory / stored_name
-    size = 0
-    with dest.open("wb") as f:
-        while True:
-            chunk = await upload.read(1024 * 1024)
-            if not chunk:
-                break
-            size += len(chunk)
-            if size > MAX_ATTACHMENT_SIZE:
-                f.close()
-                dest.unlink(missing_ok=True)
-                return "", 0, f"File too large (max {MAX_ATTACHMENT_SIZE // (1024 * 1024)} MB)."
-            f.write(chunk)
-    return stored_name, size, None
 
 
 # ---- list ----
@@ -417,6 +387,33 @@ async def asset_detail(
         .scalars()
         .all()
     )
+    maintenance_records = (
+        (
+            await db.execute(
+                select(Maintenance)
+                .where(Maintenance.asset_id == asset_id)
+                .order_by(Maintenance.date.desc(), Maintenance.id.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    maintenance_ids = [str(m.id) for m in maintenance_records]
+    maintenance_attachments = {}
+    if maintenance_ids:
+        rows = (
+            (
+                await db.execute(
+                    select(Attachment)
+                    .where(Attachment.entity_type == "maintenance", Attachment.entity_id.in_(maintenance_ids))
+                    .order_by(Attachment.uploaded_at)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for a in rows:
+            maintenance_attachments.setdefault(int(a.entity_id), []).append(a)
     ctx.update(
         {
             "user": user,
@@ -441,6 +438,10 @@ async def asset_detail(
                 store.get_int("depreciation.default_months"),
             ),
             "effective_eol_months": _effective_months(asset.eol_months_override, asset.model.eol_months),
+            "maintenance_records": maintenance_records,
+            "maintenance_types": list(MaintenanceType),
+            "maintenance_attachments": maintenance_attachments,
+            "maintenance_currencies": ctx["currencies"],
         }
     )
     return templates.TemplateResponse(request, "assets/detail.html", ctx)
@@ -762,7 +763,7 @@ async def asset_attachment_upload(
     if not file.filename:
         return _toast(request, False, "No file selected.")
 
-    stored_name, size, err = await _save_upload(file, "asset", str(asset_id))
+    stored_name, size, err = await save_upload(file, "asset", str(asset_id))
     if err:
         return _toast(request, False, err)
 
@@ -798,7 +799,7 @@ async def asset_attachment_download(
     att = await _get_attachment_for_asset(db, asset_id, attachment_id)
     if att is None:
         raise HTTPException(status_code=404, detail="Attachment not found.")
-    path = _attachment_dir(att.entity_type, att.entity_id) / att.stored_filename
+    path = attachment_dir(att.entity_type, att.entity_id) / att.stored_filename
     if not path.exists():
         raise HTTPException(status_code=404, detail="File missing on disk.")
     return FileResponse(path, filename=att.original_filename, media_type=att.content_type or "application/octet-stream")
@@ -822,7 +823,7 @@ async def asset_attachment_delete(
         return _toast(request, False, "Attachment not found.")
 
     filename = att.original_filename
-    path = _attachment_dir(att.entity_type, att.entity_id) / att.stored_filename
+    path = attachment_dir(att.entity_type, att.entity_id) / att.stored_filename
     await db.delete(att)
     db.add(
         AuditLog(

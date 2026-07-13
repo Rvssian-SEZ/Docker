@@ -33,6 +33,8 @@ TRUNCATE_TABLES = (
     "core_assets",
     "core_checkouts",
     "core_attachments",
+    "core_maintenance",
+    "core_printer_details",
     "core_audit_log",
     "core_models",
     "core_status_labels",

@@ -173,6 +173,141 @@
 {% endif %}
 {% endif %}
 
+{% if not is_archived %}
+<h2 class="h6 mt-4">Maintenance</h2>
+{% if user.can('maintenance.manage') %}
+<button class="btn btn-primary btn-sm mb-2" type="button" data-bs-toggle="modal" data-bs-target="#maintenanceModal" data-mode="create">
+  <i class="bi bi-plus-lg me-1"></i>New maintenance record
+</button>
+{% endif %}
+<table class="table table-sm col-lg-11" style="table-layout: fixed;">
+  <colgroup>
+    <col style="width: 7rem;">
+    <col style="width: 7rem;">
+    <col style="width: 7rem;">
+    <col style="width: 9rem;">
+    <col>
+    <col style="width: 10rem;">
+    {% if user.can('maintenance.manage') %}<col style="width: 4rem;">{% endif %}
+  </colgroup>
+  <thead><tr>
+    <th>Date</th><th>Type</th><th>Cost</th><th>Performed by</th><th>Description</th><th>Files</th>
+    {% if user.can('maintenance.manage') %}<th></th>{% endif %}
+  </tr></thead>
+  <tbody>
+  {% for m in maintenance_records %}
+    <tr>
+      <td>{{ m.date }}</td>
+      <td><span class="badge text-bg-secondary">{{ m.maintenance_type.value }}</span></td>
+      <td>{{ m.cost ~ ' ' ~ m.currency if m.cost is not none else '—' }}</td>
+      <td class="text-truncate" style="max-width: 0;" title="{{ m.performed_by or '' }}">{{ m.performed_by or '—' }}</td>
+      <td class="text-truncate" style="max-width: 0;" title="{{ m.description }}">{{ m.description }}</td>
+      <td>
+        {% for a in maintenance_attachments.get(m.id, []) %}
+        <div class="d-flex align-items-center gap-1 small">
+          <a href="/assets/{{ asset.id }}/maintenance/{{ m.id }}/attachments/{{ a.id }}/download"
+             class="text-truncate" style="max-width: 7rem;" title="{{ a.original_filename }}">{{ a.original_filename }}</a>
+          {% if user.can('maintenance.manage') %}
+          <button type="button" class="btn btn-sm btn-link text-danger p-0" hx-post="/assets/{{ asset.id }}/maintenance/{{ m.id }}/attachments/{{ a.id }}/delete"
+                  hx-target="#toast-area" hx-swap="innerHTML" hx-confirm="Delete '{{ a.original_filename }}'?">&times;</button>
+          {% endif %}
+        </div>
+        {% endfor %}
+        {% if user.can('maintenance.manage') %}
+        <label class="btn btn-sm btn-outline-secondary mt-1" style="cursor: pointer;" title="Attach a file">
+          <i class="bi bi-paperclip"></i>
+          <input type="file" name="file" class="visually-hidden"
+                 hx-post="/assets/{{ asset.id }}/maintenance/{{ m.id }}/attachments"
+                 hx-target="#toast-area" hx-swap="innerHTML" hx-trigger="change" hx-encoding="multipart/form-data">
+        </label>
+        {% endif %}
+      </td>
+      {% if user.can('maintenance.manage') %}
+      <td class="text-end">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#maintenanceModal"
+                data-mode="edit" data-id="{{ m.id }}" data-date="{{ m.date }}" data-type="{{ m.maintenance_type.value }}"
+                data-description="{{ m.description }}" data-cost="{{ m.cost if m.cost is not none else '' }}"
+                data-currency="{{ m.currency or '' }}" data-performed-by="{{ m.performed_by or '' }}">
+          <i class="bi bi-pencil"></i>
+        </button>
+        <button class="btn btn-outline-danger btn-sm" hx-post="/assets/{{ asset.id }}/maintenance/{{ m.id }}/delete"
+                hx-target="#toast-area" hx-swap="innerHTML" hx-confirm="Delete this maintenance record? Any attached files are deleted too.">
+          <i class="bi bi-trash"></i>
+        </button>
+      </td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="text-secondary">No maintenance records yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if user.can('maintenance.manage') %}
+<div class="modal fade" id="maintenanceModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form id="maintenanceForm" hx-target="#toast-area" hx-swap="innerHTML">
+      <div class="modal-header"><h5 class="modal-title" id="maintenanceModalTitle">New maintenance record</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="row">
+          <div class="col-md-6 mb-3"><label class="form-label">Date</label>
+            <input name="date" type="date" class="form-control" required></div>
+          <div class="col-md-6 mb-3"><label class="form-label">Type</label>
+            <select name="maintenance_type" class="form-select" required>
+              {% for t in maintenance_types %}<option value="{{ t.value }}">{{ t.value }}</option>{% endfor %}
+            </select></div>
+        </div>
+        <div class="mb-3"><label class="form-label">Description</label>
+          <textarea name="description" class="form-control" rows="2" required></textarea></div>
+        <div class="row">
+          <div class="col-md-4 mb-3"><label class="form-label">Cost</label>
+            <input name="cost" type="number" step="0.01" min="0" class="form-control"></div>
+          <div class="col-md-4 mb-3"><label class="form-label">Currency</label>
+            <select name="currency" class="form-select">
+              <option value="">— none —</option>
+              {% for c in maintenance_currencies %}<option value="{{ c.code }}">{{ c.code }}</option>{% endfor %}
+            </select></div>
+          <div class="col-md-4 mb-3"><label class="form-label">Performed by</label>
+            <input name="performed_by" class="form-control" placeholder="staff or vendor name"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" id="maintenanceSubmitBtn">Create</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+<script>
+document.getElementById('maintenanceModal')?.addEventListener('show.bs.modal', e => {
+  const btn = e.relatedTarget;
+  const form = document.getElementById('maintenanceForm');
+  const mode = btn?.dataset.mode || 'create';
+  const title = document.getElementById('maintenanceModalTitle');
+  const submitBtn = document.getElementById('maintenanceSubmitBtn');
+  if (mode === 'edit') {
+    title.textContent = 'Edit maintenance record';
+    submitBtn.textContent = 'Save';
+    form.setAttribute('hx-post', `/assets/{{ asset.id }}/maintenance/${btn.dataset.id}/update`);
+    form.querySelector('[name=date]').value = btn.dataset.date;
+    form.querySelector('[name=maintenance_type]').value = btn.dataset.type;
+    form.querySelector('[name=description]').value = btn.dataset.description;
+    form.querySelector('[name=cost]').value = btn.dataset.cost;
+    form.querySelector('[name=currency]').value = btn.dataset.currency;
+    form.querySelector('[name=performed_by]').value = btn.dataset.performedBy;
+  } else {
+    title.textContent = 'New maintenance record';
+    submitBtn.textContent = 'Create';
+    form.setAttribute('hx-post', '/assets/{{ asset.id }}/maintenance/create');
+    form.reset();
+  }
+  htmx.process(form);
+});
+</script>
+{% endif %}
+{% endif %}
+
 {% if checkout_history %}
 <h2 class="h6 mt-4">Checkout history</h2>
 <table class="table table-sm col-lg-10">
