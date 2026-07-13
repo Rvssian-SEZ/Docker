@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     # --- TLS trust (Step-CA root for httpx calls to Authentik etc.) ---
     ca_cert_path: str | None = None
 
+    # --- Attachments (Phase 5) ---
+    # Container path; matches the volume mount in docker-compose.yml.
+    # Overridable so tests can point at a throwaway tmp dir.
+    attachments_dir: str = "/data/attachments"
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -154,6 +154,7 @@ ssh root@192.168.110.50 "cd /opt/docker-repo/itops2 && docker compose up -d --bu
 - **Never** scp or otherwise overwrite the server's `.env`.
 - Test at https://itops2.home.internal.
 - Check `docker logs itops2` on the server for errors after deploying.
+- **After every verified deploy, commit and push without asking.**
 
 ## Repo/infra reminders
 - Git via SSH only: git@github.com:Rvssian-SEZ/Docker.git

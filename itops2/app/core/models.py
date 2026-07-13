@@ -12,16 +12,20 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -230,3 +234,138 @@ class ExchangeRate(Base):
     rate: Mapped[Decimal] = mapped_column(Numeric(18, 6))
     effective_date: Mapped[date] = mapped_column(Date, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Asset(Base):
+    """A tracked hardware/software unit. `checked_out_to_*` is a denormalized
+    "current state" pointer (fast "who has this?" lookups without a join);
+    `core_checkouts` is the full history ledger. Invariant enforced at the
+    DB level for the target columns, and at the app level (routers) for the
+    cross-table piece — `checked_out_at IS NOT NULL` iff
+    `status_label.status_type == deployed` — since a CHECK constraint can't
+    reach across tables.
+
+    No hard delete unless zero checkout history AND zero attachments exist
+    (enforced by plain FK RESTRICT from core_checkouts/core_attachments,
+    same friendly-toast-on-IntegrityError pattern as Catalog). Otherwise
+    "delete" = move status to an archived-type label.
+    """
+
+    __tablename__ = "core_assets"
+    __table_args__ = (
+        UniqueConstraint("asset_tag", name="uq_asset_tag"),
+        CheckConstraint(
+            "num_nonnulls(checked_out_to_user_id, checked_out_to_location_id, checked_out_to_asset_id) <= 1",
+            name="ck_asset_checkout_target_singular",
+        ),
+        CheckConstraint(
+            "checked_out_to_asset_id IS NULL OR checked_out_to_asset_id <> id",
+            name="ck_asset_no_self_checkout",
+        ),
+        CheckConstraint(
+            "(checked_out_at IS NULL) = "
+            "(num_nonnulls(checked_out_to_user_id, checked_out_to_location_id, checked_out_to_asset_id) = 0)",
+            name="ck_asset_checkout_at_matches_target",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_tag: Mapped[str] = mapped_column(String(50), index=True)
+    serial: Mapped[str | None] = mapped_column(String(200), index=True)
+    model_id: Mapped[int] = mapped_column(ForeignKey("core_models.id"), index=True)
+    status_label_id: Mapped[int] = mapped_column(ForeignKey("core_status_labels.id"), index=True)
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("core_companies.id"), index=True)
+    location_id: Mapped[int | None] = mapped_column(ForeignKey("core_locations.id"), index=True)
+    purchase_date: Mapped[date | None] = mapped_column(Date, index=True)
+    purchase_cost: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    purchase_currency: Mapped[str | None] = mapped_column(ForeignKey("core_currencies.code"))
+    warranty_months: Mapped[int | None] = mapped_column(Integer)
+    depreciation_months_override: Mapped[int | None] = mapped_column(Integer)
+    eol_months_override: Mapped[int | None] = mapped_column(Integer)
+    notes: Mapped[str | None] = mapped_column(Text)
+    checked_out_to_user_id: Mapped[int | None] = mapped_column(ForeignKey("core_users.id"), index=True)
+    checked_out_to_location_id: Mapped[int | None] = mapped_column(ForeignKey("core_locations.id"), index=True)
+    checked_out_to_asset_id: Mapped[int | None] = mapped_column(ForeignKey("core_assets.id"), index=True)
+    checked_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    model: Mapped[AssetModel] = relationship(foreign_keys=[model_id])
+    status_label: Mapped[StatusLabel] = relationship(foreign_keys=[status_label_id])
+    company: Mapped[Company | None] = relationship(foreign_keys=[company_id])
+    location: Mapped[Location | None] = relationship(foreign_keys=[location_id])
+    checked_out_to_user: Mapped[User | None] = relationship(foreign_keys=[checked_out_to_user_id])
+    checked_out_to_location: Mapped[Location | None] = relationship(foreign_keys=[checked_out_to_location_id])
+    checked_out_to_asset: Mapped["Asset | None"] = relationship(
+        foreign_keys=[checked_out_to_asset_id], remote_side=[id]
+    )
+
+
+class Checkout(Base):
+    """Append-only history ledger — one row per checkout, closed on checkin.
+    `status_label_id_at_checkout` / `checkin_status_label_id` snapshot the
+    status assigned at each event, since `core_assets.status_label_id`
+    itself keeps changing. The partial unique index is the DB-level
+    guarantee that an asset can only have one *open* checkout at a time —
+    stronger than an app-level check alone.
+    """
+
+    __tablename__ = "core_checkouts"
+    __table_args__ = (
+        CheckConstraint(
+            "num_nonnulls(target_user_id, target_location_id, target_asset_id) <= 1",
+            name="ck_checkout_target_singular",
+        ),
+        Index(
+            "uq_checkout_one_open_per_asset",
+            "asset_id",
+            unique=True,
+            postgresql_where=text("checked_in_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("core_assets.id"), index=True)
+    target_user_id: Mapped[int | None] = mapped_column(ForeignKey("core_users.id"), index=True)
+    target_location_id: Mapped[int | None] = mapped_column(ForeignKey("core_locations.id"), index=True)
+    target_asset_id: Mapped[int | None] = mapped_column(ForeignKey("core_assets.id"), index=True)
+    status_label_id_at_checkout: Mapped[int] = mapped_column(ForeignKey("core_status_labels.id"))
+    checked_out_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    checked_out_by: Mapped[int] = mapped_column(ForeignKey("core_users.id"))
+    expected_checkin_at: Mapped[date | None] = mapped_column(Date)
+    checked_in_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    checked_in_by: Mapped[int | None] = mapped_column(ForeignKey("core_users.id"))
+    checkin_status_label_id: Mapped[int | None] = mapped_column(ForeignKey("core_status_labels.id"))
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    asset: Mapped[Asset] = relationship(foreign_keys=[asset_id])
+    target_user: Mapped[User | None] = relationship(foreign_keys=[target_user_id])
+    target_location: Mapped[Location | None] = relationship(foreign_keys=[target_location_id])
+    target_asset: Mapped[Asset | None] = relationship(foreign_keys=[target_asset_id])
+
+
+class Attachment(Base):
+    """Generic/polymorphic like core_audit_log (entity_type + entity_id as
+    text, not a real FK) rather than the 3-FK style used for checkout
+    targets — future entities (Contracts, Maintenance) will want
+    attachments too, so this shouldn't need a schema change later. See
+    CLAUDE.md for the rationale on using both polymorphism styles.
+    Disk layout: {settings.attachments_dir}/{entity_type}/{entity_id}/{stored_filename}
+    — entity_type used raw, no pluralization.
+    """
+
+    __tablename__ = "core_attachments"
+    __table_args__ = (Index("ix_core_attachments_entity", "entity_type", "entity_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entity_type: Mapped[str] = mapped_column(String(50))
+    entity_id: Mapped[str] = mapped_column(String(50))
+    original_filename: Mapped[str] = mapped_column(String(255))
+    stored_filename: Mapped[str] = mapped_column(String(255), unique=True)
+    content_type: Mapped[str | None] = mapped_column(String(150))
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    description: Mapped[str | None] = mapped_column(String(255))
+    uploaded_by: Mapped[int] = mapped_column(ForeignKey("core_users.id"), index=True)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+    uploader: Mapped[User] = relationship(foreign_keys=[uploaded_by])
