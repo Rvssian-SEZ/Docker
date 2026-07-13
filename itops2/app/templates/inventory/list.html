@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}Inventory — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">Inventory</h1>
+  {% if can_manage %}
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createModal">
+    <i class="bi bi-plus-lg me-1"></i>New item
+  </button>
+  {% endif %}
+</div>
+
+<table class="table table-hover align-middle" style="table-layout: fixed;">
+  <colgroup>
+    <col>
+    <col style="width: 10rem;">
+    <col style="width: 10rem;">
+    <col style="width: 8rem;">
+    <col style="width: 8rem;">
+    {% if can_manage %}<col style="width: 9rem;">{% endif %}
+  </colgroup>
+  <thead><tr>
+    <th>Name</th><th>Category</th><th>Location</th><th>Quantity</th><th>Unit cost</th>
+    {% if can_manage %}<th></th>{% endif %}
+  </tr></thead>
+  <tbody>
+  {% for item in items %}
+    {% set low = item.min_quantity is not none and item.quantity <= item.min_quantity %}
+    <tr class="{{ 'table-warning' if low }}">
+      <td class="text-truncate" style="max-width: 0;" title="{{ item.name }}">{{ item.name }}</td>
+      <td class="text-truncate" style="max-width: 0;">{{ item.category.name }}</td>
+      <td class="text-truncate" style="max-width: 0;">{{ item.location.name if item.location else '—' }}</td>
+      <td>
+        {{ item.quantity }}
+        {% if low %}<span class="badge text-bg-warning ms-1" title="At or below minimum ({{ item.min_quantity }})">low</span>{% endif %}
+      </td>
+      <td>{{ item.unit_cost ~ ' ' ~ item.currency if item.unit_cost is not none else '—' }}</td>
+      {% if can_manage %}
+      <td class="text-end">
+        <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#adjustModal"
+                data-id="{{ item.id }}" data-name="{{ item.name }}" data-quantity="{{ item.quantity }}" title="Adjust quantity">
+          <i class="bi bi-plus-slash-minus"></i>
+        </button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#editModal"
+                data-id="{{ item.id }}" data-name="{{ item.name }}" data-category-id="{{ item.category_id }}"
+                data-location-id="{{ item.location_id or '' }}" data-min-quantity="{{ item.min_quantity if item.min_quantity is not none else '' }}"
+                data-unit-cost="{{ item.unit_cost if item.unit_cost is not none else '' }}" data-currency="{{ item.currency or '' }}"
+                data-notes="{{ item.notes or '' }}" title="Edit">
+          <i class="bi bi-pencil"></i>
+        </button>
+        <button class="btn btn-outline-danger btn-sm" hx-post="/inventory/{{ item.id }}/delete"
+                hx-target="#toast-area" hx-swap="innerHTML" hx-confirm="Delete '{{ item.name }}'?">
+          <i class="bi bi-trash"></i>
+        </button>
+      </td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="text-secondary">No inventory items yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if can_manage %}
+<div class="modal fade" id="createModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form hx-post="/inventory/create" hx-target="#toast-area" hx-swap="innerHTML">
+      <div class="modal-header"><h5 class="modal-title">New inventory item</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-3"><label class="form-label">Name</label>
+          <input name="name" class="form-control" required autofocus></div>
+        <div class="row">
+          <div class="col-md-6 mb-3"><label class="form-label">Category</label>
+            <select name="category_id" class="form-select" required>
+              {% for c in categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+            </select></div>
+          <div class="col-md-6 mb-3"><label class="form-label">Location</label>
+            <select name="location_id" class="form-select">
+              <option value="">— none —</option>
+              {% for l in locations %}<option value="{{ l.id }}">{{ l.name }}</option>{% endfor %}
+            </select></div>
+        </div>
+        <div class="row">
+          <div class="col-md-6 mb-3"><label class="form-label">Initial quantity</label>
+            <input name="quantity" type="number" min="0" class="form-control" value="0"></div>
+          <div class="col-md-6 mb-3"><label class="form-label">Minimum quantity <span class="text-secondary">(low-stock flag)</span></label>
+            <input name="min_quantity" type="number" min="0" class="form-control"></div>
+        </div>
+        <div class="row">
+          <div class="col-md-6 mb-3"><label class="form-label">Unit cost</label>
+            <input name="unit_cost" type="number" step="0.01" min="0" class="form-control"></div>
+          <div class="col-md-6 mb-3"><label class="form-label">Currency</label>
+            <select name="currency" class="form-select">
+              <option value="">— none —</option>
+              {% for c in currencies %}<option value="{{ c.code }}" {{ 'selected' if c.code == default_currency }}>{{ c.code }}</option>{% endfor %}
+            </select></div>
+        </div>
+        <div class="mb-3"><label class="form-label">Notes</label>
+          <textarea name="notes" class="form-control" rows="2"></textarea></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary">Create</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+
+<div class="modal fade" id="editModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form id="editForm" hx-target="#toast-area" hx-swap="innerHTML">
+      <div class="modal-header"><h5 class="modal-title">Edit <span id="editModalName"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-3"><label class="form-label">Name</label>
+          <input name="name" class="form-control" required></div>
+        <div class="row">
+          <div class="col-md-6 mb-3"><label class="form-label">Category</label>
+            <select name="category_id" class="form-select" required>
+              {% for c in categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+            </select></div>
+          <div class="col-md-6 mb-3"><label class="form-label">Location</label>
+            <select name="location_id" class="form-select">
+              <option value="">— none —</option>
+              {% for l in locations %}<option value="{{ l.id }}">{{ l.name }}</option>{% endfor %}
+            </select></div>
+        </div>
+        <div class="mb-3"><label class="form-label">Minimum quantity <span class="text-secondary">(low-stock flag)</span></label>
+          <input name="min_quantity" type="number" min="0" class="form-control"></div>
+        <div class="row">
+          <div class="col-md-6 mb-3"><label class="form-label">Unit cost</label>
+            <input name="unit_cost" type="number" step="0.01" min="0" class="form-control"></div>
+          <div class="col-md-6 mb-3"><label class="form-label">Currency</label>
+            <select name="currency" class="form-select">
+              <option value="">— none —</option>
+              {% for c in currencies %}<option value="{{ c.code }}">{{ c.code }}</option>{% endfor %}
+            </select></div>
+        </div>
+        <div class="mb-3"><label class="form-label">Notes</label>
+          <textarea name="notes" class="form-control" rows="2"></textarea></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+
+<div class="modal fade" id="adjustModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form id="adjustForm" hx-target="#toast-area" hx-swap="innerHTML">
+      <div class="modal-header"><h5 class="modal-title">Adjust <span id="adjustModalName"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <p class="text-secondary small">Current quantity: <span id="adjustCurrentQty"></span></p>
+        <div class="mb-3"><label class="form-label">Adjustment <span class="text-secondary">(e.g. 5 or -3)</span></label>
+          <input name="delta" type="number" class="form-control" required autofocus></div>
+        <div class="mb-3"><label class="form-label">Reason</label>
+          <input name="reason" class="form-control" required placeholder="e.g. received shipment, used on IT-0012"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary">Apply</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+
+<script>
+document.getElementById('editModal')?.addEventListener('show.bs.modal', e => {
+  const btn = e.relatedTarget;
+  const form = document.getElementById('editForm');
+  document.getElementById('editModalName').textContent = btn.dataset.name;
+  form.setAttribute('hx-post', `/inventory/${btn.dataset.id}/update`);
+  form.querySelector('[name=name]').value = btn.dataset.name;
+  form.querySelector('[name=category_id]').value = btn.dataset.categoryId;
+  form.querySelector('[name=location_id]').value = btn.dataset.locationId;
+  form.querySelector('[name=min_quantity]').value = btn.dataset.minQuantity;
+  form.querySelector('[name=unit_cost]').value = btn.dataset.unitCost;
+  form.querySelector('[name=currency]').value = btn.dataset.currency;
+  form.querySelector('[name=notes]').value = btn.dataset.notes;
+  htmx.process(form);
+});
+document.getElementById('adjustModal')?.addEventListener('show.bs.modal', e => {
+  const btn = e.relatedTarget;
+  const form = document.getElementById('adjustForm');
+  document.getElementById('adjustModalName').textContent = btn.dataset.name;
+  document.getElementById('adjustCurrentQty').textContent = btn.dataset.quantity;
+  form.setAttribute('hx-post', `/inventory/${btn.dataset.id}/adjust`);
+  form.reset();
+  htmx.process(form);
+});
+</script>
+{% endif %}
+{% endblock %}
