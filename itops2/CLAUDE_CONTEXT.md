@@ -29,9 +29,10 @@ Deployed to home lab and external client sites.
   status labels; checkout to **user, location, or asset**; auto asset tags with
   configurable prefix/format, manually editable; full audit log
   (core_audit_log, written on EVERY mutation — infrastructure, not feature).
-  Hard delete only when an asset has zero checkout history and zero
-  attachments (FK-guard style); otherwise archive (status → an
-  archived-type label) is the only "delete".
+  Hard delete only when an asset has zero checkout history, zero
+  attachments, AND zero maintenance records (FK-guard style, Phase 6
+  added the third); otherwise archive (status → an archived-type
+  label) is the only "delete".
 - **Two polymorphism styles, deliberately, not an inconsistency:**
   checkout targets (`checked_out_to_user_id` / `_location_id` / `_asset_id`
   on core_assets and core_checkouts) use **real FK columns**, one per
@@ -47,9 +48,27 @@ Deployed to home lab and external client sites.
   acceptable tradeoff since assets can never be hard-deleted while they
   still have attachments (checked by an explicit COUNT, not a FK) in the
   first place.
-- **Printers:** assets in a Printer category + a dedicated page that's a
-  specialized VIEW adding IP/hostname, consumable links, maintenance/repair
-  log with costs. Maintenance records are generic (any asset).
+- **Printer fields live in a THIRD style — a 1:1 extension table**
+  (`core_printer_details`, `asset_id` is both PK and FK), decided with
+  Alex before building Phase 6 specifically because it sets the pattern
+  for every future asset-type extension. Rejected: nullable columns on
+  `core_assets` (the central, most-referenced table would grow wider
+  with every future asset type's fields, mostly NULL for the other
+  99% of assets); a generic key-value `asset_extras` table (loses
+  DB-level typing/indexing for a flexibility need that doesn't exist —
+  asset types needing extra fields are a small, dev-curated set, like
+  `StatusType`/`AuthSource` already are Python enums, not
+  runtime-configurable). "Is this asset a printer" is still driven by
+  its model's category name (`== "Printer"`, case-insensitive) per the
+  original decision below — the extension table only holds the
+  IP/hostname/consumable-notes *values*, created lazily on first save.
+- **Printers:** assets in a Printer category (matched by category name,
+  not a flag — see above) + a dedicated page that's a specialized VIEW,
+  not a separate entity: lists IP, status, and maintenance cost totals
+  (converted to default currency via the exchange-rate table, at each
+  maintenance record's own date — same historical-value rule as
+  purchase costs). Maintenance records themselves are generic (any
+  asset, not printer-specific).
 - **Depreciation & warranty/EOL:** implemented, policy-configurable in settings.
 - **Multi-currency:** amount + currency code on all money fields; manual
   exchange-rate table with DATED rates (historical value at purchase date);
@@ -192,7 +211,52 @@ search columns, async engine with pooling (already configured in app/core/db.py)
    entity_type used raw ("asset"), no pluralization. No dedicated
    attachments.* permission — upload/delete reuse assets.edit, download
    reuses assets.view.
-6. ⬜ Maintenance records + Printers page.
+6. ✅ Maintenance records + Printers page, **deployed and verified in
+   production**. Migration 0005 (core_maintenance, core_printer_details
+   — see the extension-table decision above).
+   Maintenance (app/routers/maintenance.py): generic against any asset,
+   shown as a section on the asset detail page (not a separate page) —
+   date/type(repair|maintenance|upgrade)/description/cost+currency/
+   performed_by (free text, not a User FK — external vendors do this
+   work too). Cost requires a currency to be picked (enforced) so the
+   Printers cost totals never have to guess. Shared create/edit modal
+   (same data-* populate-on-open JS pattern as the users reset-password
+   modal); per-record attachments via a hidden-file-input upload trick
+   (no modal needed) reusing the shared attachment helpers below.
+   Deleting a record explicitly deletes its attachments (DB rows +
+   files) first — core_attachments has no FK to cascade through.
+   Extracted app/core/attachments.py (attachment_dir/save_upload/
+   MAX_ATTACHMENT_SIZE) out of assets.py once maintenance needed the
+   identical upload/storage logic — two real consumers justified the
+   promotion to a shared module.
+   Printers (app/routers/printers.py): GET /printers lists assets whose
+   model's category name is "Printer" (case-insensitive), with IP,
+   status, location, and a maintenance cost total per printer converted
+   to `general.default_currency` — records whose currency has no
+   applicable exchange rate are excluded from the total and flagged
+   with a warning icon, never silently wrong. Printer Details section
+   on the asset detail page (IP/hostname/consumable notes) gated by the
+   `printers.manage` permission (existed in the registry since Phase 1,
+   unused until now — Technician gets `printers.view` by default but
+   not `printers.manage`).
+   Bug found + fixed during this phase's own verification: hard-
+   deleting an asset blocked only by maintenance records (no checkout
+   history) was told "it has checkout history" — the generic
+   IntegrityError catch-all assumed checkout history was the only
+   remaining FK once attachments were pre-checked, which stopped being
+   true the moment core_maintenance.asset_id existed. Fixed with an
+   explicit maintenance-count pre-check (same pattern as attachments)
+   plus a regression test.
+   Also fixed in this phase: Catalog's inline-edit tables (all six
+   tabs) had editable fields wrapped in one colspan'd `<td>` with an
+   internal flexbox `<form>`, which never actually participated in the
+   table's column layout — fields drifted out of alignment with their
+   `<th>` headers (worst on Models: Depreciation/EOL under the wrong
+   columns). Fixed with real per-column `<td>`s, `table-layout: fixed`
+   + `colgroup`, and `hx-include="closest tr"` on each field instead of
+   a wrapping `<form>` (which can't legally span multiple `<td>`s) —
+   the documented htmx pattern for "save the whole row on any field's
+   change" without a literal `<form>` ancestor.
 7. ⬜ Licenses & Contracts, Inventory.
 8. ⬜ Notifications, dashboard.
 9. ⬜ v1 import wizard.

@@ -204,22 +204,47 @@ checkout per asset at the database level, not just in the UI.</p>
 max <strong>25 MB</strong> per file. Stored on the <code>/data/attachments</code> volume
 (host: <code>/opt/appdata/itops2/attachments</code>), organized as
 <code>attachments/&lt;entity&gt;/&lt;id&gt;/&lt;file&gt;</code>, e.g.
-<code>attachments/asset/42/…</code>. Uploads and deletes are blocked while an asset is
-archived.</p>
+<code>attachments/asset/42/…</code> (maintenance records use the same mechanism under
+<code>attachments/maintenance/&lt;id&gt;/…</code> — see §11.1). Uploads and deletes are
+blocked while an asset is archived.</p>
 
 <h3>10.5 Deleting assets</h3>
 <div class="callout warn">
 An asset can only be <strong>permanently deleted</strong> if it has zero checkout
-history and zero attachments — the two are exactly the things that make an asset's
-audit trail worth keeping. Any other asset can only be <strong>archived</strong>
-(§10.2), never hard-deleted, so history is never silently lost.
+history, zero attachments, <strong>and zero maintenance records</strong> — all
+three are exactly the things that make an asset's audit trail worth keeping. Any
+other asset can only be <strong>archived</strong> (§10.2), never hard-deleted, so
+history is never silently lost.
 </div>
 
-<h2>11. Notifications (SMTP) <span class="todo">(Phase 8)</span></h2>
+<h2>11. Maintenance records &amp; Printers</h2>
 
-<h2>12. Importing from ITOps v1 <span class="todo">(Phase 9)</span></h2>
+<h3>11.1 Maintenance records</h3>
+<p>A "Maintenance" section on <strong>every</strong> asset's detail page (not
+printer-specific) logs repairs, routine maintenance, and upgrades: date, type,
+description, an optional cost (if given, a currency is required — used for the
+Printers cost totals below), and who performed the work as free text (covers
+external vendors, who aren't user accounts in this system). Files (receipts,
+photos) attach per record the same way asset-level attachments work.</p>
 
-<h2>13. Upgrades &amp; backups</h2>
+<h3>11.2 Printers</h3>
+<p>Sidebar → <strong>Printers</strong> — <strong>not a separate entity</strong>, a
+filtered view over assets whose model's category is named "Printer" (§8, case
+insensitive). The list shows IP address, status, location, and each printer's
+total maintenance cost, converted to the default currency using the dated
+exchange-rate table (§9) at each record's own date — a record in a currency with
+no applicable rate is excluded from the total and flagged with a warning icon
+rather than silently shown wrong.</p>
+<p class="muted">IP address, hostname, and consumable notes are set from the
+printer asset's own detail page (a "Printer Details" section appears automatically
+once its category is "Printer"), editable by anyone with the
+<code>printers.manage</code> permission.</p>
+
+<h2>12. Notifications (SMTP) <span class="todo">(Phase 8)</span></h2>
+
+<h2>13. Importing from ITOps v1 <span class="todo">(Phase 9)</span></h2>
+
+<h2>14. Upgrades &amp; backups</h2>
 <pre>docker compose pull && docker compose up -d   # upgrade
 # backup = pg_dump of the itops2 database + /opt/appdata/itops2/attachments</pre>
 
