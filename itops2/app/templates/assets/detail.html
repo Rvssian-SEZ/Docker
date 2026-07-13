@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ asset.asset_tag }} — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">
+    {{ asset.asset_tag }}
+    <span class="badge text-bg-secondary ms-2">{{ asset.status_label.name }}</span>
+    {% if is_archived %}<span class="badge text-bg-dark ms-1">archived</span>{% endif %}
+  </h1>
+  {% if user.can('assets.delete') %}
+  <button class="btn btn-outline-danger btn-sm" hx-post="/assets/{{ asset.id }}/delete"
+          hx-target="#toast-area" hx-swap="innerHTML"
+          hx-confirm="Delete asset '{{ asset.asset_tag }}'? Only possible with no checkout history and no attachments.">
+    <i class="bi bi-trash me-1"></i>Delete
+  </button>
+  {% endif %}
+</div>
+
+<div class="row mb-4 col-lg-8">
+  <div class="col-md-4"><div class="text-secondary small">Model</div>{{ asset.model.name }} ({{ asset.model.manufacturer.name }})</div>
+  <div class="col-md-4"><div class="text-secondary small">Effective depreciation</div>
+    {{ effective_depreciation_months ~ ' months' if effective_depreciation_months is not none else '—' }}</div>
+  <div class="col-md-4"><div class="text-secondary small">Effective EOL</div>
+    {{ effective_eol_months ~ ' months' if effective_eol_months is not none else '—' }}</div>
+</div>
+
+{% if is_checked_out %}
+<div class="alert alert-info col-lg-8">
+  Checked out to
+  {% if asset.checked_out_to_user %}<strong>{{ asset.checked_out_to_user.display_name }}</strong>
+  {% elif asset.checked_out_to_location %}<strong>{{ asset.checked_out_to_location.name }}</strong>
+  {% elif asset.checked_out_to_asset %}<strong>{{ asset.checked_out_to_asset.asset_tag }}</strong>{% endif %}
+  since {{ asset.checked_out_at.strftime('%Y-%m-%d %H:%M') }}.
+  Checkin before changing status.
+</div>
+{% endif %}
+
+{% if not user.can('assets.edit') %}
+<p class="text-secondary">You don't have permission to edit this asset.</p>
+
+{% elif is_archived %}
+<div class="alert alert-secondary col-lg-8">This asset is archived and read-only. Pick a status below to restore it.</div>
+<form hx-post="/assets/{{ asset.id }}/update" hx-target="#toast-area" hx-swap="innerHTML" class="col-lg-6 d-flex gap-2 align-items-end">
+  <div class="flex-grow-1">
+    <label class="form-label">Restore to status</label>
+    <select name="status_label_id" class="form-select" required>
+      {% for s in status_labels %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+    </select>
+  </div>
+  <button class="btn btn-primary">Restore</button>
+</form>
+
+{% else %}
+{% with form_action="/assets/" ~ asset.id ~ "/update", submit_label="Save" %}
+  {% include "assets/_fields.html" %}
+{% endwith %}
+{% endif %}
+{% endblock %}

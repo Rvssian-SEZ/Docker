@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}New asset — {{ app_name }}{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">New asset</h1>
+{% with form_action="/assets/create", asset=None, submit_label="Create" %}
+  {% include "assets/_fields.html" %}
+{% endwith %}
+{% endblock %}
