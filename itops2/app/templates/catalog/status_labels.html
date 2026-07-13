@@ -15,22 +15,30 @@
 <p class="text-secondary col-lg-9 small">The status <em>type</em> drives asset workflow rules (Phase 5) —
 the label name is just a display name (e.g. "Ready to Deploy" with type <code>deployable</code>).</p>
 
-<table class="table table-hover align-middle col-lg-9">
+<table class="table table-hover align-middle col-lg-9" style="table-layout: fixed;">
+  <colgroup>
+    <col>
+    <col style="width: 10rem;">
+    {% if can_manage %}<col style="width: 3rem;">{% endif %}
+  </colgroup>
   <thead><tr><th>Name</th><th>Type</th>{% if can_manage %}<th></th>{% endif %}</tr></thead>
   <tbody>
   {% for row in rows %}
     <tr>
       {% if can_manage %}
-      <td colspan="2">
-        <form hx-post="/catalog/status-labels/{{ row.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
-              hx-trigger="change" class="d-flex gap-2 align-items-center">
-          <input class="form-control form-control-sm" name="name" value="{{ row.name }}" style="max-width:16rem">
-          <select name="status_type" class="form-select form-select-sm" style="width:auto">
-            {% for st in status_types %}
-            <option value="{{ st.value }}" {{ 'selected' if st == row.status_type }}>{{ st.value }}</option>
-            {% endfor %}
-          </select>
-        </form>
+      <td>
+        <input class="form-control form-control-sm w-100" name="name" value="{{ row.name }}"
+               hx-post="/catalog/status-labels/{{ row.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+               hx-trigger="change" hx-include="closest tr">
+      </td>
+      <td>
+        <select name="status_type" class="form-select form-select-sm w-100"
+                hx-post="/catalog/status-labels/{{ row.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+                hx-trigger="change" hx-include="closest tr">
+          {% for st in status_types %}
+          <option value="{{ st.value }}" {{ 'selected' if st == row.status_type }}>{{ st.value }}</option>
+          {% endfor %}
+        </select>
       </td>
       <td class="text-end">
         <button class="btn btn-outline-danger btn-sm" hx-post="/catalog/status-labels/{{ row.id }}/delete"
@@ -40,7 +48,7 @@ the label name is just a display name (e.g. "Ready to Deploy" with type <code>de
         </button>
       </td>
       {% else %}
-      <td>{{ row.name }}</td>
+      <td class="text-truncate" style="max-width: 0;" title="{{ row.name }}">{{ row.name }}</td>
       <td><span class="badge text-bg-secondary">{{ row.status_type.value }}</span></td>
       {% endif %}
     </tr>

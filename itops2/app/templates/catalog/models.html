@@ -15,7 +15,15 @@
 <p class="text-secondary small">Depreciation / EOL months override the global defaults
 (Settings → General) for this model only — leave blank to inherit the default.</p>
 
-<table class="table table-hover align-middle">
+<table class="table table-hover align-middle" style="table-layout: fixed;">
+  <colgroup>
+    <col>
+    <col>
+    <col>
+    <col style="width: 9rem;">
+    <col style="width: 9rem;">
+    {% if can_manage %}<col style="width: 3rem;">{% endif %}
+  </colgroup>
   <thead><tr>
     <th>Name</th><th>Manufacturer</th><th>Category</th>
     <th>Depreciation (mo)</th><th>EOL (mo)</th>
@@ -25,27 +33,42 @@
   {% for row in rows %}
     <tr>
       {% if can_manage %}
-      <td colspan="5">
-        <form hx-post="/catalog/models/{{ row.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
-              hx-trigger="change" class="d-flex gap-2 align-items-center flex-wrap">
-          <input class="form-control form-control-sm" name="name" value="{{ row.name }}" style="max-width:12rem">
-          <select name="manufacturer_id" class="form-select form-select-sm" style="width:auto">
-            {% for m in manufacturers %}
-            <option value="{{ m.id }}" {{ 'selected' if m.id == row.manufacturer_id }}>{{ m.name }}</option>
-            {% endfor %}
-          </select>
-          <select name="category_id" class="form-select form-select-sm" style="width:auto">
-            {% for c in categories %}
-            <option value="{{ c.id }}" {{ 'selected' if c.id == row.category_id }}>{{ c.name }}</option>
-            {% endfor %}
-          </select>
-          <input class="form-control form-control-sm" name="depreciation_months" type="number" min="0"
-                 value="{{ row.depreciation_months if row.depreciation_months is not none else '' }}"
-                 placeholder="default" style="max-width:7rem">
-          <input class="form-control form-control-sm" name="eol_months" type="number" min="0"
-                 value="{{ row.eol_months if row.eol_months is not none else '' }}"
-                 placeholder="default" style="max-width:7rem">
-        </form>
+      <td>
+        <input class="form-control form-control-sm w-100" name="name" value="{{ row.name }}"
+               hx-post="/catalog/models/{{ row.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+               hx-trigger="change" hx-include="closest tr">
+      </td>
+      <td>
+        <select name="manufacturer_id" class="form-select form-select-sm w-100"
+                hx-post="/catalog/models/{{ row.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+                hx-trigger="change" hx-include="closest tr">
+          {% for m in manufacturers %}
+          <option value="{{ m.id }}" {{ 'selected' if m.id == row.manufacturer_id }}>{{ m.name }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td>
+        <select name="category_id" class="form-select form-select-sm w-100"
+                hx-post="/catalog/models/{{ row.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+                hx-trigger="change" hx-include="closest tr">
+          {% for c in categories %}
+          <option value="{{ c.id }}" {{ 'selected' if c.id == row.category_id }}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td>
+        <input class="form-control form-control-sm w-100" name="depreciation_months" type="number" min="0"
+               value="{{ row.depreciation_months if row.depreciation_months is not none else '' }}"
+               placeholder="default"
+               hx-post="/catalog/models/{{ row.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+               hx-trigger="change" hx-include="closest tr">
+      </td>
+      <td>
+        <input class="form-control form-control-sm w-100" name="eol_months" type="number" min="0"
+               value="{{ row.eol_months if row.eol_months is not none else '' }}"
+               placeholder="default"
+               hx-post="/catalog/models/{{ row.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+               hx-trigger="change" hx-include="closest tr">
       </td>
       <td class="text-end">
         <button class="btn btn-outline-danger btn-sm" hx-post="/catalog/models/{{ row.id }}/delete"
@@ -55,9 +78,9 @@
         </button>
       </td>
       {% else %}
-      <td>{{ row.name }}</td>
-      <td>{{ row.manufacturer.name }}</td>
-      <td>{{ row.category.name }}</td>
+      <td class="text-truncate" style="max-width: 0;" title="{{ row.name }}">{{ row.name }}</td>
+      <td class="text-truncate" style="max-width: 0;" title="{{ row.manufacturer.name }}">{{ row.manufacturer.name }}</td>
+      <td class="text-truncate" style="max-width: 0;" title="{{ row.category.name }}">{{ row.category.name }}</td>
       <td>{{ row.depreciation_months if row.depreciation_months is not none else '—' }}</td>
       <td>{{ row.eol_months if row.eol_months is not none else '—' }}</td>
       {% endif %}
