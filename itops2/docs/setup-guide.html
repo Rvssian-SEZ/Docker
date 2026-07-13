@@ -240,11 +240,43 @@ printer asset's own detail page (a "Printer Details" section appears automatical
 once its category is "Printer"), editable by anyone with the
 <code>printers.manage</code> permission.</p>
 
-<h2>12. Notifications (SMTP) <span class="todo">(Phase 8)</span></h2>
+<h2>12. Licenses &amp; Contracts</h2>
+<p>Sidebar → <strong>Licenses &amp; Contracts</strong>. One unified simple module for
+software licenses, support contracts, and subscriptions — <strong>not</strong>
+Snipe-IT-style per-seat license tracking.</p>
+<table>
+<tr><th>Field</th><th>Notes</th></tr>
+<tr><td>Type</td><td><code>license</code> / <code>contract</code> / <code>subscription</code>.</td></tr>
+<tr><td>Vendor</td><td>Free text — not tied to a user account.</td></tr>
+<tr><td>End / renewal date</td><td><strong>Required.</strong> The list sorts by this and
+highlights rows red (expired) or yellow (expiring soon) based on
+<strong>Settings → General → Contract renewal alert lead time</strong>.</td></tr>
+<tr><td>Cost</td><td>Requires a currency to be picked if set, same rule as everywhere
+else in the app.</td></tr>
+<tr><td>Covered assets</td><td>Optional, many-to-many — a support contract can cover
+several assets. Linking/unlinking never blocks deleting either side.</td></tr>
+</table>
+<p class="muted">Attachments (agreements, invoices) work the same as on assets, from
+the contract's own detail page.</p>
 
-<h2>13. Importing from ITOps v1 <span class="todo">(Phase 9)</span></h2>
+<h2>13. Inventory</h2>
+<p>Sidebar → <strong>Inventory</strong>. Quantity-tracked consumables and spares,
+sharing the same category list as Assets (Catalog → Categories).</p>
+<div class="callout">
+<strong>Quantity only ever changes via the Adjust action</strong> — a +/- amount plus a
+required reason (e.g. "received shipment", "used on IT-0012"). There is no way to
+type a new quantity directly; every change is logged with who, when, the delta,
+and the reason. An adjustment that would take stock negative is rejected, not
+clamped to zero.
+</div>
+<p>Setting a <strong>minimum quantity</strong> on an item flags it (a yellow row +
+"low" badge) once quantity drops to or below that threshold.</p>
 
-<h2>14. Upgrades &amp; backups</h2>
+<h2>14. Notifications (SMTP) <span class="todo">(Phase 8)</span></h2>
+
+<h2>15. Importing from ITOps v1 <span class="todo">(Phase 9)</span></h2>
+
+<h2>16. Upgrades &amp; backups</h2>
 <pre>docker compose pull && docker compose up -d   # upgrade
 # backup = pg_dump of the itops2 database + /opt/appdata/itops2/attachments</pre>
 

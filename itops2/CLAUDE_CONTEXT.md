@@ -74,7 +74,20 @@ Deployed to home lab and external client sites.
   exchange-rate table with DATED rates (historical value at purchase date);
   default currency SCR, changeable in settings. UK date formats, English only.
 - **Licenses & Contracts:** one unified simple module (renewals + reminders),
-  NOT Snipe-IT seat-tracking.
+  NOT Snipe-IT seat-tracking. Optional M2M coverage of assets
+  (core_contract_assets) — the only CASCADE-delete relationship in this
+  schema (see the polymorphism note above); everything else blocks
+  deletion instead. List sorts by next renewal (end_date, required —
+  a contract you can't track toward renewal isn't useful here), with
+  expired/expiring-soon states driven by contracts.renewal_alert_days
+  (its own setting, not reused from warranty.alert_days — same pattern,
+  own key, so tweaking one never silently affects the other).
+- **Inventory:** quantity-tracked items sharing the Catalog category
+  tree (no separate lookup). Quantity changes ONLY through a +/- adjust
+  action (delta + required reason) — never a direct field edit — so
+  every stock change has an auditable reason; adjustments write
+  straight to core_audit_log, no separate ledger table needed (unlike
+  Checkout/Maintenance, there's no richer per-event data to justify one).
 - **Attachments:** volume at /data/attachments (host /opt/appdata/itops2/attachments),
   organized by entity (assets/<id>/ etc.), metadata in an attachments table.
 - **Notifications:** SMTP only — unauthenticated relay (Postfix .35:25) or
@@ -107,6 +120,17 @@ search columns, async engine with pooling (already configured in app/core/db.py)
   the table-create's implicit create then collides (DuplicateObject) and the
   whole migration rolls back. Only reference the enum inline (as 0001 does for
   role_name/auth_source); `.drop(checkfirst=True)` explicitly in downgrade() only.
+- FastAPI: a bare `field: str = Form(...)` genuinely-required-at-request-layer
+  field, when actually missing/malformed, 422s with a raw JSON body — htmx
+  doesn't render that into the toast area, so the user sees nothing at all,
+  not even an error. Found in Contracts (Phase 7) and fixed there by using
+  `Form("")` with the existing app-level "is it empty?" check instead (which
+  already produced a friendly toast). Assets and Maintenance (Phases 5–6)
+  use bare `Form(...)` for some required fields too and may have the same
+  latent gap — not audited/fixed yet, since real `<input>`/`<select>` form
+  submissions always include the field (even empty), so it's only reachable
+  via a malformed/non-browser request. Worth a sweep before v1 import or a
+  public API surface makes malformed requests more likely.
 
 ## Build order & status
 1. ✅ Scaffold: compose (app + postgres:16-alpine), Dockerfile, CI workflow,
@@ -257,7 +281,39 @@ search columns, async engine with pooling (already configured in app/core/db.py)
    a wrapping `<form>` (which can't legally span multiple `<td>`s) —
    the documented htmx pattern for "save the whole row on any field's
    change" without a literal `<form>` ancestor.
-7. ⬜ Licenses & Contracts, Inventory.
+7. ✅ Licenses & Contracts, Inventory, **deployed and verified in
+   production**. Migration 0006 (core_contracts, core_contract_assets,
+   core_inventory_items).
+   Contracts (app/routers/contracts.py): name/type(license|contract|
+   subscription)/vendor(free text)/optional company+location/start+end
+   dates/cost+currency/renewal_period_months/auto_renews/notes.
+   end_date required (drives the list's sort + expired/expiring-soon
+   states via contracts.renewal_alert_days, new setting on the General
+   tab). cost requires a currency, same rule as Maintenance/Inventory.
+   Optional M2M asset coverage (core_contract_assets, link/unlink from
+   the detail page, duplicate-link guarded) — CASCADE both FKs, the one
+   deliberate exception to this schema's block-don't-cascade rule, since
+   a coverage link isn't itself a record worth preserving once either
+   side is gone. Attachments reuse app/core/attachments with
+   entity_type='contract'; deleting a contract explicitly cleans up its
+   attachments (DB rows + files) the same way Maintenance does — its
+   asset-links clean up on their own via CASCADE, no guard or explicit
+   cleanup needed there.
+   Inventory (app/routers/inventory.py): name/category(shared Catalog
+   tree)/location/quantity/min_quantity/unit_cost+currency/notes.
+   Quantity is read-only in the general edit form — the ONLY way to
+   change it is POST /inventory/{id}/adjust (a +/- delta with a
+   required reason), which writes straight to core_audit_log (delta +
+   reason + resulting quantity in `detail`) rather than a dedicated
+   ledger table. An adjustment that would take quantity negative is
+   rejected outright, not clamped. min_quantity (optional) drives a
+   low-stock badge + row highlight on the list, mirroring Contracts'
+   expiring-soon treatment. Edit/Adjust both live behind modals (same
+   data-* populate-on-open pattern as Maintenance/Users password-reset)
+   rather than inline-row editing — too many fields for that, same
+   reasoning as Assets' detail page vs Catalog's inline rows.
+   Bug found + fixed during this phase's own verification: see the
+   "bare Form(...) required field" v1-lessons-style note above.
 8. ⬜ Notifications, dashboard.
 9. ⬜ v1 import wizard.
 10. ⬜ Polish + Setup & Deployment Guide (dark-themed HTML, grows per phase —
