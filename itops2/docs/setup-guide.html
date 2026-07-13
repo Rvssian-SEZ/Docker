@@ -123,7 +123,7 @@ no bind/search logic, login route, or Settings UI for them yet.</p>
 permission grid — Settings → Permissions.</p>
 
 <h2>8. Catalog: core lookups</h2>
-<p>Sidebar → <strong>Catalog</strong>. Feeds Assets (Phase 5): every asset will reference a
+<p>Sidebar → <strong>Catalog</strong>. Feeds Assets: every asset references a
 model, which in turn references a manufacturer and a category.</p>
 <table>
 <tr><th>Page</th><th>Notes</th></tr>
@@ -134,7 +134,7 @@ blocked (with an explanatory message) while a row is still referenced elsewhere.
 global defaults set in Settings → General for that model only — leave blank to inherit.</td></tr>
 <tr><td>Status Labels</td><td>A display name plus a fixed <strong>type</strong>
 (<code>deployable</code> / <code>deployed</code> / <code>pending</code> / <code>archived</code>).
-Asset workflow rules (Phase 5) key off the type, not the label text — you can rename a
+Asset workflow rules key off the type, not the label text — you can rename a
 label freely without breaking workflow rules, as long as its type stays put.</td></tr>
 <tr><td>Companies</td><td>Only visible/editable with the <code>companies.manage</code>
 permission (Admin by default) — unlike the other Catalog pages, there is no separate
@@ -159,11 +159,67 @@ rather than today's rate. At most one rate per (from, to, date) triple.</td></tr
 </table>
 <p class="muted">UK date formats, English only, throughout the app.</p>
 
-<h2>10. Notifications (SMTP) <span class="todo">(Phase 8)</span></h2>
+<h2>10. Assets, checkout/checkin &amp; attachments</h2>
+<p>Sidebar → <strong>Assets</strong>. The core inventory record — tag, serial, model
+(→ manufacturer/category), status, company, location, purchase date/cost/currency,
+warranty, and depreciation/EOL overrides.</p>
 
-<h2>11. Importing from ITOps v1 <span class="todo">(Phase 9)</span></h2>
+<h3>10.1 Asset tags</h3>
+<p>Leave the tag field blank on create to auto-generate one: the app scans existing
+tags matching <strong>Settings → General → Asset tag prefix</strong>, takes the
+highest numeric suffix + 1, and zero-pads it to <strong>Asset tag padding</strong>
+digits. Tags are always manually editable afterward, including on existing assets —
+duplicates are rejected with a clear message, not a server error.</p>
 
-<h2>12. Upgrades &amp; backups</h2>
+<h3>10.2 Status lifecycle</h3>
+<div class="callout">
+Every status label has a fixed <strong>type</strong> (§8) that drives what you can do
+with an asset — the label's display name is cosmetic, the type is what matters:
+<ul>
+<li><code>deployable</code> — the only status an asset can be checked out <em>from</em>.</li>
+<li><code>deployed</code> — reachable <strong>only</strong> via checkout, never through
+a direct status edit. This is enforced server-side even if you try to force it.</li>
+<li><code>pending</code> — not checkoutable; a normal status edit moves it elsewhere
+when it's ready (e.g. back to a <code>deployable</code> label after repair).</li>
+<li><code>archived</code> — the "soft delete" state. Archived assets are read-only
+except for a <strong>Restore</strong> action, which requires picking a destination
+status (there's no one-click auto-restore).</li>
+</ul>
+An asset that's currently checked out (<code>deployed</code>) can't have its status
+changed directly — checkin first.
+</div>
+
+<h3>10.3 Checkout / checkin</h3>
+<p>On an asset's detail page, checkout requires picking <strong>exactly one</strong>
+target — a user, a location, or (for accessories like docking stations) another
+asset — plus a destination status restricted to <code>deployed</code>-type labels.
+An optional <strong>expected checkin date</strong> can be set for due-date tracking.
+Checkin accepts any non-<code>deployed</code> destination status (e.g. back to
+<code>deployable</code>, or to <code>pending</code> if it came back broken) and closes
+out the checkout in the asset's history table. The app enforces at most one open
+checkout per asset at the database level, not just in the UI.</p>
+
+<h3>10.4 Attachments</h3>
+<p>Files (manuals, photos, purchase receipts) attach to an asset from its detail page —
+max <strong>25 MB</strong> per file. Stored on the <code>/data/attachments</code> volume
+(host: <code>/opt/appdata/itops2/attachments</code>), organized as
+<code>attachments/&lt;entity&gt;/&lt;id&gt;/&lt;file&gt;</code>, e.g.
+<code>attachments/asset/42/…</code>. Uploads and deletes are blocked while an asset is
+archived.</p>
+
+<h3>10.5 Deleting assets</h3>
+<div class="callout warn">
+An asset can only be <strong>permanently deleted</strong> if it has zero checkout
+history and zero attachments — the two are exactly the things that make an asset's
+audit trail worth keeping. Any other asset can only be <strong>archived</strong>
+(§10.2), never hard-deleted, so history is never silently lost.
+</div>
+
+<h2>11. Notifications (SMTP) <span class="todo">(Phase 8)</span></h2>
+
+<h2>12. Importing from ITOps v1 <span class="todo">(Phase 9)</span></h2>
+
+<h2>13. Upgrades &amp; backups</h2>
 <pre>docker compose pull && docker compose up -d   # upgrade
 # backup = pg_dump of the itops2 database + /opt/appdata/itops2/attachments</pre>
 

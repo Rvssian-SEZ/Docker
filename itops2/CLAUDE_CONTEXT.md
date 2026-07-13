@@ -29,6 +29,24 @@ Deployed to home lab and external client sites.
   status labels; checkout to **user, location, or asset**; auto asset tags with
   configurable prefix/format, manually editable; full audit log
   (core_audit_log, written on EVERY mutation — infrastructure, not feature).
+  Hard delete only when an asset has zero checkout history and zero
+  attachments (FK-guard style); otherwise archive (status → an
+  archived-type label) is the only "delete".
+- **Two polymorphism styles, deliberately, not an inconsistency:**
+  checkout targets (`checked_out_to_user_id` / `_location_id` / `_asset_id`
+  on core_assets and core_checkouts) use **real FK columns**, one per
+  possible target type, because the target set is small and fixed (3
+  types, unlikely to grow) and we want the DB itself to block deleting a
+  user/location/asset that's currently a checkout target — same
+  FK-guard-with-friendly-toast pattern as Catalog. Attachments
+  (core_attachments) use the **entity_type + entity_id string pattern**
+  instead (matching core_audit_log), because attachments are meant to
+  generalize to entities that don't exist yet (Contracts, Maintenance in
+  later phases) — a fixed FK per entity type doesn't scale to "any
+  future entity," and losing DB-level referential integrity there is an
+  acceptable tradeoff since assets can never be hard-deleted while they
+  still have attachments (checked by an explicit COUNT, not a FK) in the
+  first place.
 - **Printers:** assets in a Printer category + a dedicated page that's a
   specialized VIEW adding IP/hostname, consumable links, maintenance/repair
   log with costs. Maintenance records are generic (any asset).
@@ -136,7 +154,44 @@ search columns, async engine with pooling (already configured in app/core/db.py)
    0002 initially hit the inline-Enum migration gotcha noted above — caught
    before the deploy stuck (transaction rolled back cleanly, no manual DB
    cleanup needed).
-5. ⬜ Assets + checkout/checkin + audit wiring + attachments.
+5. ✅ Assets + checkout/checkin + audit wiring + attachments,
+   **deployed and verified in production**. app/routers/assets.py
+   (list, detail/edit page — too many fields for Catalog's inline-row
+   pattern), sidebar "Assets" link (pre-existed from Phase 1 scaffold,
+   was 404ing until now). Migrations 0004 (core_assets, core_checkouts,
+   core_attachments).
+   Fields: tag/serial/model/status/company/location, purchase
+   date+cost+currency, warranty_months, depreciation/EOL month
+   overrides (asset override → model override → global default
+   cascade; EOL has no global default, computed at render time, never
+   stored). Asset tag auto-suggested (scan existing tags matching
+   asset_tag.prefix, +1, zero-padded to asset_tag.pad) if left blank,
+   always manually editable; a same-tick collision is caught by
+   `UNIQUE(asset_tag)` → friendly toast, not a 500.
+   Status lifecycle: `status_type == deployed` reachable ONLY via
+   checkout (general create/edit form's dropdown excludes it, rejected
+   server-side if forced); editing status while `checked_out_at IS NOT
+   NULL` is rejected — must checkin first (this invariant spans two
+   tables so it's enforced in the routers, not a DB constraint).
+   Archived assets are read-only except a restore action (pick a
+   non-archived destination status; nothing else editable in that
+   request). Audit action is archive/restore when a transition crosses
+   that boundary, update otherwise.
+   Checkout: requires exactly one of the three targets + a destination
+   status restricted to `status_type == deployed`; opens a
+   core_checkouts row (includes `expected_checkin_at` due-date field).
+   Checkin: any non-deployed destination status; closes the open
+   core_checkouts row, clears the asset's `checked_out_to_*` pointer.
+   `core_checkouts` has a **partial unique index**
+   (`ON (asset_id) WHERE checked_in_at IS NULL`) — DB-level guarantee
+   of at most one open checkout per asset, not just an app-level check.
+   Attachments: multipart upload streamed to disk in 1MB chunks, capped
+   at 25MB; stored under a UUID-based filename (never trust the
+   uploaded name for the on-disk path); disk layout
+   `{attachments_dir}/{entity_type}/{entity_id}/{stored_filename}` —
+   entity_type used raw ("asset"), no pluralization. No dedicated
+   attachments.* permission — upload/delete reuse assets.edit, download
+   reuses assets.view.
 6. ⬜ Maintenance records + Printers page.
 7. ⬜ Licenses & Contracts, Inventory.
 8. ⬜ Notifications, dashboard.
@@ -155,6 +210,36 @@ ssh root@192.168.110.50 "cd /opt/docker-repo/itops2 && docker compose up -d --bu
 - Test at https://itops2.home.internal.
 - Check `docker logs itops2` on the server for errors after deploying.
 - **After every verified deploy, commit and push without asking.**
+
+## Testing (Phase 5+)
+No local Docker or a matching Python version (3.12+, for `X | None`
+union-type annotations) on Alex's dev machine — the suite runs on the
+docker-test host instead, where Docker already lives:
+```
+ssh root@192.168.110.50 "cd /opt/docker-repo/itops2 && ./scripts/run_tests.sh"
+```
+`scripts/run_tests.sh` spins up a **throwaway `postgres:16-alpine`
+container** on the `itops2_net` bridge network (reachable by name, no
+port mapping needed), builds the app image, runs `alembic upgrade head`
+against it, then `pytest` — everything torn down after (`trap cleanup
+EXIT`), never touching the real `itops2`/`itops2-db` containers.
+**Must be Postgres, not sqlite** — the `num_nonnulls(...)` CHECK
+constraints and the partial unique index on `core_checkouts` are
+Postgres-only and would silently not be exercised (or not even parse)
+against sqlite.
+`tests/conftest.py`: session-scoped `bootstrap()` seeding, autouse
+table truncation before every test (roles/permissions/breakglass
+user/currencies deliberately left alone — seeded once, never
+truncated), and an autouse fixture that disposes the SQLAlchemy engine
+*before* each test runs. That last one works around a real gotcha:
+pytest-asyncio gives every test function its own event loop, but
+`app.core.db.engine` is a module-level singleton — its pooled asyncpg
+connections stay bound to whichever loop created them and blow up with
+"attached to a different loop" on the next test unless the pool is
+disposed first so it reconnects fresh.
+Run before every deploy from Chunk 3 onward — catches real bugs before
+they reach the live site (e.g. an update route counting the wrong
+model in a form-context helper).
 
 ## Repo/infra reminders
 - Git via SSH only: git@github.com:Rvssian-SEZ/Docker.git
