@@ -132,6 +132,47 @@
 {% endwith %}
 {% endif %}
 
+{% if not is_archived %}
+<h2 class="h6 mt-4">Attachments</h2>
+<table class="table table-sm col-lg-10">
+  <thead><tr><th>File</th><th>Size</th><th>Uploaded</th><th>Description</th>{% if user.can('assets.edit') %}<th></th>{% endif %}</tr></thead>
+  <tbody>
+  {% for a in attachments %}
+    <tr>
+      <td><a href="/assets/{{ asset.id }}/attachments/{{ a.id }}/download">{{ a.original_filename }}</a></td>
+      <td>{{ (a.size_bytes / 1024) | round(1) }} KB</td>
+      <td>{{ a.uploaded_at.strftime('%Y-%m-%d %H:%M') }} by {{ a.uploader.display_name }}</td>
+      <td class="text-secondary small">{{ a.description or '' }}</td>
+      {% if user.can('assets.edit') %}
+      <td class="text-end">
+        <button class="btn btn-outline-danger btn-sm" hx-post="/assets/{{ asset.id }}/attachments/{{ a.id }}/delete"
+                hx-target="#toast-area" hx-swap="innerHTML" hx-confirm="Delete '{{ a.original_filename }}'?">
+          <i class="bi bi-trash"></i>
+        </button>
+      </td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="text-secondary">No attachments yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if user.can('assets.edit') %}
+<form hx-post="/assets/{{ asset.id }}/attachments" hx-target="#toast-area" hx-swap="innerHTML"
+      hx-encoding="multipart/form-data" class="col-lg-8 d-flex gap-2 align-items-end mb-4">
+  <div class="flex-grow-1">
+    <label class="form-label">Add attachment <span class="text-secondary">(max {{ max_attachment_mb }} MB)</span></label>
+    <input type="file" name="file" class="form-control" required>
+  </div>
+  <div class="flex-grow-1">
+    <label class="form-label">Description</label>
+    <input name="description" class="form-control">
+  </div>
+  <button class="btn btn-primary">Upload</button>
+</form>
+{% endif %}
+{% endif %}
+
 {% if checkout_history %}
 <h2 class="h6 mt-4">Checkout history</h2>
 <table class="table table-sm col-lg-10">

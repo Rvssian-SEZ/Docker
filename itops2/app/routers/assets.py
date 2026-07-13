@@ -33,19 +33,31 @@ entity_type/entity_id polymorphism style (like core_audit_log), which
 has no enforced FK, so that half is an explicit COUNT check before the
 delete is attempted. See CLAUDE.md for why attachments and checkout
 targets use two different polymorphism styles.
+
+Attachments: disk layout is {attachments_dir}/{entity_type}/{entity_id}/
+{stored_filename} — entity_type used raw ("asset"), no pluralization.
+No dedicated attachments.* permission exists (not in the registry);
+upload/delete reuse assets.edit, download reuses assets.view, same as
+any other asset mutation/view. Uploads are capped at MAX_ATTACHMENT_SIZE
+as a basic disk-fill guard — there's no size limit in the approved
+design, but shipping an ITAM tool with a genuinely unbounded upload
+endpoint is asking for an accidental full disk.
 """
 
+import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.auth import CurrentUser, require
+from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.models import (
     Asset,
@@ -64,6 +76,8 @@ from app.core.settings_store import load_settings
 from app.templating import templates
 
 router = APIRouter(prefix="/assets")
+
+MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25 MB
 
 
 # ---- helpers ----
@@ -188,6 +202,34 @@ def _effective_months(override: int | None, model_value: int | None, global_defa
         if value is not None:
             return value
     return None
+
+
+def _attachment_dir(entity_type: str, entity_id: str) -> Path:
+    return Path(get_settings().attachments_dir) / entity_type / entity_id
+
+
+async def _save_upload(upload: UploadFile, entity_type: str, entity_id: str) -> tuple[str, int, str | None]:
+    """Streams the upload to disk under a UUID-based name (never trust the
+    original filename for the on-disk path). Returns
+    (stored_filename, size_bytes, error)."""
+    ext = Path(upload.filename or "").suffix
+    stored_name = f"{uuid.uuid4()}{ext}"
+    directory = _attachment_dir(entity_type, entity_id)
+    directory.mkdir(parents=True, exist_ok=True)
+    dest = directory / stored_name
+    size = 0
+    with dest.open("wb") as f:
+        while True:
+            chunk = await upload.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > MAX_ATTACHMENT_SIZE:
+                f.close()
+                dest.unlink(missing_ok=True)
+                return "", 0, f"File too large (max {MAX_ATTACHMENT_SIZE // (1024 * 1024)} MB)."
+            f.write(chunk)
+    return stored_name, size, None
 
 
 # ---- list ----
@@ -363,12 +405,26 @@ async def asset_detail(
         .scalars()
         .all()
     )
+    attachments = (
+        (
+            await db.execute(
+                select(Attachment)
+                .where(Attachment.entity_type == "asset", Attachment.entity_id == str(asset_id))
+                .order_by(Attachment.uploaded_at.desc())
+                .options(selectinload(Attachment.uploader))
+            )
+        )
+        .scalars()
+        .all()
+    )
     ctx.update(
         {
             "user": user,
             "asset": asset,
             "is_archived": asset.status_label.status_type == StatusType.archived,
             "is_checked_out": is_checked_out,
+            "attachments": attachments,
+            "max_attachment_mb": MAX_ATTACHMENT_SIZE // (1024 * 1024),
             "can_checkout": (
                 not is_checked_out
                 and asset.status_label.status_type == StatusType.deployable
@@ -677,4 +733,103 @@ async def asset_checkin(
         )
     )
     await db.commit()
+    return _refresh()
+
+
+# ---- attachments ----
+
+async def _get_attachment_for_asset(db: AsyncSession, asset_id: int, attachment_id: int) -> Attachment | None:
+    att = await db.get(Attachment, attachment_id)
+    if att is None or att.entity_type != "asset" or att.entity_id != str(asset_id):
+        return None
+    return att
+
+
+@router.post("/{asset_id}/attachments", response_class=HTMLResponse)
+async def asset_attachment_upload(
+    request: Request,
+    asset_id: int,
+    file: UploadFile = File(...),
+    description: str = Form(""),
+    user: CurrentUser = Depends(require("assets.edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    asset = await db.get(Asset, asset_id, options=[selectinload(Asset.status_label)])
+    if asset is None:
+        return _toast(request, False, "Asset not found.")
+    if asset.status_label.status_type == StatusType.archived:
+        return _toast(request, False, "Archived — restore it before adding attachments.")
+    if not file.filename:
+        return _toast(request, False, "No file selected.")
+
+    stored_name, size, err = await _save_upload(file, "asset", str(asset_id))
+    if err:
+        return _toast(request, False, err)
+
+    row = Attachment(
+        entity_type="asset",
+        entity_id=str(asset_id),
+        original_filename=file.filename,
+        stored_filename=stored_name,
+        content_type=file.content_type,
+        size_bytes=size,
+        description=description.strip() or None,
+        uploaded_by=user.id,
+    )
+    db.add(row)
+    await db.flush()
+    db.add(
+        AuditLog(
+            user_id=user.id, action="attachment_add", entity_type="asset", entity_id=str(asset_id),
+            detail=file.filename,
+        )
+    )
+    await db.commit()
+    return _refresh()
+
+
+@router.get("/{asset_id}/attachments/{attachment_id}/download")
+async def asset_attachment_download(
+    asset_id: int,
+    attachment_id: int,
+    user: CurrentUser = Depends(require("assets.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    att = await _get_attachment_for_asset(db, asset_id, attachment_id)
+    if att is None:
+        raise HTTPException(status_code=404, detail="Attachment not found.")
+    path = _attachment_dir(att.entity_type, att.entity_id) / att.stored_filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File missing on disk.")
+    return FileResponse(path, filename=att.original_filename, media_type=att.content_type or "application/octet-stream")
+
+
+@router.post("/{asset_id}/attachments/{attachment_id}/delete", response_class=HTMLResponse)
+async def asset_attachment_delete(
+    request: Request,
+    asset_id: int,
+    attachment_id: int,
+    user: CurrentUser = Depends(require("assets.edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    asset = await db.get(Asset, asset_id, options=[selectinload(Asset.status_label)])
+    if asset is None:
+        return _toast(request, False, "Asset not found.")
+    if asset.status_label.status_type == StatusType.archived:
+        return _toast(request, False, "Archived — restore it before removing attachments.")
+    att = await _get_attachment_for_asset(db, asset_id, attachment_id)
+    if att is None:
+        return _toast(request, False, "Attachment not found.")
+
+    filename = att.original_filename
+    path = _attachment_dir(att.entity_type, att.entity_id) / att.stored_filename
+    await db.delete(att)
+    db.add(
+        AuditLog(
+            user_id=user.id, action="attachment_delete", entity_type="asset", entity_id=str(asset_id),
+            detail=filename,
+        )
+    )
+    await db.commit()
+    path.unlink(missing_ok=True)
     return _refresh()
