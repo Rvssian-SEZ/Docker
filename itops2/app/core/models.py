@@ -369,3 +369,59 @@ class Attachment(Base):
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
     uploader: Mapped[User] = relationship(foreign_keys=[uploaded_by])
+
+
+class MaintenanceType(str, enum.Enum):
+    repair = "repair"
+    maintenance = "maintenance"
+    upgrade = "upgrade"
+
+
+class Maintenance(Base):
+    """Generic maintenance/repair/upgrade record against any asset (not
+    printer-specific). Attachments (receipts, photos) reuse
+    core_attachments with entity_type='maintenance', entity_id=str(id) —
+    the same polymorphic table assets use, no new attachment machinery.
+    performed_by is free text, not a User FK: external vendors do this
+    work too, and they're not accounts in this system.
+    """
+
+    __tablename__ = "core_maintenance"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("core_assets.id"), index=True)
+    date: Mapped[date] = mapped_column(Date, index=True)
+    maintenance_type: Mapped[MaintenanceType] = mapped_column(Enum(MaintenanceType, name="core_maintenance_type"))
+    description: Mapped[str] = mapped_column(Text)
+    cost: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    currency: Mapped[str | None] = mapped_column(ForeignKey("core_currencies.code"))
+    performed_by: Mapped[str | None] = mapped_column(String(200))
+    created_by: Mapped[int] = mapped_column(ForeignKey("core_users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    asset: Mapped[Asset] = relationship(foreign_keys=[asset_id])
+    creator: Mapped[User] = relationship(foreign_keys=[created_by])
+
+
+class PrinterDetails(Base):
+    """1:1 extension of core_assets for assets in the Printer category.
+    asset_id is both PK and FK, enforcing 1:1 at the schema level.
+    Created lazily on first save from the asset detail page's Printer
+    Details section. Chosen over nullable columns on core_assets (would
+    make the central table wider with every future asset-type field) or
+    a generic key-value asset-extras table (loses typing/indexing for a
+    flexibility need that doesn't exist — asset types needing extra
+    fields are a small, dev-curated set, not runtime-configurable) — see
+    CLAUDE.md for the full rationale, decided 2026-07 with Alex.
+    """
+
+    __tablename__ = "core_printer_details"
+
+    asset_id: Mapped[int] = mapped_column(ForeignKey("core_assets.id"), primary_key=True)
+    ip_address: Mapped[str | None] = mapped_column(String(45))  # fits IPv6
+    hostname: Mapped[str | None] = mapped_column(String(255))
+    consumable_notes: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    asset: Mapped[Asset] = relationship(foreign_keys=[asset_id])
