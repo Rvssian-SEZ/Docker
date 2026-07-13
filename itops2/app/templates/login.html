@@ -23,6 +23,12 @@
         </div>
         <button class="btn btn-primary w-100">Sign in</button>
       </form>
+      {% if oidc_enabled %}
+      <div class="d-flex align-items-center my-3">
+        <hr class="flex-grow-1"><span class="px-2 text-secondary small">or</span><hr class="flex-grow-1">
+      </div>
+      <a href="/auth/oidc/login" class="btn btn-outline-light w-100">{{ oidc_label }}</a>
+      {% endif %}
       <div class="text-secondary small mt-3 text-center">v{{ app_version }}</div>
     </div>
   </div>

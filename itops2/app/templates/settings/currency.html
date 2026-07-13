@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Settings — {{ app_name }}{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Settings</h1>
+{% include "settings/_tabs.html" %}
+
+<div class="row">
+  <div class="col-lg-5">
+    <h2 class="h5 mb-3">Currencies</h2>
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Code</th><th>Symbol</th><th>Active</th><th></th></tr></thead>
+      <tbody>
+      {% for c in currencies %}
+        <tr>
+          <td>
+            {{ c.code }}
+            {% if c.code == default_currency %}<span class="badge text-bg-secondary ms-1">default</span>{% endif %}
+          </td>
+          <td>{{ c.symbol }}</td>
+          <td>
+            <form hx-post="/settings/currency/{{ c.code }}/toggle" hx-target="#toast-area" hx-swap="innerHTML"
+                  hx-trigger="change">
+              <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" name="active" value="true"
+                       {{ 'checked' if c.active }}>
+              </div>
+            </form>
+          </td>
+          <td class="text-end">
+            <button class="btn btn-outline-danger btn-sm" hx-post="/settings/currency/{{ c.code }}/delete"
+                    hx-target="#toast-area" hx-swap="innerHTML"
+                    hx-confirm="Delete currency {{ c.code }}?">
+              <i class="bi bi-trash"></i>
+            </button>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="text-secondary">No currencies yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    <form hx-post="/settings/currency/create" hx-target="#toast-area" hx-swap="innerHTML"
+          class="d-flex gap-2 align-items-end">
+      <div><label class="form-label small mb-0">Code</label>
+        <input name="code" class="form-control form-control-sm text-uppercase" style="width:6rem"
+               maxlength="3" placeholder="SCR" required></div>
+      <div><label class="form-label small mb-0">Symbol</label>
+        <input name="symbol" class="form-control form-control-sm" style="width:6rem" placeholder="SR" required></div>
+      <button class="btn btn-primary btn-sm">Add</button>
+    </form>
+  </div>
+
+  <div class="col-lg-7">
+    <h2 class="h5 mb-3">Exchange rates</h2>
+    <p class="text-secondary small">Dated rates: 1 <em>from</em> = rate &times; <em>to</em>, effective from the
+      given date. Manual entry only — no external rate API.</p>
+    <table class="table table-hover align-middle">
+      <thead><tr><th>From</th><th>To</th><th>Rate</th><th>Effective</th><th></th></tr></thead>
+      <tbody>
+      {% for r in rates %}
+        <tr>
+          <td>{{ r.from_currency }}</td>
+          <td>{{ r.to_currency }}</td>
+          <td>{{ r.rate }}</td>
+          <td>{{ r.effective_date }}</td>
+          <td class="text-end">
+            <button class="btn btn-outline-danger btn-sm" hx-post="/settings/currency/rates/{{ r.id }}/delete"
+                    hx-target="#toast-area" hx-swap="innerHTML"
+                    hx-confirm="Delete this rate?">
+              <i class="bi bi-trash"></i>
+            </button>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" class="text-secondary">No exchange rates yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    <form hx-post="/settings/currency/rates/create" hx-target="#toast-area" hx-swap="innerHTML"
+          class="d-flex gap-2 align-items-end flex-wrap">
+      <div><label class="form-label small mb-0">From</label>
+        <select name="from_currency" class="form-select form-select-sm" style="width:auto">
+          {% for c in currencies %}<option value="{{ c.code }}">{{ c.code }}</option>{% endfor %}
+        </select></div>
+      <div><label class="form-label small mb-0">To</label>
+        <select name="to_currency" class="form-select form-select-sm" style="width:auto">
+          {% for c in currencies %}<option value="{{ c.code }}">{{ c.code }}</option>{% endfor %}
+        </select></div>
+      <div><label class="form-label small mb-0">Rate</label>
+        <input name="rate" type="number" step="0.000001" min="0" class="form-control form-control-sm"
+               style="width:9rem" required></div>
+      <div><label class="form-label small mb-0">Effective date</label>
+        <input name="effective_date" type="date" class="form-control form-control-sm" required></div>
+      <button class="btn btn-primary btn-sm">Add</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

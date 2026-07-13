@@ -15,6 +15,7 @@ from app.core.bootstrap import bootstrap
 from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.routers import auth as auth_router
+from app.routers import catalog as catalog_router
 from app.routers import permissions as permissions_router
 from app.routers import settings as settings_router
 from app.routers import users as users_router
@@ -42,6 +43,7 @@ app.include_router(auth_router.router)
 app.include_router(settings_router.router)
 app.include_router(permissions_router.router)
 app.include_router(users_router.router)
+app.include_router(catalog_router.router)
 
 
 @app.exception_handler(RequiresLoginException)

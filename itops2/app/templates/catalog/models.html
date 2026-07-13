@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Catalog — {{ app_name }}{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Catalog</h1>
+{% include "catalog/_tabs.html" %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="h5 mb-0">Models</h2>
+  {% if can_manage %}
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createItem">
+    <i class="bi bi-plus-lg me-1"></i>New model
+  </button>
+  {% endif %}
+</div>
+<p class="text-secondary small">Depreciation / EOL months override the global defaults
+(Settings → General) for this model only — leave blank to inherit the default.</p>
+
+<table class="table table-hover align-middle">
+  <thead><tr>
+    <th>Name</th><th>Manufacturer</th><th>Category</th>
+    <th>Depreciation (mo)</th><th>EOL (mo)</th>
+    {% if can_manage %}<th></th>{% endif %}
+  </tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      {% if can_manage %}
+      <td colspan="5">
+        <form hx-post="/catalog/models/{{ row.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+              hx-trigger="change" class="d-flex gap-2 align-items-center flex-wrap">
+          <input class="form-control form-control-sm" name="name" value="{{ row.name }}" style="max-width:12rem">
+          <select name="manufacturer_id" class="form-select form-select-sm" style="width:auto">
+            {% for m in manufacturers %}
+            <option value="{{ m.id }}" {{ 'selected' if m.id == row.manufacturer_id }}>{{ m.name }}</option>
+            {% endfor %}
+          </select>
+          <select name="category_id" class="form-select form-select-sm" style="width:auto">
+            {% for c in categories %}
+            <option value="{{ c.id }}" {{ 'selected' if c.id == row.category_id }}>{{ c.name }}</option>
+            {% endfor %}
+          </select>
+          <input class="form-control form-control-sm" name="depreciation_months" type="number" min="0"
+                 value="{{ row.depreciation_months if row.depreciation_months is not none else '' }}"
+                 placeholder="default" style="max-width:7rem">
+          <input class="form-control form-control-sm" name="eol_months" type="number" min="0"
+                 value="{{ row.eol_months if row.eol_months is not none else '' }}"
+                 placeholder="default" style="max-width:7rem">
+        </form>
+      </td>
+      <td class="text-end">
+        <button class="btn btn-outline-danger btn-sm" hx-post="/catalog/models/{{ row.id }}/delete"
+                hx-target="#toast-area" hx-swap="innerHTML"
+                hx-confirm="Delete '{{ row.name }}'?">
+          <i class="bi bi-trash"></i>
+        </button>
+      </td>
+      {% else %}
+      <td>{{ row.name }}</td>
+      <td>{{ row.manufacturer.name }}</td>
+      <td>{{ row.category.name }}</td>
+      <td>{{ row.depreciation_months if row.depreciation_months is not none else '—' }}</td>
+      <td>{{ row.eol_months if row.eol_months is not none else '—' }}</td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="text-secondary">No models yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if can_manage %}
+<div class="modal fade" id="createItem" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form hx-post="/catalog/models/create" hx-target="#toast-area" hx-swap="innerHTML">
+      <div class="modal-header"><h5 class="modal-title">New model</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-3"><label class="form-label">Name</label>
+          <input name="name" class="form-control" required autofocus></div>
+        <div class="mb-3"><label class="form-label">Manufacturer</label>
+          <select name="manufacturer_id" class="form-select" required>
+            {% for m in manufacturers %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}
+          </select>
+          {% if not manufacturers %}<div class="form-text text-warning">Add a manufacturer first.</div>{% endif %}
+        </div>
+        <div class="mb-3"><label class="form-label">Category</label>
+          <select name="category_id" class="form-select" required>
+            {% for c in categories %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+          </select>
+          {% if not categories %}<div class="form-text text-warning">Add a category first.</div>{% endif %}
+        </div>
+        <div class="row">
+          <div class="col mb-3"><label class="form-label">Depreciation (months)</label>
+            <input name="depreciation_months" type="number" min="0" class="form-control" placeholder="default"></div>
+          <div class="col mb-3"><label class="form-label">EOL (months)</label>
+            <input name="eol_months" type="number" min="0" class="form-control" placeholder="default"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary">Create</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Catalog — {{ app_name }}{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Catalog</h1>
+{% include "catalog/_tabs.html" %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 col-lg-9">
+  <h2 class="h5 mb-0">Status Labels</h2>
+  {% if can_manage %}
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createItem">
+    <i class="bi bi-plus-lg me-1"></i>New status label
+  </button>
+  {% endif %}
+</div>
+<p class="text-secondary col-lg-9 small">The status <em>type</em> drives asset workflow rules (Phase 5) —
+the label name is just a display name (e.g. "Ready to Deploy" with type <code>deployable</code>).</p>
+
+<table class="table table-hover align-middle col-lg-9">
+  <thead><tr><th>Name</th><th>Type</th>{% if can_manage %}<th></th>{% endif %}</tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      {% if can_manage %}
+      <td colspan="2">
+        <form hx-post="/catalog/status-labels/{{ row.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+              hx-trigger="change" class="d-flex gap-2 align-items-center">
+          <input class="form-control form-control-sm" name="name" value="{{ row.name }}" style="max-width:16rem">
+          <select name="status_type" class="form-select form-select-sm" style="width:auto">
+            {% for st in status_types %}
+            <option value="{{ st.value }}" {{ 'selected' if st == row.status_type }}>{{ st.value }}</option>
+            {% endfor %}
+          </select>
+        </form>
+      </td>
+      <td class="text-end">
+        <button class="btn btn-outline-danger btn-sm" hx-post="/catalog/status-labels/{{ row.id }}/delete"
+                hx-target="#toast-area" hx-swap="innerHTML"
+                hx-confirm="Delete '{{ row.name }}'?">
+          <i class="bi bi-trash"></i>
+        </button>
+      </td>
+      {% else %}
+      <td>{{ row.name }}</td>
+      <td><span class="badge text-bg-secondary">{{ row.status_type.value }}</span></td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="3" class="text-secondary">No status labels yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if can_manage %}
+<div class="modal fade" id="createItem" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form hx-post="/catalog/status-labels/create" hx-target="#toast-area" hx-swap="innerHTML">
+      <div class="modal-header"><h5 class="modal-title">New status label</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-3"><label class="form-label">Name</label>
+          <input name="name" class="form-control" required autofocus></div>
+        <div class="mb-3"><label class="form-label">Type</label>
+          <select name="status_type" class="form-select">
+            {% for st in status_types %}<option value="{{ st.value }}">{{ st.value }}</option>{% endfor %}
+          </select></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary">Create</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+{% endif %}
+{% endblock %}

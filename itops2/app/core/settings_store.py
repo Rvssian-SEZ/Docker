@@ -30,6 +30,9 @@ DEFAULTS: dict[str, tuple[str, str]] = {
     "auth.oidc.issuer": ("", "str"),
     "auth.oidc.client_id": ("", "str"),
     "auth.oidc.client_secret": ("", "str"),
+    "auth.oidc.button_label": ("Sign in with SSO", "str"),
+    "auth.oidc.group_role_map": ('{"itops-admins": "admin"}', "str"),  # JSON: {"group": "role"}
+    "auth.oidc.default_role": ("", "str"),  # role when no group matches; empty = deny
     "auth.ldap.enabled": ("false", "bool"),
     "auth.ldap.url": ("", "str"),          # ldaps://host:636 or ldap://host:389
     "auth.ldap.bind_dn": ("", "str"),

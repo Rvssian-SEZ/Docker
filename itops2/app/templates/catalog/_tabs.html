@@ -1,0 +1,12 @@
+<ul class="nav nav-tabs mb-4">
+  {% if user.can('catalog.view') %}
+  <li class="nav-item"><a class="nav-link {{ 'active' if active_tab == 'manufacturers' }}" href="/catalog/manufacturers">Manufacturers</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if active_tab == 'categories' }}" href="/catalog/categories">Categories</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if active_tab == 'models' }}" href="/catalog/models">Models</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if active_tab == 'status-labels' }}" href="/catalog/status-labels">Status Labels</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if active_tab == 'locations' }}" href="/catalog/locations">Locations</a></li>
+  {% endif %}
+  {% if user.can('companies.manage') %}
+  <li class="nav-item"><a class="nav-link {{ 'active' if active_tab == 'companies' }}" href="/catalog/companies">Companies</a></li>
+  {% endif %}
+</ul>

@@ -78,21 +78,92 @@ authenticates locally, even when OIDC or LDAP is enabled, and cannot be deactiva
 mount the root certificate into <code>/opt/appdata/itops2/certs/</code> and set
 <code>CA_CERT_PATH</code> so outbound HTTPS calls (OIDC provider) are trusted.</p>
 
-<h2>6. Authentication providers <span class="todo">(Phase 3)</span></h2>
-<p class="muted">OIDC (e.g. Authentik) and generic LDAP/LDAPS configuration — Settings → Authentication.</p>
+<h2>6. Authentication providers <span class="todo">(LDAP: Phase 3, remaining)</span></h2>
+
+<h3>6.1 OIDC (e.g. Authentik)</h3>
+<p>Go to <strong>Settings → Authentication</strong>, enable OIDC, and fill in:</p>
+<table>
+<tr><th>Field</th><th>Notes</th></tr>
+<tr><td>Issuer URL</td><td>The provider's base issuer, e.g.
+<code>https://auth.home.internal/application/o/itops2/</code>. The app appends
+<code>/.well-known/openid-configuration</code> to this value to fetch the discovery
+document on every login — enter the issuer exactly as the provider documents it
+(including any trailing slash the provider expects), not the discovery URL itself.</td></tr>
+<tr><td>Client ID / Client secret</td><td>From the provider's application/client config.</td></tr>
+<tr><td>Group → role map (JSON)</td><td>e.g. <code>{"itops-admins": "admin", "it-staff": "technician"}</code>.
+Highest-privilege matched group wins (admin &gt; manager &gt; technician &gt; viewer).</td></tr>
+<tr><td>Default role</td><td>Role for users in no mapped group; leave empty to deny login.</td></tr>
+</table>
+
+<div class="callout">
+<strong>Redirect URI registration:</strong> the exact URI to register in the provider's
+application config is shown live on the Settings → Authentication page
+(<code>Redirect URI to register with the provider: ...</code>), and resolves to
+<code>https://&lt;your-domain&gt;/auth/oidc/callback</code>. Register this <em>before</em>
+enabling OIDC — a mismatch is the most common first-login failure. If the app sits
+behind a reverse proxy, uvicorn must run with <code>--proxy-headers</code> (already
+configured) so this URL is generated with the correct public scheme/host, not the
+internal container address.
+</div>
+
+<p class="muted">Scopes requested: <code>openid profile email</code>. The provider must expose a
+standard <code>userinfo_endpoint</code> returning <code>preferred_username</code> (or
+<code>email</code> as a fallback), <code>email</code>, <code>name</code>, and a
+<code>groups</code> claim for the role mapping to work.</p>
+
+<h3>6.2 LDAP / LDAPS <span class="todo">(not yet implemented)</span></h3>
+<p class="muted">Planned: bind + create-on-first-login, group→role mapping via an
+<code>auth.ldap.group_role_map</code> JSON setting. Settings keys exist as placeholders
+(<code>auth.ldap.url</code>, <code>bind_dn</code>, <code>bind_password</code>,
+<code>user_base</code>, <code>user_filter</code>, <code>group_role_map</code>) but there is
+no bind/search logic, login route, or Settings UI for them yet.</p>
 
 <h2>7. Permissions <span class="todo">(Phase 3)</span></h2>
 <p class="muted">Four fixed roles (Admin, Manager, Technician, Viewer) with a configurable
 permission grid — Settings → Permissions.</p>
 
-<h2>8. Currency &amp; localisation <span class="todo">(Phase 4)</span></h2>
-<p class="muted">Default currency (SCR out of the box), manual dated exchange rates, UK date formats.</p>
+<h2>8. Catalog: core lookups</h2>
+<p>Sidebar → <strong>Catalog</strong>. Feeds Assets (Phase 5): every asset will reference a
+model, which in turn references a manufacturer and a category.</p>
+<table>
+<tr><th>Page</th><th>Notes</th></tr>
+<tr><td>Manufacturers, Categories, Locations</td><td>Simple name-only lookups. Delete is
+blocked (with an explanatory message) while a row is still referenced elsewhere.</td></tr>
+<tr><td>Models</td><td>Belongs to one manufacturer + one category. Optional
+<strong>Depreciation (months)</strong> and <strong>EOL (months)</strong> override the
+global defaults set in Settings → General for that model only — leave blank to inherit.</td></tr>
+<tr><td>Status Labels</td><td>A display name plus a fixed <strong>type</strong>
+(<code>deployable</code> / <code>deployed</code> / <code>pending</code> / <code>archived</code>).
+Asset workflow rules (Phase 5) key off the type, not the label text — you can rename a
+label freely without breaking workflow rules, as long as its type stays put.</td></tr>
+<tr><td>Companies</td><td>Only visible/editable with the <code>companies.manage</code>
+permission (Admin by default) — unlike the other Catalog pages, there is no separate
+view-only permission for Companies.</td></tr>
+</table>
+<p class="muted">Permissions: <code>catalog.view</code> (read-only) / <code>catalog.manage</code>
+(create, rename, delete) cover Manufacturers, Categories, Locations, Models, and Status
+Labels. Companies uses <code>companies.manage</code> alone for both.</p>
 
-<h2>9. Notifications (SMTP) <span class="todo">(Phase 8)</span></h2>
+<h2>9. Currency &amp; localisation</h2>
+<p>Sidebar → <strong>Settings → Currency</strong>.</p>
+<table>
+<tr><th>Concept</th><th>Notes</th></tr>
+<tr><td>Currencies</td><td>ISO 4217 code + display symbol + active toggle. Seeded on first
+boot with SCR, USD, GBP, EUR (edits to symbol/active are never overwritten by the seeder
+on later restarts). The currency selected as <strong>Settings → General → Default
+currency</strong> cannot be deleted — change the default first.</td></tr>
+<tr><td>Exchange rates</td><td><strong>Manual entry only — no external rate API.</strong>
+Each row is a dated rate: 1 <em>from</em> currency = rate × <em>to</em> currency, effective
+from a given date, so historical asset values can be computed at their purchase-date rate
+rather than today's rate. At most one rate per (from, to, date) triple.</td></tr>
+</table>
+<p class="muted">UK date formats, English only, throughout the app.</p>
 
-<h2>10. Importing from ITOps v1 <span class="todo">(Phase 9)</span></h2>
+<h2>10. Notifications (SMTP) <span class="todo">(Phase 8)</span></h2>
 
-<h2>11. Upgrades &amp; backups</h2>
+<h2>11. Importing from ITOps v1 <span class="todo">(Phase 9)</span></h2>
+
+<h2>12. Upgrades &amp; backups</h2>
 <pre>docker compose pull && docker compose up -d   # upgrade
 # backup = pg_dump of the itops2 database + /opt/appdata/itops2/attachments</pre>
 

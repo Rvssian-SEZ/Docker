@@ -29,6 +29,9 @@
       {% if user and user.can('inventory.view') %}
       <li><a href="/inventory" class="nav-link"><i class="bi bi-box-seam me-2"></i>Inventory</a></li>
       {% endif %}
+      {% if user and (user.can('catalog.view') or user.can('companies.manage')) %}
+      <li><a href="/catalog" class="nav-link"><i class="bi bi-tags me-2"></i>Catalog</a></li>
+      {% endif %}
       {% if user and user.can('users.view') %}
       <li><a href="/users" class="nav-link"><i class="bi bi-people me-2"></i>Users</a></li>
       {% endif %}

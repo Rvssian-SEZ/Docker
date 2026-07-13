@@ -5,6 +5,7 @@ Idempotent — safe to run on every startup:
 - seeds default permission matrix for roles that have no rows yet
   (never overwrites an admin-tuned matrix)
 - ensures the break-glass local admin exists and is active
+- seeds SCR/USD/GBP/EUR currencies if missing (never touches existing rows)
 """
 
 import logging
@@ -14,8 +15,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.models import AuthSource, Role, RoleName, RolePermission, User
+from app.core.models import AuthSource, Currency, Role, RoleName, RolePermission, User
 from app.core.permissions import DEFAULTS
+
+DEFAULT_CURRENCIES = (("SCR", "SR"), ("USD", "$"), ("GBP", "£"), ("EUR", "€"))
 
 log = logging.getLogger(__name__)
 
@@ -66,5 +69,11 @@ async def bootstrap(db: AsyncSession) -> None:
         )
     else:
         bg.is_active = True  # break-glass can never be locked out
+
+    # --- Default currencies (never overwrite an admin's active/symbol edits) ---
+    existing_codes = {c for (c,) in (await db.execute(select(Currency.code))).all()}
+    for code, symbol in DEFAULT_CURRENCIES:
+        if code not in existing_codes:
+            db.add(Currency(code=code, symbol=symbol, active=True))
 
     await db.commit()
