@@ -145,3 +145,22 @@ async def test_unknown_maintenance_type_rejected(admin_client, db):
     )
     assert "text-bg-danger" in resp.text
     assert "unknown maintenance type" in resp.text.lower()
+
+
+async def test_asset_with_maintenance_records_blocks_hard_delete_with_accurate_message(admin_client, db):
+    """Regression test: an asset with maintenance records but NO checkout
+    history must not be told it has checkout history (a real bug found
+    during Phase 6 testing -- the generic IntegrityError catch-all
+    assumed checkout history was the only remaining FK blocker)."""
+    asset = await _make_asset(db)
+    await admin_client.post(
+        f"/assets/{asset.id}/maintenance/create",
+        data={"date": "2026-01-15", "maintenance_type": "repair", "description": "Replaced fan"},
+    )
+
+    resp = await admin_client.post(f"/assets/{asset.id}/delete")
+    assert resp.status_code == 200
+    assert "text-bg-danger" in resp.text
+    assert "maintenance record" in resp.text.lower()
+    assert "checkout history" not in resp.text.lower()
+    assert (await db.execute(select(Asset).where(Asset.id == asset.id))).scalar_one_or_none() is not None

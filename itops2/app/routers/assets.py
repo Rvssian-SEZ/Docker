@@ -26,12 +26,17 @@ Status lifecycle rules:
   Audit action is "archive"/"restore" when a transition crosses that
   boundary, "update" otherwise.
 
-Hard delete requires zero checkout history AND zero attachments:
-checkout history is a real FK (core_checkouts.asset_id) so that half is
-an IntegrityError catch, same as Catalog. Attachments are the
-entity_type/entity_id polymorphism style (like core_audit_log), which
-has no enforced FK, so that half is an explicit COUNT check before the
-delete is attempted. See CLAUDE.md for why attachments and checkout
+Hard delete requires zero checkout history, zero attachments, AND zero
+maintenance records (Phase 6): checkout history and maintenance records
+are both real FKs (core_checkouts.asset_id, core_maintenance.asset_id),
+but maintenance gets its own explicit pre-check (like attachments)
+rather than relying on the generic IntegrityError catch — otherwise an
+asset blocked only by maintenance records would incorrectly be told it
+has "checkout history" (a real bug caught during Phase 6 testing: the
+catch-all message assumed checkout history was the only remaining FK).
+Attachments are the entity_type/entity_id polymorphism style (like
+core_audit_log), which has no enforced FK, so that one was always an
+explicit COUNT check. See CLAUDE.md for why attachments and checkout
 targets use two different polymorphism styles.
 
 Attachments: disk layout is {attachments_dir}/{entity_type}/{entity_id}/
@@ -68,6 +73,7 @@ from app.core.models import (
     Location,
     Maintenance,
     MaintenanceType,
+    PrinterDetails,
     StatusLabel,
     StatusType,
     User,
@@ -398,6 +404,9 @@ async def asset_detail(
         .scalars()
         .all()
     )
+    is_printer = asset.model.category.name.strip().lower() == "printer"
+    printer_details = await db.get(PrinterDetails, asset_id) if is_printer else None
+
     maintenance_ids = [str(m.id) for m in maintenance_records]
     maintenance_attachments = {}
     if maintenance_ids:
@@ -442,6 +451,8 @@ async def asset_detail(
             "maintenance_types": list(MaintenanceType),
             "maintenance_attachments": maintenance_attachments,
             "maintenance_currencies": ctx["currencies"],
+            "is_printer": is_printer,
+            "printer_details": printer_details,
         }
     )
     return templates.TemplateResponse(request, "assets/detail.html", ctx)
@@ -583,6 +594,16 @@ async def asset_delete(
             request, False,
             f"Cannot delete '{asset.asset_tag}': {attachment_count} attachment(s) attached — "
             "remove them first, or archive instead.",
+        )
+
+    maintenance_count = (
+        await db.execute(select(func.count()).select_from(Maintenance).where(Maintenance.asset_id == asset_id))
+    ).scalar_one()
+    if maintenance_count:
+        return _toast(
+            request, False,
+            f"Cannot delete '{asset.asset_tag}': {maintenance_count} maintenance record(s) exist — "
+            "archive instead to keep the history.",
         )
 
     tag = asset.asset_tag

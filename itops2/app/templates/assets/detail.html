@@ -10,7 +10,7 @@
   {% if user.can('assets.delete') %}
   <button class="btn btn-outline-danger btn-sm" hx-post="/assets/{{ asset.id }}/delete"
           hx-target="#toast-area" hx-swap="innerHTML"
-          hx-confirm="Delete asset '{{ asset.asset_tag }}'? Only possible with no checkout history and no attachments.">
+          hx-confirm="Delete asset '{{ asset.asset_tag }}'? Only possible with no checkout history, no attachments, and no maintenance records.">
     <i class="bi bi-trash me-1"></i>Delete
   </button>
   {% endif %}
@@ -23,6 +23,37 @@
   <div class="col-md-4"><div class="text-secondary small">Effective EOL</div>
     {{ effective_eol_months ~ ' months' if effective_eol_months is not none else '—' }}</div>
 </div>
+
+{% if is_printer and not is_archived %}
+<div class="card mb-4 col-lg-8"><div class="card-body">
+  <h2 class="h6">Printer details</h2>
+  {% if user.can('printers.manage') %}
+  <form hx-post="/assets/{{ asset.id }}/printer-details/update" hx-target="#toast-area" hx-swap="innerHTML">
+    <div class="row">
+      <div class="col-md-6 mb-2"><label class="form-label">IP address</label>
+        <input name="ip_address" class="form-control"
+               value="{{ printer_details.ip_address if printer_details and printer_details.ip_address else '' }}"></div>
+      <div class="col-md-6 mb-2"><label class="form-label">Hostname</label>
+        <input name="hostname" class="form-control"
+               value="{{ printer_details.hostname if printer_details and printer_details.hostname else '' }}"></div>
+    </div>
+    <div class="mb-2"><label class="form-label">Consumable notes</label>
+      <textarea name="consumable_notes" class="form-control" rows="2">{{ printer_details.consumable_notes if printer_details and printer_details.consumable_notes else '' }}</textarea></div>
+    <button class="btn btn-primary btn-sm">Save</button>
+  </form>
+  {% else %}
+  <div class="row">
+    <div class="col-md-6"><div class="text-secondary small">IP address</div>
+      {{ printer_details.ip_address if printer_details and printer_details.ip_address else '—' }}</div>
+    <div class="col-md-6"><div class="text-secondary small">Hostname</div>
+      {{ printer_details.hostname if printer_details and printer_details.hostname else '—' }}</div>
+  </div>
+  {% if printer_details and printer_details.consumable_notes %}
+  <div class="mt-2"><div class="text-secondary small">Consumable notes</div>{{ printer_details.consumable_notes }}</div>
+  {% endif %}
+  {% endif %}
+</div></div>
+{% endif %}
 
 {% if is_checked_out %}
 <div class="alert alert-info col-lg-8">
