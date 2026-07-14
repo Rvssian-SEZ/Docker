@@ -12,7 +12,10 @@ DB_CONTAINER="itops2-test-db-$$"
 IMAGE_TAG=itops2-test:latest
 
 cleanup() {
-  docker rm -f "$DB_CONTAINER" >/dev/null 2>&1 || true
+  # -v: without it, the container's anonymous Postgres data volume
+  # survives `rm -f` and never gets cleaned up -- every run leaked one,
+  # and enough of them filled the docker-test host's disk.
+  docker rm -f -v "$DB_CONTAINER" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 

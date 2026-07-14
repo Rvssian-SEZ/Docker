@@ -7,11 +7,19 @@
 {% endif %}
 <table class="table table-hover align-middle">
   <thead><tr>
-    <th>Tag</th><th>Model</th><th>Status</th><th>Location</th><th>Assigned to</th>
+    <th style="width:3.5rem;"></th><th>Tag</th><th>Model</th><th>Status</th><th>Location</th><th>Assigned to</th>
   </tr></thead>
   <tbody>
   {% for a in assets %}
     <tr>
+      <td>
+        <span class="photo-thumb position-relative d-inline-block" style="width:32px;height:32px;">
+          <i class="bi bi-laptop text-secondary position-absolute top-50 start-50 translate-middle"></i>
+          <img src="/assets/{{ a.id }}/photo/thumbnail" loading="lazy"
+               class="position-absolute top-0 start-0 w-100 h-100 rounded" style="object-fit:cover;"
+               onerror="this.remove()">
+        </span>
+      </td>
       <td><a href="/assets/{{ a.id }}">{{ a.asset_tag }}</a></td>
       <td>{{ a.model.name }}</td>
       <td><span class="badge text-bg-secondary">{{ a.status_label.name }}</span></td>
@@ -24,7 +32,7 @@
       </td>
     </tr>
   {% else %}
-    <tr><td colspan="5" class="text-secondary">No assets match these filters.</td></tr>
+    <tr><td colspan="6" class="text-secondary">No assets match these filters.</td></tr>
   {% endfor %}
   </tbody>
 </table>

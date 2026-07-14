@@ -11,3 +11,4 @@ itsdangerous>=2.2
 bcrypt>=4.2
 httpx>=0.28
 aiosmtplib>=3.0
+Pillow>=10.0                # thumbnail generation for asset/model photos

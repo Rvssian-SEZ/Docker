@@ -17,12 +17,18 @@
 </div>
 
 <div class="row mb-4 col-lg-8">
-  <div class="col-md-4"><div class="text-secondary small">Model</div>{{ asset.model.name }} ({{ asset.model.manufacturer.name }})</div>
-  <div class="col-md-4"><div class="text-secondary small">Effective depreciation</div>
+  <div class="col-md-3">
+    <img src="/assets/{{ asset.id }}/photo/full" style="max-width:100%; max-height:160px;"
+         class="rounded" onerror="this.style.display='none'">
+  </div>
+  <div class="col-md-3"><div class="text-secondary small">Model</div>{{ asset.model.name }} ({{ asset.model.manufacturer.name }})</div>
+  <div class="col-md-3"><div class="text-secondary small">Effective depreciation</div>
     {{ effective_depreciation_months ~ ' months' if effective_depreciation_months is not none else '—' }}</div>
-  <div class="col-md-4"><div class="text-secondary small">Effective EOL</div>
+  <div class="col-md-3"><div class="text-secondary small">Effective EOL</div>
     {{ effective_eol_months ~ ' months' if effective_eol_months is not none else '—' }}</div>
 </div>
+<p class="text-secondary small col-lg-8">Photo shown is this asset's own (if uploaded as an attachment below) or
+falls back to its model's photo (Catalog → Models).</p>
 
 {% if is_printer and not is_archived %}
 <div class="card mb-4 col-lg-8"><div class="card-body">

@@ -11,17 +11,19 @@ HTMX pattern matches Users: create/delete are infrequent -> HX-Refresh the
 list; rename/update -> toast only, per-field save.
 """
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.attachments import attachment_dir, save_upload, thumbnail_path
 from app.core.auth import CurrentUser, get_current_user, require
 from app.core.db import get_db
 from app.core.models import (
     AssetModel,
+    Attachment,
     AuditLog,
     Category,
     Company,
@@ -30,6 +32,7 @@ from app.core.models import (
     StatusLabel,
     StatusType,
 )
+from app.core.photos import model_photo_attachment
 from app.templating import templates
 
 router = APIRouter(prefix="/catalog")
@@ -452,3 +455,103 @@ async def models_delete(
     if not ok:
         return _toast(request, False, err)
     return _refresh()
+
+
+# ---- model photo (Phase 8 refinement: two-level asset photos) ----
+
+@router.post("/models/{item_id}/photo", response_class=HTMLResponse)
+async def model_photo_upload(
+    request: Request,
+    item_id: int,
+    file: UploadFile | None = File(None),
+    user: CurrentUser = Depends(require("catalog.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    model = await db.get(AssetModel, item_id)
+    if model is None:
+        return _toast(request, False, "Not found.")
+    if file is None or not file.filename:
+        return _toast(request, False, "No file selected.")
+    if not (file.content_type or "").startswith("image/"):
+        return _toast(request, False, "Only image files can be used as a photo.")
+
+    stored_name, size, err = await save_upload(file, "model", str(item_id))
+    if err:
+        return _toast(request, False, err)
+
+    # Keep at most one image attachment per model -- models.html has no
+    # attachments list UI to surface older ones, unlike Assets, so a
+    # dangling superseded photo would just be permanently invisible
+    # clutter rather than recoverable history.
+    previous = (
+        await db.execute(
+            select(Attachment).where(Attachment.entity_type == "model", Attachment.entity_id == str(item_id))
+        )
+    ).scalars().all()
+    old_paths = [attachment_dir("model", str(item_id)) / a.stored_filename for a in previous]
+    old_thumb_paths = [thumbnail_path("model", str(item_id), a.stored_filename) for a in previous]
+    for a in previous:
+        await db.delete(a)
+
+    db.add(
+        Attachment(
+            entity_type="model", entity_id=str(item_id), original_filename=file.filename,
+            stored_filename=stored_name, content_type=file.content_type, size_bytes=size,
+            uploaded_by=user.id,
+        )
+    )
+    db.add(AuditLog(user_id=user.id, action="photo_update", entity_type="model", entity_id=str(item_id), detail=file.filename))
+    await db.commit()
+    for p in old_paths + old_thumb_paths:
+        p.unlink(missing_ok=True)
+    return _refresh()
+
+
+@router.post("/models/{item_id}/photo/delete", response_class=HTMLResponse)
+async def model_photo_delete(
+    request: Request,
+    item_id: int,
+    user: CurrentUser = Depends(require("catalog.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    photo = await model_photo_attachment(db, item_id)
+    if photo is None:
+        return _toast(request, False, "No photo to remove.")
+    path = attachment_dir("model", str(item_id)) / photo.stored_filename
+    thumb_path = thumbnail_path("model", str(item_id), photo.stored_filename)
+    await db.delete(photo)
+    db.add(AuditLog(user_id=user.id, action="photo_delete", entity_type="model", entity_id=str(item_id), detail=photo.original_filename))
+    await db.commit()
+    path.unlink(missing_ok=True)
+    thumb_path.unlink(missing_ok=True)
+    return _refresh()
+
+
+@router.get("/models/{item_id}/photo/thumbnail")
+async def model_photo_thumbnail(
+    item_id: int,
+    user: CurrentUser = Depends(require("catalog.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    photo = await model_photo_attachment(db, item_id)
+    if photo is None:
+        raise HTTPException(status_code=404, detail="No photo.")
+    path = thumbnail_path("model", str(item_id), photo.stored_filename)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="No photo.")
+    return FileResponse(path, media_type="image/jpeg")
+
+
+@router.get("/models/{item_id}/photo/full")
+async def model_photo_full(
+    item_id: int,
+    user: CurrentUser = Depends(require("catalog.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    photo = await model_photo_attachment(db, item_id)
+    if photo is None:
+        raise HTTPException(status_code=404, detail="No photo.")
+    path = attachment_dir("model", str(item_id)) / photo.stored_filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="No photo.")
+    return FileResponse(path, media_type=photo.content_type or "application/octet-stream")

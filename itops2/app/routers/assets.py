@@ -59,7 +59,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.attachments import MAX_ATTACHMENT_SIZE, attachment_dir, save_upload
+from app.core.attachments import MAX_ATTACHMENT_SIZE, attachment_dir, save_upload, thumbnail_path
 from app.core.auth import CurrentUser, require, require_all
 from app.core.csv_export import csv_response, fmt_date
 from app.core.dates import add_months
@@ -82,6 +82,7 @@ from app.core.models import (
     User,
 )
 from app.core.notifications import notify_checkin, notify_checkout
+from app.core.photos import effective_asset_photo
 from app.core.scoping import company_scope
 from app.core.settings_store import load_settings
 from app.templating import templates
@@ -1095,3 +1096,44 @@ async def asset_attachment_delete(
     await db.commit()
     path.unlink(missing_ok=True)
     return _refresh()
+
+
+# ---- photo (Phase 8 refinement: two-level asset photos) ----
+# No new upload route here -- any image uploaded through the attachment
+# upload route above already becomes eligible as this asset's photo (the
+# most recent image-type attachment wins). See app/core/photos.py.
+
+@router.get("/{asset_id}/photo/thumbnail")
+async def asset_photo_thumbnail(
+    asset_id: int,
+    user: CurrentUser = Depends(require("assets.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    asset = await db.get(Asset, asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Not found.")
+    photo = await effective_asset_photo(db, asset)
+    if photo is None:
+        raise HTTPException(status_code=404, detail="No photo.")
+    path = thumbnail_path(photo.entity_type, photo.entity_id, photo.stored_filename)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="No photo.")
+    return FileResponse(path, media_type="image/jpeg")
+
+
+@router.get("/{asset_id}/photo/full")
+async def asset_photo_full(
+    asset_id: int,
+    user: CurrentUser = Depends(require("assets.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    asset = await db.get(Asset, asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Not found.")
+    photo = await effective_asset_photo(db, asset)
+    if photo is None:
+        raise HTTPException(status_code=404, detail="No photo.")
+    path = attachment_dir(photo.entity_type, photo.entity_id) / photo.stored_filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="No photo.")
+    return FileResponse(path, media_type=photo.content_type or "application/octet-stream")
