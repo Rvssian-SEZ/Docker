@@ -89,3 +89,18 @@ def require(permission: str):
         return user
 
     return checker
+
+
+def require_all(*permissions: str):
+    """Like require(), but for routes that need more than one grant at
+    once — e.g. CSV export needs both the list's own view permission
+    (so export can't see data the UI wouldn't show) AND reports.export
+    (the export feature itself)."""
+
+    async def checker(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+        missing = [p for p in permissions if not user.can(p)]
+        if missing:
+            raise HTTPException(status_code=403, detail=f"Missing permission(s): {', '.join(missing)}")
+        return user
+
+    return checker

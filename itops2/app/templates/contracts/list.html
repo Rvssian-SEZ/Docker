@@ -3,11 +3,20 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h1 class="h3 mb-0">Licenses &amp; Contracts</h1>
-  {% if user.can('contracts.manage') %}
-  <a href="/contracts/new" class="btn btn-primary">
-    <i class="bi bi-plus-lg me-1"></i>New contract
-  </a>
-  {% endif %}
+  <div class="d-flex gap-2">
+    {% if user.can('reports.export') %}
+    <a href="/contracts/export" class="btn btn-outline-secondary"
+       onclick="this.href = '/contracts/export' + window.location.search"
+       title="Export the current filtered view as CSV">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
+    {% endif %}
+    {% if user.can('contracts.manage') %}
+    <a href="/contracts/new" class="btn btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>New contract
+    </a>
+    {% endif %}
+  </div>
 </div>
 
 {% include "contracts/_filters.html" %}

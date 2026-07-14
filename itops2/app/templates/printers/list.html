@@ -1,7 +1,16 @@
 {% extends "base.html" %}
 {% block title %}Printers — {{ app_name }}{% endblock %}
 {% block content %}
-<h1 class="h3 mb-4">Printers</h1>
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h1 class="h3 mb-0">Printers</h1>
+  {% if user.can('reports.export') %}
+  <a href="/printers/export" class="btn btn-outline-secondary"
+     onclick="this.href = '/printers/export' + window.location.search"
+     title="Export the current filtered view as CSV">
+    <i class="bi bi-download me-1"></i>Export CSV
+  </a>
+  {% endif %}
+</div>
 <p class="text-secondary small">Assets whose model's category is "Printer" — not a separate entity;
 edit IP/hostname/consumables from the asset's own detail page.</p>
 

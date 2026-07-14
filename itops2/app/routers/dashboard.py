@@ -27,20 +27,11 @@ from app.core.auth import CurrentUser, get_current_user
 from app.core.dates import add_months
 from app.core.db import get_db
 from app.core.models import Asset, Checkout, Contract, InventoryItem, StatusLabel, StatusType
+from app.core.scoping import company_scope as _company_scope
 from app.core.settings_store import load_settings
 from app.templating import templates
 
 router = APIRouter()
-
-
-def _company_scope(user: CurrentUser, store) -> int | None:
-    if (
-        store.get_bool("company.multi_enabled")
-        and store.get_bool("company.scoped_users")
-        and user.company_id is not None
-    ):
-        return user.company_id
-    return None
 
 
 @router.get("/", response_class=HTMLResponse)

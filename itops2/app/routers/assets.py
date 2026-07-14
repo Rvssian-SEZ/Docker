@@ -60,7 +60,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.attachments import MAX_ATTACHMENT_SIZE, attachment_dir, save_upload
-from app.core.auth import CurrentUser, require
+from app.core.auth import CurrentUser, require, require_all
+from app.core.csv_export import csv_response, fmt_date
 from app.core.dates import add_months
 from app.core.db import get_db
 from app.core.models import (
@@ -81,6 +82,7 @@ from app.core.models import (
     User,
 )
 from app.core.notifications import notify_checkin, notify_checkout
+from app.core.scoping import company_scope
 from app.core.settings_store import load_settings
 from app.templating import templates
 
@@ -226,9 +228,9 @@ def _effective_months(override: int | None, model_value: int | None, global_defa
 
 # ---- list ----
 
-@router.get("", response_class=HTMLResponse)
-async def assets_list(
-    request: Request,
+async def _query_assets(
+    db: AsyncSession,
+    *,
     status_label_id: str = "",
     category_id: str = "",
     model_id: str = "",
@@ -238,12 +240,11 @@ async def assets_list(
     q: str = "",
     status_type: str | None = None,
     warranty: str | None = None,
-    user: CurrentUser = Depends(require("assets.view")),
-    db: AsyncSession = Depends(get_db),
-):
-    """All filtering happens in SQL, not Python-after-fetch — this table
-    can grow past "just load it all" scale even though most of this
-    app's other lists don't need to.
+    scope_company_id: int | None = None,
+) -> list[Asset]:
+    """The filter-building logic behind both the HTML list (assets_list)
+    and the CSV export (assets_export) — one implementation, so export
+    always matches exactly what the current filtered view shows.
 
     Two families of query param:
     - The visible filter bar (assets/_filters.html): status_label_id,
@@ -258,13 +259,15 @@ async def assets_list(
       warranty.alert_days — the one filter with a Python-side finishing
       pass, see below).
 
-    Returns just the table partial when hit via HTMX (the filter bar's
-    own hx-get), the full page otherwise — same URL either way, so
-    hx-push-url keeps it bookmarkable.
+    scope_company_id, when given (company.scoped_users on and the
+    caller has a company), ANDs in an Asset.company_id filter on top of
+    whatever the query params already narrowed to.
     """
     query = select(Asset).options(
-        selectinload(Asset.model),
+        selectinload(Asset.model).selectinload(AssetModel.manufacturer),
+        selectinload(Asset.model).selectinload(AssetModel.category),
         selectinload(Asset.status_label),
+        selectinload(Asset.company),
         selectinload(Asset.location),
         selectinload(Asset.checked_out_to_user),
         selectinload(Asset.checked_out_to_location),
@@ -287,6 +290,8 @@ async def assets_list(
         query = query.where(Asset.location_id == int(location_id))
     if company_id.isdigit():
         query = query.where(Asset.company_id == int(company_id))
+    if scope_company_id is not None:
+        query = query.where(Asset.company_id == scope_company_id)
 
     if checkout_state == "out":
         query = query.where(Asset.checked_out_at.isnot(None))
@@ -336,6 +341,37 @@ async def assets_list(
             and today <= add_months(a.purchase_date, a.warranty_months) <= window_end
         ]
 
+    return assets
+
+
+@router.get("", response_class=HTMLResponse)
+async def assets_list(
+    request: Request,
+    status_label_id: str = "",
+    category_id: str = "",
+    model_id: str = "",
+    location_id: str = "",
+    company_id: str = "",
+    checkout_state: str | None = None,
+    q: str = "",
+    status_type: str | None = None,
+    warranty: str | None = None,
+    user: CurrentUser = Depends(require("assets.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    """All filtering happens in SQL, not Python-after-fetch — this table
+    can grow past "just load it all" scale even though most of this
+    app's other lists don't need to. See _query_assets for the filter
+    param reference. Returns just the table partial when hit via HTMX
+    (the filter bar's own hx-get), the full page otherwise — same URL
+    either way, so hx-push-url keeps it bookmarkable.
+    """
+    assets = await _query_assets(
+        db, status_label_id=status_label_id, category_id=category_id, model_id=model_id,
+        location_id=location_id, company_id=company_id, checkout_state=checkout_state,
+        q=q, status_type=status_type, warranty=warranty,
+    )
+
     ctx = {
         "user": user,
         "assets": assets,
@@ -359,6 +395,65 @@ async def assets_list(
     ctx.update(form_ctx)
     ctx.update(filter_ctx)
     return templates.TemplateResponse(request, "assets/list.html", ctx)
+
+
+@router.get("/export")
+async def assets_export(
+    status_label_id: str = "",
+    category_id: str = "",
+    model_id: str = "",
+    location_id: str = "",
+    company_id: str = "",
+    checkout_state: str | None = None,
+    q: str = "",
+    status_type: str | None = None,
+    warranty: str | None = None,
+    user: CurrentUser = Depends(require_all("assets.view", "reports.export")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Downloads exactly the current filtered view (same query params,
+    same _query_assets call the HTML list uses) as CSV."""
+    store = await load_settings(db)
+    scope_company_id = company_scope(user, store)
+    assets = await _query_assets(
+        db, status_label_id=status_label_id, category_id=category_id, model_id=model_id,
+        location_id=location_id, company_id=company_id, checkout_state=checkout_state,
+        q=q, status_type=status_type, warranty=warranty, scope_company_id=scope_company_id,
+    )
+
+    def checked_out_to(a: Asset) -> str:
+        if a.checked_out_to_user:
+            return f"user: {a.checked_out_to_user.display_name}"
+        if a.checked_out_to_location:
+            return f"location: {a.checked_out_to_location.name}"
+        if a.checked_out_to_asset:
+            return f"asset: {a.checked_out_to_asset.asset_tag}"
+        return ""
+
+    fieldnames = [
+        "asset_tag", "serial", "manufacturer", "model", "category", "status",
+        "company", "location", "purchase_date", "purchase_cost", "purchase_currency",
+        "warranty_months", "checked_out_to",
+    ]
+    rows = [
+        {
+            "asset_tag": a.asset_tag,
+            "serial": a.serial or "",
+            "manufacturer": a.model.manufacturer.name,
+            "model": a.model.name,
+            "category": a.model.category.name,
+            "status": a.status_label.name,
+            "company": a.company.name if a.company else "",
+            "location": a.location.name if a.location else "",
+            "purchase_date": fmt_date(a.purchase_date),
+            "purchase_cost": a.purchase_cost if a.purchase_cost is not None else "",
+            "purchase_currency": a.purchase_currency or "",
+            "warranty_months": a.warranty_months if a.warranty_months is not None else "",
+            "checked_out_to": checked_out_to(a),
+        }
+        for a in assets
+    ]
+    return csv_response(f"assets-export-{date.today():%Y-%m-%d}.csv", fieldnames, rows)
 
 
 # ---- create ----

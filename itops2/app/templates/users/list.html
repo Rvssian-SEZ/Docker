@@ -3,11 +3,18 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h1 class="h3 mb-0">Users</h1>
-  {% if user.can('users.manage') %}
-  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createUser">
-    <i class="bi bi-person-plus me-1"></i>New user
-  </button>
-  {% endif %}
+  <div class="d-flex gap-2">
+    {% if user.can('reports.export') %}
+    <a href="/users/export" class="btn btn-outline-secondary" title="Export as CSV">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
+    {% endif %}
+    {% if user.can('users.manage') %}
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createUser">
+      <i class="bi bi-person-plus me-1"></i>New user
+    </button>
+    {% endif %}
+  </div>
 </div>
 
 <table class="table table-hover align-middle">

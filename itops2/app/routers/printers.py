@@ -20,7 +20,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.auth import CurrentUser, require
+from app.core.auth import CurrentUser, require, require_all
+from app.core.csv_export import csv_response
 from app.core.db import get_db
 from app.core.models import (
     Asset,
@@ -33,6 +34,7 @@ from app.core.models import (
     PrinterDetails,
     StatusLabel,
 )
+from app.core.scoping import company_scope
 from app.core.settings_store import load_settings
 from app.templating import templates
 
@@ -75,24 +77,18 @@ async def _filter_bar_context(db: AsyncSession) -> dict:
     return {"filter_locations": locations, "filter_status_labels": status_labels}
 
 
-@router.get("/printers", response_class=HTMLResponse)
-async def printers_list(
-    request: Request,
-    location_id: str = "",
-    status_label_id: str = "",
-    q: str = "",
-    user: CurrentUser = Depends(require("printers.view")),
-    db: AsyncSession = Depends(get_db),
-):
-    """Filter bar (location, status, free-text over hostname/IP) — all
-    applied in SQL. The free-text search is the one filter that needs a
-    join beyond the base Printer-category query, since hostname/IP live
-    on core_printer_details (a 1:1 extension, not every printer asset
-    has a row yet — "created lazily on first save", per CLAUDE.md), not
-    on core_assets itself."""
-    store = await load_settings(db)
-    default_currency = store.get("general.default_currency")
-
+async def _query_printers(
+    db: AsyncSession, *, location_id: str = "", status_label_id: str = "", q: str = "",
+    default_currency: str, scope_company_id: int | None = None,
+) -> list[dict]:
+    """Shared by the HTML list (printers_list) and CSV export
+    (printers_export) — one implementation of the filter bar (location,
+    status, free-text over hostname/IP) plus the per-printer maintenance
+    total, so export always matches exactly what the filtered view
+    shows. The free-text search is the one filter needing a join beyond
+    the base Printer-category query, since hostname/IP live on
+    core_printer_details (a 1:1 extension, not every printer asset has a
+    row yet — "created lazily on first save", per CLAUDE.md)."""
     query = (
         select(Asset)
         .join(AssetModel, Asset.model_id == AssetModel.id)
@@ -108,6 +104,8 @@ async def printers_list(
         query = query.where(Asset.location_id == int(location_id))
     if status_label_id.isdigit():
         query = query.where(Asset.status_label_id == int(status_label_id))
+    if scope_company_id is not None:
+        query = query.where(Asset.company_id == scope_company_id)
     if q.strip():
         term = f"%{q.strip()}%"
         query = query.outerjoin(PrinterDetails, PrinterDetails.asset_id == Asset.id).where(
@@ -140,7 +138,7 @@ async def printers_list(
                 continue
             totals[m.asset_id] = totals.get(m.asset_id, Decimal("0")) + converted
 
-    printers = [
+    return [
         {
             "asset": a,
             "details": printer_details_map.get(a.id),
@@ -149,6 +147,22 @@ async def printers_list(
         }
         for a in printer_assets
     ]
+
+
+@router.get("/printers", response_class=HTMLResponse)
+async def printers_list(
+    request: Request,
+    location_id: str = "",
+    status_label_id: str = "",
+    q: str = "",
+    user: CurrentUser = Depends(require("printers.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    store = await load_settings(db)
+    default_currency = store.get("general.default_currency")
+    printers = await _query_printers(
+        db, location_id=location_id, status_label_id=status_label_id, q=q, default_currency=default_currency,
+    )
 
     ctx = {
         "user": user,
@@ -164,6 +178,45 @@ async def printers_list(
 
     ctx.update(await _filter_bar_context(db))
     return templates.TemplateResponse(request, "printers/list.html", ctx)
+
+
+@router.get("/printers/export")
+async def printers_export(
+    location_id: str = "",
+    status_label_id: str = "",
+    q: str = "",
+    user: CurrentUser = Depends(require_all("printers.view", "reports.export")),
+    db: AsyncSession = Depends(get_db),
+):
+    store = await load_settings(db)
+    default_currency = store.get("general.default_currency")
+    scope_company_id = company_scope(user, store)
+    printers = await _query_printers(
+        db, location_id=location_id, status_label_id=status_label_id, q=q,
+        default_currency=default_currency, scope_company_id=scope_company_id,
+    )
+
+    fieldnames = [
+        "asset_tag", "manufacturer", "model", "hostname", "ip_address", "status",
+        "location", f"maintenance_total_{default_currency}", "maintenance_excluded_records",
+    ]
+    rows = [
+        {
+            "asset_tag": p["asset"].asset_tag,
+            "manufacturer": p["asset"].model.manufacturer.name,
+            "model": p["asset"].model.name,
+            "hostname": p["details"].hostname if p["details"] and p["details"].hostname else "",
+            "ip_address": p["details"].ip_address if p["details"] and p["details"].ip_address else "",
+            "status": p["asset"].status_label.name,
+            "location": p["asset"].location.name if p["asset"].location else "",
+            f"maintenance_total_{default_currency}": (
+                f"{p['maintenance_total']:.2f}" if p["maintenance_total"] is not None else ""
+            ),
+            "maintenance_excluded_records": p["maintenance_excluded"] or "",
+        }
+        for p in printers
+    ]
+    return csv_response(f"printers-export-{date_cls.today():%Y-%m-%d}.csv", fieldnames, rows)
 
 
 @router.post("/assets/{asset_id}/printer-details/update", response_class=HTMLResponse)

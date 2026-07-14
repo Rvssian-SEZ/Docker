@@ -6,6 +6,7 @@ stock level has an auditable reason attached. min_quantity (optional)
 drives a low-stock visual flag on the list.
 """
 
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Form, Request
@@ -14,7 +15,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.auth import CurrentUser, require
+from app.core.auth import CurrentUser, require, require_all
+from app.core.csv_export import csv_response
 from app.core.db import get_db
 from app.core.models import AuditLog, Category, Currency, InventoryAdjustment, InventoryItem, Location
 from app.core.settings_store import load_settings
@@ -96,21 +98,15 @@ async def _validate_unit_cost(db: AsyncSession, unit_cost: str, currency: str):
 
 # ---- list ----
 
-@router.get("", response_class=HTMLResponse)
-async def inventory_list(
-    request: Request,
-    category_id: str = "",
-    location_id: str = "",
-    low_stock: str = "",
-    q: str = "",
-    user: CurrentUser = Depends(require("inventory.view")),
-    db: AsyncSession = Depends(get_db),
-):
-    """Filter bar: category, location, low-stock-only toggle, name
-    search — all in SQL. low_stock=1 predates the filter bar (the
+async def _query_inventory(
+    db: AsyncSession, *, category_id: str = "", location_id: str = "", low_stock: str = "", q: str = "",
+) -> list[InventoryItem]:
+    """Shared by the HTML list (inventory_list) and CSV export
+    (inventory_export). low_stock=1 predates the filter bar (the
     Dashboard's card already linked to it in Phase 8) and keeps the same
     meaning: at or below min_quantity, same condition as the list's own
-    low-stock badge."""
+    low-stock badge. No company scoping here — InventoryItem has no
+    company_id column (see dashboard.py's docstring for why)."""
     query = select(InventoryItem).options(
         selectinload(InventoryItem.category), selectinload(InventoryItem.location)
     )
@@ -126,7 +122,20 @@ async def inventory_list(
         query = query.where(InventoryItem.name.ilike(f"%{q.strip()}%"))
 
     query = query.order_by(InventoryItem.name)
-    items = (await db.execute(query)).scalars().unique().all()
+    return (await db.execute(query)).scalars().unique().all()
+
+
+@router.get("", response_class=HTMLResponse)
+async def inventory_list(
+    request: Request,
+    category_id: str = "",
+    location_id: str = "",
+    low_stock: str = "",
+    q: str = "",
+    user: CurrentUser = Depends(require("inventory.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    items = await _query_inventory(db, category_id=category_id, location_id=location_id, low_stock=low_stock, q=q)
 
     ctx = {
         "user": user,
@@ -143,6 +152,33 @@ async def inventory_list(
 
     ctx.update(await _form_context(db))
     return templates.TemplateResponse(request, "inventory/list.html", ctx)
+
+
+@router.get("/export")
+async def inventory_export(
+    category_id: str = "",
+    location_id: str = "",
+    low_stock: str = "",
+    q: str = "",
+    user: CurrentUser = Depends(require_all("inventory.view", "reports.export")),
+    db: AsyncSession = Depends(get_db),
+):
+    items = await _query_inventory(db, category_id=category_id, location_id=location_id, low_stock=low_stock, q=q)
+
+    fieldnames = ["name", "category", "location", "quantity", "min_quantity", "unit_cost", "currency"]
+    rows = [
+        {
+            "name": i.name,
+            "category": i.category.name,
+            "location": i.location.name if i.location else "",
+            "quantity": i.quantity,
+            "min_quantity": i.min_quantity if i.min_quantity is not None else "",
+            "unit_cost": i.unit_cost if i.unit_cost is not None else "",
+            "currency": i.currency or "",
+        }
+        for i in items
+    ]
+    return csv_response(f"inventory-export-{date.today():%Y-%m-%d}.csv", fieldnames, rows)
 
 
 # ---- create ----

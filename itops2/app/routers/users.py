@@ -8,16 +8,20 @@ Rules:
 - Company assignment appears when multi-company is enabled in settings.
 """
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.auth import CurrentUser, get_current_user, require
+from app.core.auth import CurrentUser, get_current_user, require, require_all
+from app.core.csv_export import csv_response, fmt_datetime
 from app.core.db import get_db
 from app.core.models import AuditLog, AuthSource, Company, NotificationEvent, NotificationSubscription, Role, User
 from app.core.notifications import EVENT_PERMISSION, EVENT_TYPES
+from app.core.scoping import company_scope
 from app.core.security import hash_password, verify_password
 from app.core.settings_store import load_settings
 from app.templating import templates
@@ -59,6 +63,38 @@ async def users_list(
     ctx = await _form_context(db)
     ctx.update({"user": user, "users": users})
     return templates.TemplateResponse(request, "users/list.html", ctx)
+
+
+@router.get("/users/export")
+async def users_export(
+    user: CurrentUser = Depends(require_all("users.view", "reports.export")),
+    db: AsyncSession = Depends(get_db),
+):
+    """No filter bar exists on /users (never built one), so this exports
+    the full list — still scoped to the caller's own company when
+    company.scoped_users is on, same as every other export."""
+    store = await load_settings(db)
+    scope_company_id = company_scope(user, store)
+    query = select(User).options(selectinload(User.role), selectinload(User.company)).order_by(User.username)
+    if scope_company_id is not None:
+        query = query.where(User.company_id == scope_company_id)
+    users = (await db.execute(query)).scalars().unique().all()
+
+    fieldnames = ["username", "display_name", "email", "role", "company", "auth_source", "is_active", "last_login_at"]
+    rows = [
+        {
+            "username": u.username,
+            "display_name": u.display_name or "",
+            "email": u.email or "",
+            "role": u.role.name.value,
+            "company": u.company.name if u.company else "",
+            "auth_source": u.auth_source.value,
+            "is_active": "yes" if u.is_active else "no",
+            "last_login_at": fmt_datetime(u.last_login_at),
+        }
+        for u in users
+    ]
+    return csv_response(f"users-export-{date.today():%Y-%m-%d}.csv", fieldnames, rows)
 
 
 @router.post("/users/create", response_class=HTMLResponse)

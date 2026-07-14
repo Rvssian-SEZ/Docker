@@ -20,7 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.attachments import MAX_ATTACHMENT_SIZE, attachment_dir, save_upload
-from app.core.auth import CurrentUser, require
+from app.core.auth import CurrentUser, require, require_all
+from app.core.csv_export import csv_response, fmt_date
 from app.core.db import get_db
 from app.core.models import (
     Asset,
@@ -33,6 +34,7 @@ from app.core.models import (
     Currency,
     Location,
 )
+from app.core.scoping import company_scope
 from app.core.settings_store import load_settings
 from app.templating import templates
 
@@ -143,27 +145,18 @@ async def _filter_bar_context() -> dict:
     return {"filter_contract_types": list(ContractType)}
 
 
-@router.get("", response_class=HTMLResponse)
-async def contracts_list(
-    request: Request,
-    contract_type: str = "",
-    state: str = "",
-    vendor: str = "",
-    user: CurrentUser = Depends(require("contracts.view")),
-    db: AsyncSession = Depends(get_db),
-):
-    """Filter bar: type, expiring state (expiring_soon/expired/active —
-    "active" is this route's public name for what _renewal_state calls
-    "normal" internally, i.e. neither expired nor expiring soon), vendor
-    free-text. All in SQL — `state` is pure date comparison against
+async def _query_contracts(
+    db: AsyncSession, *, contract_type: str = "", state: str = "", vendor: str = "",
+    alert_days: int, today: date, scope_company_id: int | None = None,
+) -> list[dict]:
+    """Shared by the HTML list (contracts_list) and CSV export
+    (contracts_export). `state` is pure date comparison against
     Contract.end_date (no month-arithmetic ambiguity like Assets'
     warranty filter has), so unlike that one this needs no Python
-    finishing pass."""
-    store = await load_settings(db)
-    alert_days = store.get_int("contracts.renewal_alert_days")
-    today = date.today()
+    finishing pass. "active" is this route's public name for what
+    _renewal_state calls "normal" internally (neither expired nor
+    expiring soon)."""
     window_end = today + timedelta(days=alert_days)
-
     query = select(Contract).options(selectinload(Contract.company), selectinload(Contract.location))
 
     if contract_type in ContractType.__members__:
@@ -176,10 +169,29 @@ async def contracts_list(
         query = query.where(Contract.end_date > window_end)
     if vendor.strip():
         query = query.where(Contract.vendor.ilike(f"%{vendor.strip()}%"))
+    if scope_company_id is not None:
+        query = query.where(Contract.company_id == scope_company_id)
 
     query = query.order_by(Contract.end_date)
     contracts = (await db.execute(query)).scalars().unique().all()
-    rows = [{"contract": c, "state": _renewal_state(c.end_date, today, alert_days)} for c in contracts]
+    return [{"contract": c, "state": _renewal_state(c.end_date, today, alert_days)} for c in contracts]
+
+
+@router.get("", response_class=HTMLResponse)
+async def contracts_list(
+    request: Request,
+    contract_type: str = "",
+    state: str = "",
+    vendor: str = "",
+    user: CurrentUser = Depends(require("contracts.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    store = await load_settings(db)
+    alert_days = store.get_int("contracts.renewal_alert_days")
+    today = date.today()
+    rows = await _query_contracts(
+        db, contract_type=contract_type, state=state, vendor=vendor, alert_days=alert_days, today=today,
+    )
 
     ctx = {
         "user": user,
@@ -194,6 +206,47 @@ async def contracts_list(
 
     ctx.update(await _filter_bar_context())
     return templates.TemplateResponse(request, "contracts/list.html", ctx)
+
+
+@router.get("/export")
+async def contracts_export(
+    contract_type: str = "",
+    state: str = "",
+    vendor: str = "",
+    user: CurrentUser = Depends(require_all("contracts.view", "reports.export")),
+    db: AsyncSession = Depends(get_db),
+):
+    store = await load_settings(db)
+    alert_days = store.get_int("contracts.renewal_alert_days")
+    today = date.today()
+    scope_company_id = company_scope(user, store)
+    rows = await _query_contracts(
+        db, contract_type=contract_type, state=state, vendor=vendor, alert_days=alert_days, today=today,
+        scope_company_id=scope_company_id,
+    )
+
+    fieldnames = [
+        "name", "type", "vendor", "company", "location", "start_date", "end_date",
+        "renewal_state", "cost", "currency", "renewal_period_months", "auto_renews",
+    ]
+    export_rows = [
+        {
+            "name": r["contract"].name,
+            "type": r["contract"].contract_type.value,
+            "vendor": r["contract"].vendor or "",
+            "company": r["contract"].company.name if r["contract"].company else "",
+            "location": r["contract"].location.name if r["contract"].location else "",
+            "start_date": fmt_date(r["contract"].start_date),
+            "end_date": fmt_date(r["contract"].end_date),
+            "renewal_state": r["state"],
+            "cost": r["contract"].cost if r["contract"].cost is not None else "",
+            "currency": r["contract"].currency or "",
+            "renewal_period_months": r["contract"].renewal_period_months if r["contract"].renewal_period_months is not None else "",
+            "auto_renews": "yes" if r["contract"].auto_renews else "no",
+        }
+        for r in rows
+    ]
+    return csv_response(f"contracts-export-{today:%Y-%m-%d}.csv", fieldnames, export_rows)
 
 
 # ---- create ----
