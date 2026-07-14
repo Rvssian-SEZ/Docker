@@ -400,6 +400,31 @@ search columns, async engine with pooling (already configured in app/core/db.py)
    smtp.security was corrected by hand via the Settings UI rather than
    by a second migration pass (the migration only runs once, and by
    design never overwrites a value that's already set).
+   Post-launch feature (same pre-Phase-9 pass): filter bars added to
+   every list view that didn't have one (Assets, Printers, Contracts,
+   Inventory) — status label/category/model/location/company/
+   checked-out-state/search on Assets, location/status/hostname-IP-
+   search on Printers, type/renewal-state/vendor-search on Contracts,
+   category/location/low-stock-toggle/name-search on Inventory. Common
+   pattern across all four: the filter bar's `<form>` itself is the HTMX
+   trigger element (hx-get back to the same list URL, hx-push-url so
+   filter state lands in the URL and is bookmarkable), targeting a
+   `#<page>-table` div swapped via a table-only partial template
+   (`_table.html`) that the same route returns when the request carries
+   HX-Request — one route and one filtering implementation serves both
+   the full page and the swap, not two. All filtering happens in SQL
+   (joins + WHERE), replacing the Dashboard-era (Phase 8 chunk D)
+   Python-load-everything-then-filter approach for the params that
+   originated there (status_type, checkout_state=overdue/due_soon,
+   warranty=expiring on Assets; state= on Contracts; low_stock=1 on
+   Inventory) — all of those deep links still work unchanged, now
+   backed by SQL instead of a Python list comprehension. The one
+   exception: Assets' warranty=expiring still finishes with a Python
+   pass using app/core/dates.add_months, because Postgres's own
+   date+interval arithmetic doesn't clamp short target months the same
+   way (31 Jan + 1 month behaves differently) and this filter needs to
+   agree with the Dashboard's own warranty-expiring count, which also
+   uses add_months.
 9. ⬜ v1 import wizard.
 10. ⬜ Polish + Setup & Deployment Guide (dark-themed HTML, grows per phase —
     skeleton in docs/setup-guide.html).

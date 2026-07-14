@@ -163,6 +163,11 @@ rather than today's rate. At most one rate per (from, to, date) triple.</td></tr
 <p>Sidebar → <strong>Assets</strong>. The core inventory record — tag, serial, model
 (→ manufacturer/category), status, company, location, purchase date/cost/currency,
 warranty, and depreciation/EOL overrides.</p>
+<p class="muted">The filter bar above the list (status label, category, model,
+location, company when multi-company is on, checked-out state, and a free-text
+search over tag/serial/model) narrows the table instantly as you change a field —
+no page reload — and the current filters are reflected in the URL, so a filtered
+view can be bookmarked or shared.</p>
 
 <h3>10.1 Asset tags</h3>
 <p>Leave the tag field blank on create to auto-generate one: the app scans existing
@@ -239,6 +244,8 @@ rather than silently shown wrong.</p>
 printer asset's own detail page (a "Printer Details" section appears automatically
 once its category is "Printer"), editable by anyone with the
 <code>printers.manage</code> permission.</p>
+<p class="muted">The list has its own filter bar — location, status, and a
+free-text search over hostname/IP address.</p>
 
 <h2>12. Licenses &amp; Contracts</h2>
 <p>Sidebar → <strong>Licenses &amp; Contracts</strong>. One unified simple module for
@@ -258,6 +265,8 @@ several assets. Linking/unlinking never blocks deleting either side.</td></tr>
 </table>
 <p class="muted">Attachments (agreements, invoices) work the same as on assets, from
 the contract's own detail page.</p>
+<p class="muted">The list's filter bar covers type, renewal state (expiring soon /
+expired / active), and a free-text search over vendor.</p>
 
 <h2>13. Inventory</h2>
 <p>Sidebar → <strong>Inventory</strong>. Quantity-tracked consumables and spares,
@@ -271,6 +280,8 @@ clamped to zero.
 </div>
 <p>Setting a <strong>minimum quantity</strong> on an item flags it (a yellow row +
 "low" badge) once quantity drops to or below that threshold.</p>
+<p class="muted">The list's filter bar covers category, location, a "low stock
+only" toggle, and a free-text search over item name.</p>
 
 <h2>14. Notifications (SMTP)</h2>
 <p>Settings → <strong>Notifications</strong>. Configure once per install; nothing is
@@ -279,7 +290,10 @@ sent until <strong>Enable email notifications</strong> is switched on.</p>
 <tr><th>Field</th><th>Notes</th></tr>
 <tr><td>SMTP host / port</td><td>25 for an unauthenticated internal relay, 587
 (STARTTLS) or 465 (implicit TLS) for an authenticated provider (O365, Gmail, etc.).</td></tr>
-<tr><td>Use TLS</td><td>Leave off for an internal unauthenticated relay on 25; on for 465/587.</td></tr>
+<tr><td>Security</td><td><strong>Must match the port</strong> — <code>None</code> for port 25,
+<code>STARTTLS</code> for port 587 (plaintext connect, then upgrade), <code>TLS</code> for port 465
+(encrypted from the first byte). These are two different wire protocols; picking the wrong one for a
+given port fails at the TLS handshake with a version-mismatch error, not a helpful auth error.</td></tr>
 <tr><td>Username / password</td><td>Leave both blank for an unauthenticated relay.</td></tr>
 <tr><td>From address</td><td>Sender shown in the notification emails.</td></tr>
 </table>
