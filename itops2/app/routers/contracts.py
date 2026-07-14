@@ -385,13 +385,15 @@ async def contract_delete(
 async def contract_link_asset(
     request: Request,
     contract_id: int,
-    asset_id: int = Form(...),
+    asset_id: int | None = Form(None),
     user: CurrentUser = Depends(require("contracts.manage")),
     db: AsyncSession = Depends(get_db),
 ):
     contract = await db.get(Contract, contract_id)
     if contract is None:
         return _toast(request, False, "Contract not found.")
+    if asset_id is None:
+        return _toast(request, False, "Pick an asset to link.")
     asset = await db.get(Asset, asset_id)
     if asset is None:
         return _toast(request, False, "Unknown asset.")
@@ -439,7 +441,7 @@ async def contract_unlink_asset(
 async def contract_attachment_upload(
     request: Request,
     contract_id: int,
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
     description: str = Form(""),
     user: CurrentUser = Depends(require("contracts.manage")),
     db: AsyncSession = Depends(get_db),
@@ -447,7 +449,7 @@ async def contract_attachment_upload(
     contract = await db.get(Contract, contract_id)
     if contract is None:
         return _toast(request, False, "Contract not found.")
-    if not file.filename:
+    if file is None or not file.filename:
         return _toast(request, False, "No file selected.")
 
     stored_name, size, err = await save_upload(file, "contract", str(contract_id))

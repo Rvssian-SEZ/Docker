@@ -63,11 +63,11 @@ async def users_list(
 @router.post("/users/create", response_class=HTMLResponse)
 async def users_create(
     request: Request,
-    username: str = Form(...),
+    username: str = Form(""),
     display_name: str = Form(""),
     email: str = Form(""),
-    password: str = Form(...),
-    role_id: int = Form(...),
+    password: str = Form(""),
+    role_id: int | None = Form(None),
     company_id: str = Form(""),
     user: CurrentUser = Depends(require("users.manage")),
     db: AsyncSession = Depends(get_db),
@@ -82,6 +82,8 @@ async def users_create(
     ).first()
     if exists:
         return _toast(request, False, f"Username '{username}' is already taken.")
+    if role_id is None:
+        return _toast(request, False, "Role is required.")
     if await db.get(Role, role_id) is None:
         return _toast(request, False, "Unknown role.")
 
@@ -112,7 +114,7 @@ async def users_create(
 async def users_update(
     request: Request,
     user_id: int,
-    role_id: int = Form(...),
+    role_id: int | None = Form(None),
     company_id: str = Form(""),
     is_active: str = Form("false"),
     user: CurrentUser = Depends(require("users.manage")),
@@ -129,6 +131,8 @@ async def users_update(
             return _toast(request, False, "The break-glass account cannot be deactivated.")
         # role locked — ignore any submitted role change
     else:
+        if role_id is None:
+            return _toast(request, False, "Role is required.")
         if await db.get(Role, role_id) is None:
             return _toast(request, False, "Unknown role.")
         if target.id == user.id and not active:
@@ -152,7 +156,7 @@ async def users_update(
 async def users_reset_password(
     request: Request,
     user_id: int,
-    new_password: str = Form(...),
+    new_password: str = Form(""),
     user: CurrentUser = Depends(require("users.manage")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -192,9 +196,9 @@ async def profile(
 @router.post("/profile/password", response_class=HTMLResponse)
 async def change_own_password(
     request: Request,
-    current_password: str = Form(...),
-    new_password: str = Form(...),
-    confirm_password: str = Form(...),
+    current_password: str = Form(""),
+    new_password: str = Form(""),
+    confirm_password: str = Form(""),
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

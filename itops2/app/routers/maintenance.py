@@ -80,9 +80,9 @@ async def _validate_fields(db: AsyncSession, date: str, maintenance_type: str, d
 async def maintenance_create(
     request: Request,
     asset_id: int,
-    date: str = Form(...),
-    maintenance_type: str = Form(...),
-    description: str = Form(...),
+    date: str = Form(""),
+    maintenance_type: str = Form(""),
+    description: str = Form(""),
     cost: str = Form(""),
     currency: str = Form(""),
     performed_by: str = Form(""),
@@ -121,9 +121,9 @@ async def maintenance_update(
     request: Request,
     asset_id: int,
     maintenance_id: int,
-    date: str = Form(...),
-    maintenance_type: str = Form(...),
-    description: str = Form(...),
+    date: str = Form(""),
+    maintenance_type: str = Form(""),
+    description: str = Form(""),
     cost: str = Form(""),
     currency: str = Form(""),
     performed_by: str = Form(""),
@@ -199,7 +199,7 @@ async def maintenance_attachment_upload(
     request: Request,
     asset_id: int,
     maintenance_id: int,
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
     description: str = Form(""),
     user: CurrentUser = Depends(require("maintenance.manage")),
     db: AsyncSession = Depends(get_db),
@@ -207,7 +207,7 @@ async def maintenance_attachment_upload(
     row = await db.get(Maintenance, maintenance_id)
     if row is None or row.asset_id != asset_id:
         return _toast(request, False, "Maintenance record not found.")
-    if not file.filename:
+    if file is None or not file.filename:
         return _toast(request, False, "No file selected.")
 
     stored_name, size, err = await save_upload(file, "maintenance", str(maintenance_id))

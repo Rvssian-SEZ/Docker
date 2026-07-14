@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -59,6 +61,29 @@ app.include_router(inventory_router.router)
 @app.exception_handler(RequiresLoginException)
 async def requires_login_handler(request: Request, exc: RequiresLoginException):
     return RedirectResponse(url="/login", status_code=302)
+
+
+@app.exception_handler(RequestValidationError)
+async def hx_validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Defense in depth for the Form(...) / 422 gap (see CLAUDE.md): every
+    route should already validate its own fields and return a toast, but
+    if a future route slips and FastAPI's own request validation rejects
+    first, an htmx request would otherwise get a raw JSON body that htmx
+    can't render into the toast target -- a silent dead end. Only
+    htmx requests (HX-Request header) get this treatment; anything else
+    (e.g. a malformed non-browser request) keeps FastAPI's default 422.
+    """
+    if request.headers.get("hx-request") == "true":
+        errors = exc.errors()
+        if errors:
+            field = errors[0].get("loc", ["request"])[-1]
+            message = f"{field}: {errors[0].get('msg', 'invalid value')}"
+        else:
+            message = "Invalid request."
+        return templates.TemplateResponse(
+            request, "partials/toast.html", {"ok": False, "message": message}
+        )
+    return await request_validation_exception_handler(request, exc)
 
 
 @app.get("/healthz")

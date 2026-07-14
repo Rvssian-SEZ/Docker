@@ -41,8 +41,8 @@ async def login_page(request: Request, db: AsyncSession = Depends(get_db)):
 @router.post("/login", response_class=HTMLResponse)
 async def login_submit(
     request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
+    username: str = Form(""),
+    password: str = Form(""),
     db: AsyncSession = Depends(get_db),
 ):
     user = await authenticate_local(db, username.strip(), password)

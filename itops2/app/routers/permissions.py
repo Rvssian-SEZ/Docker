@@ -45,8 +45,8 @@ async def permissions_grid(
 @router.post("/toggle", response_class=HTMLResponse)
 async def toggle_permission(
     request: Request,
-    role_id: int = Form(...),
-    permission: str = Form(...),
+    role_id: int | None = Form(None),
+    permission: str = Form(""),
     # v1 lesson: HTMX sends strings; compare explicitly.
     granted: str = Form("false"),
     user: CurrentUser = Depends(require("settings.manage")),
@@ -58,7 +58,7 @@ async def toggle_permission(
         return templates.TemplateResponse(
             request, "partials/toast.html", {"ok": False, "message": "Unknown permission."}
         )
-    role = await db.get(Role, role_id)
+    role = await db.get(Role, role_id) if role_id is not None else None
     if role is None:
         return templates.TemplateResponse(
             request, "partials/toast.html", {"ok": False, "message": "Unknown role."}

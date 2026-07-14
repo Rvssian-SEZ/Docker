@@ -257,8 +257,8 @@ async def assets_create(
     request: Request,
     asset_tag: str = Form(""),
     serial: str = Form(""),
-    model_id: int = Form(...),
-    status_label_id: int = Form(...),
+    model_id: int | None = Form(None),
+    status_label_id: int | None = Form(None),
     company_id: str = Form(""),
     location_id: str = Form(""),
     purchase_date: str = Form(""),
@@ -271,6 +271,10 @@ async def assets_create(
     user: CurrentUser = Depends(require("assets.create")),
     db: AsyncSession = Depends(get_db),
 ):
+    if model_id is None:
+        return _toast(request, False, "Model is required.")
+    if status_label_id is None:
+        return _toast(request, False, "Status is required.")
     if await db.get(AssetModel, model_id) is None:
         return _toast(request, False, "Unknown model.")
     status_label = await db.get(StatusLabel, status_label_id)
@@ -462,11 +466,11 @@ async def asset_detail(
 async def asset_update(
     request: Request,
     asset_id: int,
-    status_label_id: int = Form(...),
-    serial: str = Form(""),
     # Optional at the FastAPI layer only so the minimal restore-only form
-    # (status_label_id alone) can post without them; required below for
-    # any non-restore edit.
+    # (status_label_id alone) can post without the rest; each is required
+    # below for whichever path actually needs it.
+    status_label_id: int | None = Form(None),
+    serial: str = Form(""),
     asset_tag: str | None = Form(None),
     model_id: int | None = Form(None),
     company_id: str = Form(""),
@@ -484,6 +488,8 @@ async def asset_update(
     asset = await db.get(Asset, asset_id, options=[selectinload(Asset.status_label)])
     if asset is None:
         return _toast(request, False, "Asset not found.")
+    if status_label_id is None:
+        return _toast(request, False, "Status is required.")
 
     new_status = await db.get(StatusLabel, status_label_id)
     if new_status is None:
@@ -626,7 +632,7 @@ async def asset_checkout(
     target_user_id: str = Form(""),
     target_location_id: str = Form(""),
     target_asset_id: str = Form(""),
-    status_label_id: int = Form(...),
+    status_label_id: int | None = Form(None),
     expected_checkin_at: str = Form(""),
     notes: str = Form(""),
     user: CurrentUser = Depends(require("checkout.perform")),
@@ -639,6 +645,8 @@ async def asset_checkout(
         return _toast(request, False, "Only deployable assets can be checked out.")
     if asset.checked_out_at is not None:
         return _toast(request, False, "Already checked out.")
+    if status_label_id is None:
+        return _toast(request, False, "Pick a valid deployed-type status.")
 
     targets = {
         "user": int(target_user_id) if target_user_id.isdigit() else None,
@@ -709,7 +717,7 @@ async def asset_checkout(
 async def asset_checkin(
     request: Request,
     asset_id: int,
-    status_label_id: int = Form(...),
+    status_label_id: int | None = Form(None),
     notes: str = Form(""),
     user: CurrentUser = Depends(require("checkout.perform")),
     db: AsyncSession = Depends(get_db),
@@ -719,6 +727,8 @@ async def asset_checkin(
         return _toast(request, False, "Asset not found.")
     if asset.checked_out_at is None or asset.status_label.status_type != StatusType.deployed:
         return _toast(request, False, "This asset is not currently checked out.")
+    if status_label_id is None:
+        return _toast(request, False, "Pick a non-deployed status to checkin to.")
 
     dest_status = await db.get(StatusLabel, status_label_id)
     if dest_status is None:
@@ -771,7 +781,7 @@ async def _get_attachment_for_asset(db: AsyncSession, asset_id: int, attachment_
 async def asset_attachment_upload(
     request: Request,
     asset_id: int,
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
     description: str = Form(""),
     user: CurrentUser = Depends(require("assets.edit")),
     db: AsyncSession = Depends(get_db),
@@ -781,7 +791,7 @@ async def asset_attachment_upload(
         return _toast(request, False, "Asset not found.")
     if asset.status_label.status_type == StatusType.archived:
         return _toast(request, False, "Archived — restore it before adding attachments.")
-    if not file.filename:
+    if file is None or not file.filename:
         return _toast(request, False, "No file selected.")
 
     stored_name, size, err = await save_upload(file, "asset", str(asset_id))

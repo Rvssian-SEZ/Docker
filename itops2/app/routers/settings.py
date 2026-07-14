@@ -254,8 +254,8 @@ async def settings_currency(
 @router.post("/currency/create", response_class=HTMLResponse)
 async def currency_create(
     request: Request,
-    code: str = Form(...),
-    symbol: str = Form(...),
+    code: str = Form(""),
+    symbol: str = Form(""),
     user: CurrentUser = Depends(require("settings.manage")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -321,10 +321,10 @@ async def currency_delete(
 @router.post("/currency/rates/create", response_class=HTMLResponse)
 async def exchange_rate_create(
     request: Request,
-    from_currency: str = Form(...),
-    to_currency: str = Form(...),
-    rate: str = Form(...),
-    effective_date: str = Form(...),
+    from_currency: str = Form(""),
+    to_currency: str = Form(""),
+    rate: str = Form(""),
+    effective_date: str = Form(""),
     user: CurrentUser = Depends(require("settings.manage")),
     db: AsyncSession = Depends(get_db),
 ):

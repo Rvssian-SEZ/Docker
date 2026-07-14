@@ -141,7 +141,7 @@ def _register_simple_entity(
 
     async def create(
         request: Request,
-        name: str = Form(...),
+        name: str = Form(""),
         user: CurrentUser = Depends(manage_dep),
         db: AsyncSession = Depends(get_db),
     ):
@@ -153,7 +153,7 @@ def _register_simple_entity(
     async def update(
         request: Request,
         item_id: int,
-        name: str = Form(...),
+        name: str = Form(""),
         user: CurrentUser = Depends(manage_dep),
         db: AsyncSession = Depends(get_db),
     ):
@@ -220,8 +220,8 @@ async def status_labels_list(
 @router.post("/status-labels/create", response_class=HTMLResponse)
 async def status_labels_create(
     request: Request,
-    name: str = Form(...),
-    status_type: str = Form(...),
+    name: str = Form(""),
+    status_type: str = Form(""),
     user: CurrentUser = Depends(require("catalog.manage")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -249,8 +249,8 @@ async def status_labels_create(
 async def status_labels_update(
     request: Request,
     item_id: int,
-    name: str = Form(...),
-    status_type: str = Form(...),
+    name: str = Form(""),
+    status_type: str = Form(""),
     user: CurrentUser = Depends(require("catalog.manage")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -338,9 +338,9 @@ async def models_list(
 @router.post("/models/create", response_class=HTMLResponse)
 async def models_create(
     request: Request,
-    name: str = Form(...),
-    manufacturer_id: int = Form(...),
-    category_id: int = Form(...),
+    name: str = Form(""),
+    manufacturer_id: int | None = Form(None),
+    category_id: int | None = Form(None),
     depreciation_months: str = Form(""),
     eol_months: str = Form(""),
     user: CurrentUser = Depends(require("catalog.manage")),
@@ -349,6 +349,10 @@ async def models_create(
     name = name.strip()
     if not name:
         return _toast(request, False, "Name is required.")
+    if manufacturer_id is None:
+        return _toast(request, False, "Manufacturer is required.")
+    if category_id is None:
+        return _toast(request, False, "Category is required.")
     if await db.get(Manufacturer, manufacturer_id) is None:
         return _toast(request, False, "Unknown manufacturer.")
     if await db.get(Category, category_id) is None:
@@ -387,9 +391,9 @@ async def models_create(
 async def models_update(
     request: Request,
     item_id: int,
-    name: str = Form(...),
-    manufacturer_id: int = Form(...),
-    category_id: int = Form(...),
+    name: str = Form(""),
+    manufacturer_id: int | None = Form(None),
+    category_id: int | None = Form(None),
     depreciation_months: str = Form(""),
     eol_months: str = Form(""),
     user: CurrentUser = Depends(require("catalog.manage")),
@@ -401,6 +405,10 @@ async def models_update(
     name = name.strip()
     if not name:
         return _toast(request, False, "Name is required.")
+    if manufacturer_id is None:
+        return _toast(request, False, "Manufacturer is required.")
+    if category_id is None:
+        return _toast(request, False, "Category is required.")
     if await db.get(Manufacturer, manufacturer_id) is None:
         return _toast(request, False, "Unknown manufacturer.")
     if await db.get(Category, category_id) is None:
