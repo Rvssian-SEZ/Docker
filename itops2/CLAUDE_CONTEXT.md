@@ -425,6 +425,77 @@ search columns, async engine with pooling (already configured in app/core/db.py)
    way (31 Jan + 1 month behaves differently) and this filter needs to
    agree with the Dashboard's own warranty-expiring count, which also
    uses add_months.
+   Five more post-launch refinements (same pre-Phase-9 pass), one commit
+   each:
+   1. Contracts: the asset-link `<select>` had no blank leading
+      `<option>`, so the browser silently preselected the first
+      alphabetical asset — clicking "Link" without touching the
+      dropdown linked whatever sorted first, not nothing. Fixed with a
+      disabled/selected empty placeholder option.
+   2. Printers: hostname already existed on core_printer_details (Phase
+      6) and was already editable/displayed on the asset detail page
+      and already part of the list's free-text search — the only real
+      gap was the list TABLE itself never showing it as a column. Pure
+      UI fix, no migration.
+   3. Inventory adjustment history: a dedicated core_inventory_adjustments
+      ledger table (migration 0008) rather than reconstructing history
+      by parsing core_audit_log's formatted detail string — that string
+      is for a human reading the audit trail, not for a program to
+      parse back out reliably. The audit row stays exactly as it was
+      (who-did-what); the new table is the queryable ledger
+      (item_id, delta, quantity_after, reason, adjusted_by, adjusted_at
+      — quantity_after stored explicitly, never replayed from deltas).
+      item_id uses a plain blocking FK (not cascade): once an item has
+      real adjustment history, that's data worth keeping, same
+      reasoning as Assets blocking hard-delete with checkout history —
+      a deliberate behavior change (previously any item was freely
+      deletable). New GET /inventory/{id}/history route + a History
+      button/modal on every row, gated by inventory.view (not .manage)
+      since viewing history is a read operation.
+   4. CSV export (Assets/Printers/Contracts/Inventory/Users): downloads
+      exactly the CURRENT FILTERED view — each router's filter-building
+      logic was pulled into a shared `_query_*()` function the HTML
+      list route and the new `/export` route both call, so export can
+      never drift from what the filter bar shows. New
+      app/core/csv_export.py (UTF-8 BOM for Excel, UK date format). New
+      `require_all()` in app/core/auth.py checks BOTH the list's own
+      view permission AND reports.export — not just reports.export
+      alone, since the permission matrix is admin-editable at runtime
+      and export shouldn't be able to leak data the same role can't see
+      in the UI. Company scoping (company_scope(), extracted from
+      dashboard.py into app/core/scoping.py, dashboard.py now imports
+      it) applies to Assets/Printers/Contracts/Users exports; Inventory
+      has no company_id, never scoped, same as the Dashboard's cards.
+   5. Two-level asset photos: a photo on the MODEL (shown as the
+      default for every asset of that model) plus an optional per-asset
+      photo that overrides it. Both levels reuse core_attachments (a
+      new entity_type="model" value) rather than a dedicated column —
+      "the photo" is simply the most recent image-type attachment for
+      that entity; zero schema changes, one mechanism instead of two.
+      Per-asset photos need no new upload UI — any image uploaded
+      through an asset's EXISTING attachment form is automatically
+      eligible. Model photos get a small dedicated modal (models.html
+      has no attachments list UI to piggyback on) that keeps at most
+      one image per model (a new upload deletes the previous). New
+      app/core/photos.py: model_photo_attachment()/
+      asset_photo_attachment()/effective_asset_photo() (asset's own >
+      model's). Thumbnails are generated ONCE at upload time (Pillow,
+      200x200 max, JPEG, stored alongside the original under
+      .../thumbs/) — never resized on the fly at list-render time, plus
+      `<img loading="lazy">` on list thumbnails, so a 50-row list with
+      photos stays fast. Bug found during live verification (not by the
+      test suite, whose Pillow-generated fixtures are always
+      well-formed): a corrupt/truncated image upload raised a bare
+      SyntaxError from PIL's PNG parser, not a subclass of the
+      originally-caught UnidentifiedImageError/OSError, so it 500'd the
+      whole upload instead of just skipping the thumbnail — broadened
+      to a deliberate bare `except Exception` (thumbnailing is strictly
+      best-effort). Also found while chasing that down:
+      scripts/run_tests.sh's cleanup trap did `docker rm -f` without
+      `-v`, leaking the throwaway Postgres container's anonymous data
+      volume on every test run — enough accumulated runs filled the
+      docker-test host's disk to 85% and broke a run outright. Fixed
+      with `-v`; freed ~4GB pruning the backlog.
 9. ⬜ v1 import wizard.
 10. ⬜ Polish + Setup & Deployment Guide (dark-themed HTML, grows per phase —
     skeleton in docs/setup-guide.html).
