@@ -1,5 +1,6 @@
 """ITOps v2 — application entrypoint."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -15,6 +16,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.core.auth import CurrentUser, RequiresLoginException, get_current_user
 from app.core.bootstrap import bootstrap
 from app.core.config import get_settings
+from app.core.daily_checks import run_if_due
 from app.core.db import SessionLocal
 from app.routers import assets as assets_router
 from app.routers import auth as auth_router
@@ -30,16 +32,43 @@ from app.templating import templates
 from app.version import __version__
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 BASE_DIR = Path(__file__).parent
+
+
+async def _daily_tick_loop() -> None:
+    """Wakes roughly hourly and runs the scheduled checks (warranty/
+    contract-renewal/low-stock digests, app/core/daily_checks.py) once
+    per calendar day. Idempotency is a persisted date marker
+    (notifications.last_daily_run), not a fixed trigger time -- safe
+    across restarts, and if the container is down across an entire day
+    that day's check is simply skipped, not backfilled (acceptable for
+    advisory notifications).
+
+    Chosen over a /tasks/daily endpoint + host cron (the other option
+    presented to Alex before building this) because it needs no
+    host-side setup beyond the existing scp+docker-compose deploy
+    procedure -- every other phase's scheduled/background work has
+    been entirely self-contained in the container, and this keeps that
+    pattern intact.
+    """
+    while True:
+        try:
+            await run_if_due()
+        except Exception:
+            logger.exception("Daily scheduled-check tick failed")
+        await asyncio.sleep(3600)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with SessionLocal() as db:
         await bootstrap(db)
+    task = asyncio.create_task(_daily_tick_loop())
     yield
+    task.cancel()
 
 
 app = FastAPI(title=settings.app_name, version=__version__, lifespan=lifespan)
