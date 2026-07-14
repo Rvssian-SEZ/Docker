@@ -42,6 +42,7 @@ TRUNCATE_TABLES = (
     "core_contracts",
     "core_contract_assets",
     "core_inventory_items",
+    "core_inventory_adjustments",
     "core_notification_subscriptions",
     "core_settings",
     "core_audit_log",

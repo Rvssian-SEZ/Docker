@@ -10,13 +10,13 @@ from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.auth import CurrentUser, require
 from app.core.db import get_db
-from app.core.models import AuditLog, Category, Currency, InventoryItem, Location
+from app.core.models import AuditLog, Category, Currency, InventoryAdjustment, InventoryItem, Location
 from app.core.settings_store import load_settings
 from app.templating import templates
 
@@ -253,6 +253,19 @@ async def inventory_delete(
     item = await db.get(InventoryItem, item_id)
     if item is None:
         return _toast(request, False, "Not found.")
+
+    adjustment_count = (
+        await db.execute(
+            select(func.count()).select_from(InventoryAdjustment).where(InventoryAdjustment.item_id == item_id)
+        )
+    ).scalar_one()
+    if adjustment_count:
+        return _toast(
+            request, False,
+            f"Cannot delete '{item.name}': {adjustment_count} quantity adjustment(s) on record — "
+            "that history can't be recovered once the item is gone.",
+        )
+
     name = item.name
     await db.delete(item)
     db.add(AuditLog(user_id=user.id, action="delete", entity_type="inventory_item", entity_id=str(item_id), detail=name))
@@ -292,5 +305,40 @@ async def inventory_adjust(
             detail=f"{delta_val:+d} ({reason.strip()}) -> {new_qty}",
         )
     )
+    db.add(
+        InventoryAdjustment(
+            item_id=item_id, delta=delta_val, quantity_after=new_qty,
+            reason=reason.strip(), adjusted_by=user.id,
+        )
+    )
     await db.commit()
     return _refresh()
+
+
+# ---- adjustment history ----
+
+@router.get("/{item_id}/history", response_class=HTMLResponse)
+async def inventory_history(
+    request: Request,
+    item_id: int,
+    user: CurrentUser = Depends(require("inventory.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    item = await db.get(InventoryItem, item_id)
+    if item is None:
+        return _toast(request, False, "Not found.")
+    rows = (
+        (
+            await db.execute(
+                select(InventoryAdjustment)
+                .options(selectinload(InventoryAdjustment.adjuster))
+                .where(InventoryAdjustment.item_id == item_id)
+                .order_by(InventoryAdjustment.adjusted_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return templates.TemplateResponse(
+        request, "inventory/_history.html", {"item": item, "adjustments": rows}
+    )

@@ -1,11 +1,14 @@
 """Inventory: CRUD, the unit-cost-requires-currency validation, and
 quantity adjustments -- delta+reason required, negative-result blocked,
-each adjustment writes an audit row with the delta and reason.
+each adjustment writes both an audit row (who-did-what) and a
+core_inventory_adjustments ledger row (the queryable history), plus the
+per-item history view and the delete-blocked-by-history guard.
 """
 
 from sqlalchemy import select
 
-from app.core.models import AuditLog, Category, InventoryItem
+from app.core.models import AuditLog, AuthSource, Category, InventoryAdjustment, InventoryItem, Role, RoleName, User
+from app.core.security import hash_password
 
 
 async def _make_category(db, name="Toner"):
@@ -164,3 +167,102 @@ async def test_delete_inventory_item(admin_client, db):
     resp = await admin_client.post(f"/inventory/{row.id}/delete")
     assert resp.status_code == 204
     assert (await db.execute(select(InventoryItem).where(InventoryItem.id == row.id))).scalar_one_or_none() is None
+
+
+async def test_adjust_writes_ledger_row_not_just_audit_string(admin_client, db):
+    """The core_inventory_adjustments ledger (added post-Phase-8) exists
+    specifically so the history view never has to parse the audit log's
+    formatted detail string -- resulting quantity is a real column, not
+    something extracted from '+5 (reason) -> 15'."""
+    cat = await _make_category(db)
+    await admin_client.post(
+        "/inventory/create", data={"name": "Toner", "category_id": cat.id, "quantity": "10"},
+    )
+    row = (await db.execute(select(InventoryItem))).scalar_one()
+    admin_id = (await db.execute(select(User.id).where(User.is_breakglass.is_(True)))).scalar_one()
+
+    resp = await admin_client.post(
+        f"/inventory/{row.id}/adjust", data={"delta": "5", "reason": "received shipment"},
+    )
+    assert resp.status_code == 204
+
+    ledger_row = (
+        await db.execute(select(InventoryAdjustment).where(InventoryAdjustment.item_id == row.id))
+    ).scalar_one()
+    assert ledger_row.delta == 5
+    assert ledger_row.quantity_after == 15
+    assert ledger_row.reason == "received shipment"
+    assert ledger_row.adjusted_by == admin_id
+
+    # The audit row still exists too -- the ledger is additive, not a replacement.
+    audit = (
+        await db.execute(
+            select(AuditLog).where(AuditLog.entity_type == "inventory_item", AuditLog.action == "adjust")
+        )
+    ).scalar_one()
+    assert audit is not None
+
+
+async def test_history_view_shows_adjustments_newest_first(admin_client, db):
+    cat = await _make_category(db)
+    await admin_client.post(
+        "/inventory/create", data={"name": "Toner", "category_id": cat.id, "quantity": "10"},
+    )
+    row = (await db.execute(select(InventoryItem))).scalar_one()
+
+    await admin_client.post(f"/inventory/{row.id}/adjust", data={"delta": "5", "reason": "first adjustment"})
+    await admin_client.post(f"/inventory/{row.id}/adjust", data={"delta": "-2", "reason": "second adjustment"})
+
+    resp = await admin_client.get(f"/inventory/{row.id}/history")
+    assert resp.status_code == 200
+    assert "first adjustment" in resp.text
+    assert "second adjustment" in resp.text
+    # newest (second) adjustment must appear before the first in the HTML
+    assert resp.text.index("second adjustment") < resp.text.index("first adjustment")
+    assert "13" in resp.text  # resulting quantity after the second adjustment
+
+
+async def test_history_view_accessible_to_view_only_user(client, db, settings):
+    """Viewing history is a read operation (inventory.view), not gated
+    behind inventory.manage -- a Technician/Viewer should be able to see
+    what happened to an item even if they can't change it."""
+    cat = await _make_category(db)
+    item = InventoryItem(name="Toner", category_id=cat.id, quantity=10)
+    db.add(item)
+    await db.flush()
+    admin_id = (await db.execute(select(User.id).where(User.is_breakglass.is_(True)))).scalar_one()
+    db.add(InventoryAdjustment(item_id=item.id, delta=5, quantity_after=15, reason="restock", adjusted_by=admin_id))
+    await db.commit()
+
+    viewer_role = (await db.execute(select(Role).where(Role.name == RoleName.viewer))).scalar_one()
+    db.add(
+        User(
+            username="inv-viewer", display_name="Inv Viewer", auth_source=AuthSource.local,
+            password_hash=hash_password("supersecret123"), role_id=viewer_role.id, is_active=True,
+        )
+    )
+    await db.commit()
+    login = await client.post("/login", data={"username": "inv-viewer", "password": "supersecret123"})
+    assert login.status_code == 302
+
+    resp = await client.get(f"/inventory/{item.id}/history")
+    assert resp.status_code == 200
+    assert "restock" in resp.text
+
+
+async def test_delete_blocked_when_adjustment_history_exists(admin_client, db):
+    """Once an item has real adjustment history, that's data worth
+    keeping -- same reasoning that already blocks hard-deleting an Asset
+    with checkout history. Inventory has no archive concept, so this is
+    a firm block, not an "archive instead" redirect."""
+    cat = await _make_category(db)
+    await admin_client.post(
+        "/inventory/create", data={"name": "Toner", "category_id": cat.id, "quantity": "10"},
+    )
+    row = (await db.execute(select(InventoryItem))).scalar_one()
+    await admin_client.post(f"/inventory/{row.id}/adjust", data={"delta": "5", "reason": "restock"})
+
+    resp = await admin_client.post(f"/inventory/{row.id}/delete")
+    assert "text-bg-danger" in resp.text
+    assert "adjustment" in resp.text.lower()
+    assert (await db.execute(select(InventoryItem).where(InventoryItem.id == row.id))).scalar_one_or_none() is not None

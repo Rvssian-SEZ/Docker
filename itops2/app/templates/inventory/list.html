@@ -13,6 +13,24 @@
 {% include "inventory/_filters.html" %}
 {% include "inventory/_table.html" %}
 
+<div class="modal fade" id="historyModal" tabindex="-1">
+  <div class="modal-dialog modal-lg"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">Adjustment history — <span id="historyModalName"></span></h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body" id="historyModalBody">
+      <p class="text-secondary">Loading…</p>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+    </div>
+  </div></div>
+</div>
+<script>
+document.getElementById('historyModal')?.addEventListener('show.bs.modal', e => {
+  document.getElementById('historyModalName').textContent = e.relatedTarget.dataset.name;
+});
+</script>
+
 {% if can_manage %}
 <div class="modal fade" id="createModal" tabindex="-1">
   <div class="modal-dialog"><div class="modal-content">

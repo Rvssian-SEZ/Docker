@@ -526,11 +526,14 @@ class NotificationSubscription(Base):
 class InventoryItem(Base):
     """Quantity-tracked consumables/spares, sharing the same category
     tree as Assets (core_categories). Adjustments are +/- deltas applied
-    in place to `quantity`, each writing a core_audit_log row with the
-    delta and a reason — no separate ledger table, since (unlike
-    Checkout/Maintenance) there's no richer per-event data to store than
-    "quantity changed by N, because X", and the audit log already
-    captures who/when for free.
+    in place to `quantity`; each one both writes a core_audit_log row
+    (the who-did-what record, matching every other mutation in this app)
+    AND a core_inventory_adjustments row (the queryable ledger — date,
+    delta, resulting quantity, reason, who — see InventoryAdjustment).
+    The two used to be one thing (audit log only, Phase 7); split in a
+    post-Phase-8 pass once a real per-item history VIEW was needed and
+    parsing the audit log's formatted detail string for display turned
+    out to be exactly the kind of fragile the rest of this app avoids.
     """
 
     __tablename__ = "core_inventory_items"
@@ -549,3 +552,34 @@ class InventoryItem(Base):
 
     category: Mapped[Category] = relationship(foreign_keys=[category_id])
     location: Mapped[Location | None] = relationship(foreign_keys=[location_id])
+
+
+class InventoryAdjustment(Base):
+    """The quantity ledger for one inventory item — one row per /adjust
+    call, in application-insertion order (oldest first is the natural
+    read order for "how did we get here"; the history view reverses it
+    for display, newest first). quantity_after is stored explicitly
+    rather than derived, so the history view never needs to replay deltas
+    to know the running total at any point in time.
+
+    item_id has a plain (blocking) FK, matching this app's default
+    "block deletion, never cascade" convention (see core_contract_assets
+    for the one deliberate exception and why) — once an item has real
+    adjustment history, that's data worth keeping, the same reasoning
+    that already blocks hard-deleting an Asset with checkout history.
+    Inventory has no archive/soft-delete concept the way Assets do, so
+    this is a firm block, not a "archive instead" redirect.
+    """
+
+    __tablename__ = "core_inventory_adjustments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("core_inventory_items.id"), index=True)
+    delta: Mapped[int] = mapped_column(Integer)
+    quantity_after: Mapped[int] = mapped_column(Integer)
+    reason: Mapped[str] = mapped_column(Text)
+    adjusted_by: Mapped[int] = mapped_column(ForeignKey("core_users.id"))
+    adjusted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+    item: Mapped[InventoryItem] = relationship(foreign_keys=[item_id])
+    adjuster: Mapped[User] = relationship(foreign_keys=[adjusted_by])

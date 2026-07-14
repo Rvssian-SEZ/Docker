@@ -1,0 +1,16 @@
+<table class="table table-sm mb-0">
+  <thead><tr><th>Date</th><th>Delta</th><th>Resulting qty</th><th>Reason</th><th>By</th></tr></thead>
+  <tbody>
+  {% for adj in adjustments %}
+    <tr>
+      <td>{{ adj.adjusted_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td class="{{ 'text-success' if adj.delta > 0 else 'text-danger' }}">{{ '%+d' | format(adj.delta) }}</td>
+      <td>{{ adj.quantity_after }}</td>
+      <td class="text-secondary small">{{ adj.reason }}</td>
+      <td>{{ adj.adjuster.display_name }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="text-secondary">No adjustments recorded yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>

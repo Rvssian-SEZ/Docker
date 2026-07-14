@@ -12,11 +12,11 @@
     <col style="width: 10rem;">
     <col style="width: 8rem;">
     <col style="width: 8rem;">
-    {% if can_manage %}<col style="width: 9rem;">{% endif %}
+    <col style="width: 9rem;">
   </colgroup>
   <thead><tr>
     <th>Name</th><th>Category</th><th>Location</th><th>Quantity</th><th>Unit cost</th>
-    {% if can_manage %}<th></th>{% endif %}
+    <th></th>
   </tr></thead>
   <tbody>
   {% for item in items %}
@@ -30,8 +30,13 @@
         {% if low %}<span class="badge text-bg-warning ms-1" title="At or below minimum ({{ item.min_quantity }})">low</span>{% endif %}
       </td>
       <td>{{ item.unit_cost ~ ' ' ~ item.currency if item.unit_cost is not none else '—' }}</td>
-      {% if can_manage %}
       <td class="text-end">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#historyModal"
+                hx-get="/inventory/{{ item.id }}/history" hx-target="#historyModalBody" hx-swap="innerHTML"
+                data-name="{{ item.name }}" title="Adjustment history">
+          <i class="bi bi-clock-history"></i>
+        </button>
+        {% if can_manage %}
         <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#adjustModal"
                 data-id="{{ item.id }}" data-name="{{ item.name }}" data-quantity="{{ item.quantity }}" title="Adjust quantity">
           <i class="bi bi-plus-slash-minus"></i>
@@ -47,8 +52,8 @@
                 hx-target="#toast-area" hx-swap="innerHTML" hx-confirm="Delete '{{ item.name }}'?">
           <i class="bi bi-trash"></i>
         </button>
+        {% endif %}
       </td>
-      {% endif %}
     </tr>
   {% else %}
     <tr><td colspan="6" class="text-secondary">No inventory items match these filters.</td></tr>
