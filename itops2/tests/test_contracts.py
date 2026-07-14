@@ -153,6 +153,25 @@ async def test_link_and_unlink_asset(admin_client, db):
     assert link_after is None
 
 
+async def test_asset_link_picker_has_no_preselected_option(admin_client, db):
+    """The <select> must default to a blank, disabled placeholder --
+    without one the browser silently preselects the first real <option>,
+    so clicking "Link" without touching the dropdown would link whatever
+    asset happens to sort first rather than requiring an actual choice."""
+    await admin_client.post("/contracts/create", data=await _make_contract_data())
+    contract = (await db.execute(select(Contract))).scalar_one()
+    await _make_asset(db, tag="IT-CT01")
+    await _make_asset(db, tag="IT-CT02")
+
+    resp = await admin_client.get(f"/contracts/{contract.id}")
+    assert resp.status_code == 200
+    select_start = resp.text.index('name="asset_id"')
+    select_html = resp.text[select_start:select_start + 400]
+    assert '<option value="" selected disabled>' in select_html
+    # the blank placeholder must come before any real asset option
+    assert select_html.index('value=""') < select_html.index("IT-CT01")
+
+
 async def test_deleting_asset_cascades_contract_link(admin_client, db):
     """The one deliberate CASCADE in this schema: deleting an asset must
     not be blocked by (nor leave orphaned) a contract coverage link."""

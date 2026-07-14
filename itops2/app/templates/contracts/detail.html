@@ -52,6 +52,7 @@
   <div class="flex-grow-1">
     <label class="form-label">Link an asset</label>
     <select name="asset_id" class="form-select" required>
+      <option value="" selected disabled>— Select an asset —</option>
       {% for a in linkable_assets %}<option value="{{ a.id }}">{{ a.asset_tag }}</option>{% endfor %}
     </select>
     {% if not linkable_assets %}<div class="form-text text-secondary">No unlinked assets available.</div>{% endif %}
