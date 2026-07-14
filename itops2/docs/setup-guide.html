@@ -272,11 +272,58 @@ clamped to zero.
 <p>Setting a <strong>minimum quantity</strong> on an item flags it (a yellow row +
 "low" badge) once quantity drops to or below that threshold.</p>
 
-<h2>14. Notifications (SMTP) <span class="todo">(Phase 8)</span></h2>
+<h2>14. Notifications (SMTP)</h2>
+<p>Settings → <strong>Notifications</strong>. Configure once per install; nothing is
+sent until <strong>Enable email notifications</strong> is switched on.</p>
+<table>
+<tr><th>Field</th><th>Notes</th></tr>
+<tr><td>SMTP host / port</td><td>25 for an unauthenticated internal relay, 587
+(STARTTLS) or 465 (implicit TLS) for an authenticated provider (O365, Gmail, etc.).</td></tr>
+<tr><td>Use TLS</td><td>Leave off for an internal unauthenticated relay on 25; on for 465/587.</td></tr>
+<tr><td>Username / password</td><td>Leave both blank for an unauthenticated relay.</td></tr>
+<tr><td>From address</td><td>Sender shown in the notification emails.</td></tr>
+</table>
+<div class="callout">
+Leaving username/password blank does the right thing automatically — the app
+passes them to the mail library as <em>absent</em>, not as empty strings, which
+matters for relays that reject an AUTH attempt on an unauthenticated port.
+</div>
+<p>Use the <strong>Send test</strong> button at the bottom of the page to confirm the
+relay works before relying on it — it reports the real failure (connection
+refused, auth rejected, etc.) rather than silently doing nothing.</p>
 
-<h2>15. Importing from ITOps v1 <span class="todo">(Phase 9)</span></h2>
+<h3>14.1 Events &amp; per-user subscriptions</h3>
+<table>
+<tr><th>Event</th><th>Sent to</th></tr>
+<tr><td>Asset checked out</td><td>The checkout's target user (if it has an email) always;
+subscribed users with <strong>Assets</strong> view access on request.</td></tr>
+<tr><td>Asset checked in</td><td>Same as above, for the asset's previous holder.</td></tr>
+<tr><td>Warranty expiring soon</td><td>Subscribed users with Assets view access —
+lead time from <strong>Settings → General → Warranty alert lead time</strong>.</td></tr>
+<tr><td>Contract renewal due</td><td>Subscribed users with Licenses &amp; Contracts
+view access — lead time from <strong>Contract renewal alert lead time</strong>.</td></tr>
+<tr><td>Inventory low stock</td><td>Subscribed users with Inventory view access.</td></tr>
+</table>
+<p>Each user manages their own subscriptions on their <strong>Profile</strong> page
+(sidebar → username). Only events a user's role can actually receive are shown
+there — a role change immediately adds or removes the relevant checkboxes.</p>
+<p>Warranty/renewal/low-stock are checked once a day automatically (no
+configuration needed) and batched into a single digest email per event type, so
+subscribers get one email listing everything due rather than one per item.</p>
 
-<h2>16. Upgrades &amp; backups</h2>
+<h2>15. Dashboard</h2>
+<p>The landing page. Each card links straight into the relevant list, pre-filtered:
+asset counts by status, checkouts overdue / due back within 7 days, warranties
+expiring soon, contracts renewing soon, and low-stock inventory items. Only the
+cards for sections the signed-in user actually has view access to are shown.</p>
+<p class="muted">When <strong>Settings → General → Scope users to their company</strong>
+is on, a user with a company assigned sees dashboard counts for their own
+company only. The Assets/Licenses &amp; Contracts list pages themselves don't
+enforce this scoping yet — only the dashboard does, for now.</p>
+
+<h2>16. Importing from ITOps v1 <span class="todo">(Phase 9)</span></h2>
+
+<h2>17. Upgrades &amp; backups</h2>
 <pre>docker compose pull && docker compose up -d   # upgrade
 # backup = pg_dump of the itops2 database + /opt/appdata/itops2/attachments</pre>
 

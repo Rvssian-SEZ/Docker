@@ -317,7 +317,71 @@ search columns, async engine with pooling (already configured in app/core/db.py)
    reasoning as Assets' detail page vs Catalog's inline rows.
    Bug found + fixed during this phase's own verification: see the
    "bare Form(...) required field" v1-lessons-style note above.
-8. ⬜ Notifications, dashboard.
+8. ✅ Notifications, dashboard, **deployed and verified in production**.
+   Migration 0007 (core_notification_subscriptions). Scheduler mechanism
+   (in-app asyncio task vs. a /tasks/daily endpoint + host cron) was
+   proposed to Alex and approved before building; see chunk C below for
+   the rationale.
+   Chunk A — SMTP core (app/core/notifications.py): send_email_raising()
+   does the real aiosmtplib send, explicitly passing
+   username=None/password=None when the settings store's smtp.username/
+   password are blank (the v1 lesson above); send_email() is the
+   fire-and-forget wrapper used by BackgroundTasks/the scheduler, which
+   swallows and logs failures so a notification can never become a
+   user-facing error. EVENT_TYPES/EVENT_PERMISSION map each of the five
+   event types to the permission a recipient must hold to receive it
+   (e.g. contract_renewal_due -> contracts.view) — a subscription alone
+   isn't enough, so a role downgrade can't leave someone receiving
+   alerts about data they can no longer see. Settings -> Notifications
+   tab (smtp.* keys existed as placeholders since Phase 1) plus a
+   test-send button that awaits the send directly (not backgrounded) so
+   a misconfigured relay reports its real error, not silence.
+   Chunk B — event wiring: assets.py's checkout/checkin routes queue
+   notify_checkout()/notify_checkin() as BackgroundTasks with PRIMITIVE
+   args (asset_tag + the target's email) after commit. A checkout/
+   checkin's direct target always gets a personal notice about their own
+   asset regardless of subscription state, separate from and in addition
+   to the broadcast to subscribed+permissioned users. /profile carries a
+   per-user subscription checklist (core_notification_subscriptions —
+   presence = subscribed, no defaults seeded, matching the
+   RolePermission grant-row pattern), one instant-save toggle per event
+   type, same HTMX pattern as the Settings permissions grid; only shows
+   a checkbox for events the user's role can currently receive.
+   Chunk C — daily scheduled checks (app/core/daily_checks.py): an
+   in-app asyncio task (started in app/main.py's lifespan) wakes roughly
+   hourly and runs warranty-expiring / contract-renewal-due /
+   inventory-low-stock checks once per calendar day, each batched into
+   ONE digest email per event type (never one email per row, and never
+   an empty digest). Chosen over a /tasks/daily endpoint + host cron
+   specifically because it needs no host-side setup beyond the existing
+   scp+docker-compose deploy procedure — every other phase's background
+   work has been entirely self-contained in the container. Idempotency
+   ("no duplicate warnings on restart") is a persisted date marker
+   (notifications.last_daily_run setting) checked by run_if_due(),
+   pulled out of the scheduler loop specifically so it's unit-testable
+   without driving an infinite sleep loop. Warranty-expiry uses its own
+   month-arithmetic helper (app/core/dates.py add_months — no dateutil
+   dependency, clamps day-of-month e.g. 31 Jan + 1mo -> 28/29 Feb);
+   contract-renewal mirrors contracts.py's _renewal_state
+   "expiring_soon" bucket exactly (re-derived rather than imported,
+   since routers depend on core modules and not the reverse); low-stock
+   matches inventory/list.html's badge condition exactly.
+   Chunk D — Dashboard (app/routers/dashboard.py, replacing the Phase 2
+   placeholder index() route): asset counts by status, checkouts
+   overdue/due-soon, warranty expiring, contracts renewing, low stock —
+   each card links into a NEW query-string filter on the underlying list
+   page (?status_type=, ?checkout_state=overdue|due_soon,
+   ?warranty=expiring on Assets; ?state=expiring_soon|expired on
+   Contracts; ?low_stock=1 on Inventory — none of these pages had any
+   filtering before this chunk). Every card is gated by the same
+   permission its linked page requires. Company scoping
+   (company.scoped_users): Asset/Contract counts are restricted to the
+   viewing user's own company when the setting is on AND the user has a
+   company assigned (no company assigned = no scoping, e.g. the
+   break-glass admin always sees everything) — **dashboard-only for
+   now**; the Assets/Contracts list pages themselves still don't enforce
+   company.scoped_users, a gap that predates this phase and wasn't in
+   scope to close here.
 9. ⬜ v1 import wizard.
 10. ⬜ Polish + Setup & Deployment Guide (dark-themed HTML, grows per phase —
     skeleton in docs/setup-guide.html).
