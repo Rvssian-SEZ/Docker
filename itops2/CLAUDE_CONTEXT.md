@@ -123,14 +123,17 @@ search columns, async engine with pooling (already configured in app/core/db.py)
 - FastAPI: a bare `field: str = Form(...)` genuinely-required-at-request-layer
   field, when actually missing/malformed, 422s with a raw JSON body — htmx
   doesn't render that into the toast area, so the user sees nothing at all,
-  not even an error. Found in Contracts (Phase 7) and fixed there by using
-  `Form("")` with the existing app-level "is it empty?" check instead (which
-  already produced a friendly toast). Assets and Maintenance (Phases 5–6)
-  use bare `Form(...)` for some required fields too and may have the same
-  latent gap — not audited/fixed yet, since real `<input>`/`<select>` form
-  submissions always include the field (even empty), so it's only reachable
-  via a malformed/non-browser request. Worth a sweep before v1 import or a
-  public API surface makes malformed requests more likely.
+  not even an error. Found in Contracts (Phase 7), then swept across every
+  router (assets, checkout, maintenance, attachments, auth, users, catalog,
+  permissions, settings) before Phase 8: every bare `Form(...)`/`File(...)`
+  is now `Form("")`/`Form(None)`/`File(None)` with an explicit app-level
+  check. Backstopped by a global `RequestValidationError` handler
+  (app/main.py) that renders the toast partial instead of raw JSON whenever
+  the request carries the `HX-Request` header — catches the remaining case
+  the per-route fix can't (field present but wrong type, e.g.
+  `model_id=notanumber`), for whatever a future route misses. Non-htmx
+  requests are untouched (still get the normal 422) — this is a courtesy
+  for the app's own UI, not a blanket behavior change.
 
 ## Build order & status
 1. ✅ Scaffold: compose (app + postgres:16-alpine), Dockerfile, CI workflow,
