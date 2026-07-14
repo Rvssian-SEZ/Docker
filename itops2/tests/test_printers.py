@@ -67,6 +67,22 @@ async def test_printers_list_category_match_case_insensitive(admin_client, db):
     assert "IT-PR01" in resp.text
 
 
+async def test_printers_list_shows_hostname_column(admin_client, db):
+    """Hostname already existed on core_printer_details (Phase 6) and was
+    already editable/displayed on the asset detail page and already
+    searchable via the list's free-text filter -- the only real gap was
+    the list table itself never rendering it as a column."""
+    asset = await _make_asset(db)
+    db.add(PrinterDetails(asset_id=asset.id, hostname="printer-3rdfloor", ip_address="10.0.5.20"))
+    await db.commit()
+
+    resp = await admin_client.get("/printers")
+    assert resp.status_code == 200
+    assert "Hostname" in resp.text  # column header
+    assert "printer-3rdfloor" in resp.text
+    assert "10.0.5.20" in resp.text
+
+
 async def test_printer_details_upsert_create_then_update(admin_client, db):
     asset = await _make_asset(db)
 
