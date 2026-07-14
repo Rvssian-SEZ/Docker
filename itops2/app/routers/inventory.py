@@ -99,9 +99,13 @@ async def _validate_unit_cost(db: AsyncSession, unit_cost: str, currency: str):
 @router.get("", response_class=HTMLResponse)
 async def inventory_list(
     request: Request,
+    low_stock: str | None = None,
     user: CurrentUser = Depends(require("inventory.view")),
     db: AsyncSession = Depends(get_db),
 ):
+    """`low_stock=1` (added for the Dashboard's card, Phase 8) filters to
+    items at or below their min_quantity — same condition as the list's
+    own low-stock badge."""
     ctx = await _form_context(db)
     items = (
         (
@@ -114,11 +118,14 @@ async def inventory_list(
         .scalars()
         .all()
     )
+    if low_stock == "1":
+        items = [i for i in items if i.min_quantity is not None and i.quantity <= i.min_quantity]
     ctx.update(
         {
             "user": user,
             "items": items,
             "can_manage": user.can("inventory.manage"),
+            "filter_active": low_stock == "1",
         }
     )
     return templates.TemplateResponse(request, "inventory/list.html", ctx)

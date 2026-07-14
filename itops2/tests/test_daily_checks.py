@@ -9,7 +9,8 @@ from unittest.mock import AsyncMock, patch
 
 from sqlalchemy import select
 
-from app.core.daily_checks import _add_months, run_daily_checks, run_if_due
+from app.core.daily_checks import run_daily_checks, run_if_due
+from app.core.dates import add_months
 from app.core.models import (
     Asset,
     AssetModel,
@@ -30,16 +31,16 @@ async def _breakglass_id(db) -> int:
 
 
 def test_add_months_clamps_to_shorter_target_month():
-    assert _add_months(date(2026, 1, 31), 1) == date(2026, 2, 28)  # 2026 not a leap year
-    assert _add_months(date(2024, 1, 31), 1) == date(2024, 2, 29)  # 2024 is a leap year
+    assert add_months(date(2026, 1, 31), 1) == date(2026, 2, 28)  # 2026 not a leap year
+    assert add_months(date(2024, 1, 31), 1) == date(2024, 2, 29)  # 2024 is a leap year
 
 
 def test_add_months_rolls_over_year():
-    assert _add_months(date(2026, 11, 15), 3) == date(2027, 2, 15)
+    assert add_months(date(2026, 11, 15), 3) == date(2027, 2, 15)
 
 
 def test_add_months_zero_is_identity():
-    assert _add_months(date(2026, 7, 14), 0) == date(2026, 7, 14)
+    assert add_months(date(2026, 7, 14), 0) == date(2026, 7, 14)
 
 
 async def _make_asset_with_warranty(db, tag, purchase_date, warranty_months):

@@ -1,7 +1,86 @@
 {% extends "base.html" %}
 {% block content %}
 <h1 class="h3 mb-4">Dashboard</h1>
-<div class="alert alert-info">
-  Welcome, {{ user.display_name }}. Phase 2 shell is live — modules arrive in the next phases.
+
+{% if not cards %}
+<div class="alert alert-info">Welcome, {{ user.display_name }}. Nothing to show here yet for your role.</div>
+{% endif %}
+
+<div class="row g-3">
+
+  {% if cards.assets_by_status is defined %}
+  <div class="col-md-6 col-xl-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <h2 class="h6 card-title text-secondary">Assets by status</h2>
+        <ul class="list-unstyled mb-0">
+          {% for status_type, count in cards.assets_by_status.items() %}
+          <li class="d-flex justify-content-between border-bottom py-1">
+            <a href="/assets?status_type={{ status_type }}" class="text-decoration-none text-capitalize">{{ status_type }}</a>
+            <span class="fw-semibold">{{ count }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <h2 class="h6 card-title text-secondary">Checkouts</h2>
+        <a href="/assets?checkout_state=overdue" class="d-flex justify-content-between text-decoration-none border-bottom py-1">
+          <span class="{{ 'text-danger' if cards.checkouts_overdue }}">Overdue</span>
+          <span class="fw-semibold {{ 'text-danger' if cards.checkouts_overdue }}">{{ cards.checkouts_overdue }}</span>
+        </a>
+        <a href="/assets?checkout_state=due_soon" class="d-flex justify-content-between text-decoration-none py-1">
+          <span>Due back soon (7d)</span>
+          <span class="fw-semibold">{{ cards.checkouts_due_soon }}</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6 col-xl-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <h2 class="h6 card-title text-secondary">Warranty</h2>
+        <a href="/assets?warranty=expiring" class="d-flex justify-content-between text-decoration-none">
+          <span class="{{ 'text-warning' if cards.warranty_expiring }}">Expiring soon</span>
+          <span class="fw-semibold {{ 'text-warning' if cards.warranty_expiring }}">{{ cards.warranty_expiring }}</span>
+        </a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if cards.contracts_renewing is defined %}
+  <div class="col-md-6 col-xl-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <h2 class="h6 card-title text-secondary">Licenses &amp; Contracts</h2>
+        <a href="/contracts?state=expiring_soon" class="d-flex justify-content-between text-decoration-none">
+          <span class="{{ 'text-warning' if cards.contracts_renewing }}">Renewing soon</span>
+          <span class="fw-semibold {{ 'text-warning' if cards.contracts_renewing }}">{{ cards.contracts_renewing }}</span>
+        </a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if cards.low_stock is defined %}
+  <div class="col-md-6 col-xl-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <h2 class="h6 card-title text-secondary">Inventory</h2>
+        <a href="/inventory?low_stock=1" class="d-flex justify-content-between text-decoration-none">
+          <span class="{{ 'text-warning' if cards.low_stock }}">Low stock</span>
+          <span class="fw-semibold {{ 'text-warning' if cards.low_stock }}">{{ cards.low_stock }}</span>
+        </a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
 </div>
 {% endblock %}

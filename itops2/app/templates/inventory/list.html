@@ -10,6 +10,13 @@
   {% endif %}
 </div>
 
+{% if filter_active %}
+<div class="alert alert-secondary d-flex justify-content-between align-items-center py-2">
+  <span><i class="bi bi-funnel me-1"></i>Showing low-stock items only ({{ items|length }}).</span>
+  <a href="/inventory" class="btn btn-sm btn-outline-secondary">Clear filter</a>
+</div>
+{% endif %}
+
 <table class="table table-hover align-middle" style="table-layout: fixed;">
   <colgroup>
     <col>

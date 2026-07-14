@@ -49,7 +49,7 @@ design, but shipping an ITAM tool with a genuinely unbounded upload
 endpoint is asking for an accidental full disk.
 """
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
@@ -61,6 +61,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.attachments import MAX_ATTACHMENT_SIZE, attachment_dir, save_upload
 from app.core.auth import CurrentUser, require
+from app.core.dates import add_months
 from app.core.db import get_db
 from app.core.models import (
     Asset,
@@ -214,9 +215,22 @@ def _effective_months(override: int | None, model_value: int | None, global_defa
 @router.get("", response_class=HTMLResponse)
 async def assets_list(
     request: Request,
+    status_type: str | None = None,
+    checkout_state: str | None = None,
+    warranty: str | None = None,
     user: CurrentUser = Depends(require("assets.view")),
     db: AsyncSession = Depends(get_db),
 ):
+    """Query-string filters (added for the Dashboard's cards to link
+    into, Phase 8) — all applied in Python after the existing full-table
+    fetch rather than pushed into SQL, matching this list's existing
+    "just load it all" style at homelab scale:
+    - status_type: one of StatusType's values.
+    - checkout_state: "overdue" or "due_soon" (open checkouts only,
+      compared against expected_checkin_at; "due_soon" = within 7 days).
+    - warranty: "expiring" (purchase_date + warranty_months within
+      warranty.alert_days, same rule as the daily digest check).
+    """
     assets = (
         (
             await db.execute(
@@ -235,8 +249,50 @@ async def assets_list(
         .scalars()
         .all()
     )
+
+    if status_type:
+        assets = [a for a in assets if a.status_label.status_type.value == status_type]
+
+    if checkout_state in ("overdue", "due_soon"):
+        today = date.today()
+        open_expected = {
+            asset_id: expected
+            for asset_id, expected in (
+                await db.execute(
+                    select(Checkout.asset_id, Checkout.expected_checkin_at).where(
+                        Checkout.checked_in_at.is_(None), Checkout.expected_checkin_at.isnot(None)
+                    )
+                )
+            ).all()
+        }
+        if checkout_state == "overdue":
+            assets = [a for a in assets if open_expected.get(a.id) and open_expected[a.id] < today]
+        else:
+            window_end = today + timedelta(days=7)
+            assets = [
+                a for a in assets
+                if open_expected.get(a.id) and today <= open_expected[a.id] <= window_end
+            ]
+
+    if warranty == "expiring":
+        store = await load_settings(db)
+        alert_days = store.get_int("warranty.alert_days")
+        today = date.today()
+        window_end = today + timedelta(days=alert_days)
+        assets = [
+            a for a in assets
+            if a.purchase_date and a.warranty_months is not None
+            and today <= add_months(a.purchase_date, a.warranty_months) <= window_end
+        ]
+
     return templates.TemplateResponse(
-        request, "assets/list.html", {"user": user, "assets": assets},
+        request,
+        "assets/list.html",
+        {
+            "user": user,
+            "assets": assets,
+            "filter_active": bool(status_type or checkout_state or warranty),
+        },
     )
 
 

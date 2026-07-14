@@ -142,9 +142,12 @@ async def _validate_fields(
 @router.get("", response_class=HTMLResponse)
 async def contracts_list(
     request: Request,
+    state: str | None = None,
     user: CurrentUser = Depends(require("contracts.view")),
     db: AsyncSession = Depends(get_db),
 ):
+    """`state` query param (added for the Dashboard's card, Phase 8):
+    "expiring_soon" or "expired", filtering to just that renewal state."""
     store = await load_settings(db)
     alert_days = store.get_int("contracts.renewal_alert_days")
     today = date.today()
@@ -161,9 +164,11 @@ async def contracts_list(
         .all()
     )
     rows = [{"contract": c, "state": _renewal_state(c.end_date, today, alert_days)} for c in contracts]
+    if state in ("expiring_soon", "expired"):
+        rows = [r for r in rows if r["state"] == state]
 
     return templates.TemplateResponse(
-        request, "contracts/list.html", {"user": user, "rows": rows},
+        request, "contracts/list.html", {"user": user, "rows": rows, "filter_active": state in ("expiring_soon", "expired")},
     )
 
 
