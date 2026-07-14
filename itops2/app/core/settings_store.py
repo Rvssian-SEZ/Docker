@@ -48,6 +48,11 @@ DEFAULTS: dict[str, tuple[str, str]] = {
     "smtp.username": ("", "str"),        # empty = unauthenticated relay
     "smtp.password": ("", "str"),
     "smtp.from_address": ("", "str"),
+    # Notifications: last date (ISO, YYYY-MM-DD) the daily scheduled-check
+    # tick ran -- not a user-facing setting, just a persisted marker so the
+    # in-app scheduler (app/main.py) is idempotent across restarts within
+    # the same day. Empty string = never run.
+    "notifications.last_daily_run": ("", "str"),
     # Depreciation / warranty policy
     "depreciation.default_months": ("36", "int"),
     "warranty.alert_days": ("30", "int"),

@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import CurrentUser, require
 from app.core.db import get_db
 from app.core.models import AuditLog, Currency, ExchangeRate
+from app.core.notifications import send_email_raising
 from app.core.settings_store import DEFAULTS, load_settings, save_setting
 from app.templating import templates
 from app.version import __version__
@@ -192,6 +193,95 @@ async def settings_auth_save(
     return templates.TemplateResponse(
         request, "partials/toast.html", {"ok": True, "message": "Authentication settings saved."}
     )
+
+
+NOTIFICATIONS_KEYS = [
+    "smtp.enabled",
+    "smtp.host",
+    "smtp.port",
+    "smtp.use_tls",
+    "smtp.username",
+    "smtp.password",
+    "smtp.from_address",
+]
+
+NOTIFICATIONS_LABELS = {
+    "smtp.enabled": ("Enable email notifications", "Master switch — off means nothing is ever sent"),
+    "smtp.host": ("SMTP host", "e.g. mail.example.com"),
+    "smtp.port": ("SMTP port", "25 (unauthenticated relay), 587 (STARTTLS), 465 (implicit TLS)"),
+    "smtp.use_tls": ("Use TLS", "Enable for port 465/587; leave off for an internal unauthenticated relay on 25"),
+    "smtp.username": ("Username", "Leave blank for an unauthenticated relay"),
+    "smtp.password": ("Password", "Leave blank for an unauthenticated relay"),
+    "smtp.from_address": ("From address", "e.g. itops2@example.com"),
+}
+
+
+@router.get("/notifications", response_class=HTMLResponse)
+async def settings_notifications(
+    request: Request,
+    user: CurrentUser = Depends(require("settings.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    store = await load_settings(db)
+    fields = [
+        {
+            "key": k,
+            "label": NOTIFICATIONS_LABELS[k][0],
+            "help": NOTIFICATIONS_LABELS[k][1],
+            "type": DEFAULTS[k][1],
+            "value": store.get(k),
+        }
+        for k in NOTIFICATIONS_KEYS
+    ]
+    return templates.TemplateResponse(
+        request,
+        "settings/notifications.html",
+        {"user": user, "fields": fields, "active_tab": "notifications"},
+    )
+
+
+@router.post("/notifications", response_class=HTMLResponse)
+async def settings_notifications_save(
+    request: Request,
+    user: CurrentUser = Depends(require("settings.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    form = await request.form()
+    for key in NOTIFICATIONS_KEYS:
+        kind = DEFAULTS[key][1]
+        if kind == "bool":
+            value = "true" if form.get(key) == "true" else "false"
+        else:
+            value = str(form.get(key, "")).strip()
+            if kind == "int" and not value.isdigit():
+                return templates.TemplateResponse(
+                    request,
+                    "partials/toast.html",
+                    {"ok": False, "message": f"{NOTIFICATIONS_LABELS[key][0]} must be a number."},
+                )
+        await save_setting(db, key, value)
+    db.add(AuditLog(user_id=user.id, action="update", entity_type="settings", detail="notifications"))
+    await db.commit()
+    return templates.TemplateResponse(
+        request, "partials/toast.html", {"ok": True, "message": "Notification settings saved."}
+    )
+
+
+@router.post("/notifications/test-send", response_class=HTMLResponse)
+async def settings_notifications_test_send(
+    request: Request,
+    to: str = Form(""),
+    user: CurrentUser = Depends(require("settings.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    to = to.strip()
+    if not to:
+        return _toast(request, False, "Enter an address to send the test to.")
+    try:
+        await send_email_raising(to, "ITOps v2 test email", "This is a test email from ITOps v2 — SMTP is working.")
+    except Exception as exc:
+        return _toast(request, False, f"Send failed: {exc}")
+    return _toast(request, True, f"Test email sent to {to}.")
 
 
 @router.get("/about", response_class=HTMLResponse)

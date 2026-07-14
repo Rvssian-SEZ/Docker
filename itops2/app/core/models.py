@@ -488,6 +488,41 @@ class ContractAsset(Base):
     asset: Mapped[Asset] = relationship(foreign_keys=[asset_id])
 
 
+class NotificationEvent(str, enum.Enum):
+    checkout_performed = "checkout_performed"
+    checkin_performed = "checkin_performed"
+    warranty_expiring = "warranty_expiring"
+    contract_renewal_due = "contract_renewal_due"
+    inventory_low_stock = "inventory_low_stock"
+
+
+class NotificationSubscription(Base):
+    """One row per (user, event type) a user has opted into — presence
+    means subscribed, matching the RolePermission grant-row pattern.
+    No defaults are seeded; /profile ships everyone opted OUT of
+    everything until they explicitly check a box ("users control what
+    they receive", per the Phase 8 design). Event-time sends are also
+    gated by a permission per event type (app/core/notifications.py
+    EVENT_TYPES) — a subscription alone isn't enough, e.g. a Viewer who
+    somehow got subscribed to contract_renewal_due still won't be
+    emailed without contracts.view.
+    """
+
+    __tablename__ = "core_notification_subscriptions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "event_type", name="uq_notification_sub_user_event"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("core_users.id"), index=True)
+    event_type: Mapped[NotificationEvent] = mapped_column(
+        Enum(NotificationEvent, name="core_notification_event")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    user: Mapped[User] = relationship(foreign_keys=[user_id])
+
+
 class InventoryItem(Base):
     """Quantity-tracked consumables/spares, sharing the same category
     tree as Assets (core_categories). Adjustments are +/- deltas applied
