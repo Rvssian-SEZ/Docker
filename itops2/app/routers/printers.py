@@ -16,7 +16,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -28,8 +28,10 @@ from app.core.models import (
     AuditLog,
     Category,
     ExchangeRate,
+    Location,
     Maintenance,
     PrinterDetails,
+    StatusLabel,
 )
 from app.core.settings_store import load_settings
 from app.templating import templates
@@ -67,33 +69,53 @@ async def _convert_to_default(
     return amount * rate
 
 
+async def _filter_bar_context(db: AsyncSession) -> dict:
+    locations = (await db.execute(select(Location).order_by(Location.name))).scalars().all()
+    status_labels = (await db.execute(select(StatusLabel).order_by(StatusLabel.name))).scalars().all()
+    return {"filter_locations": locations, "filter_status_labels": status_labels}
+
+
 @router.get("/printers", response_class=HTMLResponse)
 async def printers_list(
     request: Request,
+    location_id: str = "",
+    status_label_id: str = "",
+    q: str = "",
     user: CurrentUser = Depends(require("printers.view")),
     db: AsyncSession = Depends(get_db),
 ):
+    """Filter bar (location, status, free-text over hostname/IP) — all
+    applied in SQL. The free-text search is the one filter that needs a
+    join beyond the base Printer-category query, since hostname/IP live
+    on core_printer_details (a 1:1 extension, not every printer asset
+    has a row yet — "created lazily on first save", per CLAUDE.md), not
+    on core_assets itself."""
     store = await load_settings(db)
     default_currency = store.get("general.default_currency")
 
-    printer_assets = (
-        (
-            await db.execute(
-                select(Asset)
-                .join(AssetModel, Asset.model_id == AssetModel.id)
-                .join(Category, AssetModel.category_id == Category.id)
-                .where(func.lower(Category.name) == "printer")
-                .options(
-                    selectinload(Asset.model).selectinload(AssetModel.manufacturer),
-                    selectinload(Asset.status_label),
-                    selectinload(Asset.location),
-                )
-                .order_by(Asset.asset_tag)
-            )
+    query = (
+        select(Asset)
+        .join(AssetModel, Asset.model_id == AssetModel.id)
+        .join(Category, AssetModel.category_id == Category.id)
+        .where(func.lower(Category.name) == "printer")
+        .options(
+            selectinload(Asset.model).selectinload(AssetModel.manufacturer),
+            selectinload(Asset.status_label),
+            selectinload(Asset.location),
         )
-        .scalars()
-        .all()
     )
+    if location_id.isdigit():
+        query = query.where(Asset.location_id == int(location_id))
+    if status_label_id.isdigit():
+        query = query.where(Asset.status_label_id == int(status_label_id))
+    if q.strip():
+        term = f"%{q.strip()}%"
+        query = query.outerjoin(PrinterDetails, PrinterDetails.asset_id == Asset.id).where(
+            or_(PrinterDetails.hostname.ilike(term), PrinterDetails.ip_address.ilike(term))
+        )
+
+    query = query.order_by(Asset.asset_tag)
+    printer_assets = (await db.execute(query)).scalars().unique().all()
     asset_ids = [a.id for a in printer_assets]
 
     printer_details_map = {}
@@ -128,11 +150,20 @@ async def printers_list(
         for a in printer_assets
     ]
 
-    return templates.TemplateResponse(
-        request,
-        "printers/list.html",
-        {"user": user, "printers": printers, "default_currency": default_currency},
-    )
+    ctx = {
+        "user": user,
+        "printers": printers,
+        "default_currency": default_currency,
+        "filter_active": bool(location_id or status_label_id or q.strip()),
+        "location_id": location_id,
+        "status_label_id": status_label_id,
+        "q": q,
+    }
+    if request.headers.get("hx-request") == "true":
+        return templates.TemplateResponse(request, "printers/_table.html", ctx)
+
+    ctx.update(await _filter_bar_context(db))
+    return templates.TemplateResponse(request, "printers/list.html", ctx)
 
 
 @router.post("/assets/{asset_id}/printer-details/update", response_class=HTMLResponse)

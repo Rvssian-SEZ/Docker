@@ -1,0 +1,48 @@
+<div id="printers-table">
+{% if filter_active %}
+<div class="text-secondary small mb-2 d-flex justify-content-between align-items-center">
+  <span><i class="bi bi-funnel me-1"></i>{{ printers|length }} result(s).</span>
+  <a href="/printers" class="btn btn-sm btn-outline-secondary">Clear filters</a>
+</div>
+{% endif %}
+<table class="table table-hover align-middle" style="table-layout: fixed;">
+  <colgroup>
+    <col style="width: 8rem;">
+    <col>
+    <col style="width: 10rem;">
+    <col style="width: 8rem;">
+    <col style="width: 10rem;">
+    <col style="width: 10rem;">
+  </colgroup>
+  <thead><tr>
+    <th>Tag</th><th>Model</th><th>IP address</th><th>Status</th><th>Location</th>
+    <th>Maintenance cost ({{ default_currency }})</th>
+  </tr></thead>
+  <tbody>
+  {% for p in printers %}
+    <tr>
+      <td><a href="/assets/{{ p.asset.id }}">{{ p.asset.asset_tag }}</a></td>
+      <td class="text-truncate" style="max-width: 0;" title="{{ p.asset.model.name }}">
+        {{ p.asset.model.manufacturer.name }} — {{ p.asset.model.name }}
+      </td>
+      <td>{{ p.details.ip_address if p.details and p.details.ip_address else '—' }}</td>
+      <td><span class="badge text-bg-secondary">{{ p.asset.status_label.name }}</span></td>
+      <td class="text-truncate" style="max-width: 0;">{{ p.asset.location.name if p.asset.location else '—' }}</td>
+      <td>
+        {% if p.maintenance_total is not none %}
+          {{ '%.2f' | format(p.maintenance_total) }}
+        {% else %}
+          —
+        {% endif %}
+        {% if p.maintenance_excluded %}
+        <i class="bi bi-exclamation-triangle text-warning ms-1"
+           title="{{ p.maintenance_excluded }} record(s) excluded — no exchange rate available for that date"></i>
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="text-secondary">No printers match these filters.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
