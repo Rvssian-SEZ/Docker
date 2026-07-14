@@ -114,3 +114,79 @@ async def test_subscribed_recipients_respects_permission_grant(db):
         db.add(RolePermission(role_id=viewer_role.id, permission="assets.view"))
         await db.commit()
     assert "viewer@example.test" in await subscribed_recipients("checkout_performed")
+
+
+# ---- /profile subscription checklist (chunk B) ----
+
+async def test_profile_lists_available_events_and_toggle_persists(admin_client, db):
+    resp = await admin_client.get("/profile")
+    assert resp.status_code == 200
+    assert "Asset checked out" in resp.text
+    assert "Contract renewal due" in resp.text  # admin holds contracts.view -> event offered
+
+    toggle = await admin_client.post(
+        "/profile/notifications/toggle",
+        data={"event_type": "contract_renewal_due", "subscribed": "true"},
+    )
+    assert toggle.status_code == 200
+    assert "text-bg-success" in toggle.text
+
+    admin_id = (await db.execute(select(User.id).where(User.is_breakglass.is_(True)))).scalar_one()
+    row = (
+        await db.execute(
+            select(NotificationSubscription).where(
+                NotificationSubscription.user_id == admin_id,
+                NotificationSubscription.event_type == NotificationEvent.contract_renewal_due,
+            )
+        )
+    ).scalar_one_or_none()
+    assert row is not None
+
+    untoggle = await admin_client.post(
+        "/profile/notifications/toggle",
+        data={"event_type": "contract_renewal_due", "subscribed": "false"},
+    )
+    assert untoggle.status_code == 200
+    row = (
+        await db.execute(
+            select(NotificationSubscription).where(
+                NotificationSubscription.user_id == admin_id,
+                NotificationSubscription.event_type == NotificationEvent.contract_renewal_due,
+            )
+        )
+    ).scalar_one_or_none()
+    assert row is None
+
+
+async def test_profile_toggle_rejects_unknown_event_type(admin_client):
+    resp = await admin_client.post(
+        "/profile/notifications/toggle", data={"event_type": "not_a_real_event", "subscribed": "true"},
+    )
+    assert "text-bg-danger" in resp.text
+    assert "unknown event type" in resp.text.lower()
+
+
+async def test_profile_toggle_rejects_event_without_permission(admin_client, db):
+    """Same lockout-safety idea as test_subscribed_recipients_respects_permission_grant:
+    a user shouldn't even be able to subscribe to an event their role
+    can't receive. Temporarily revokes the admin role's contracts.view
+    to exercise the reject path, always restoring it afterward."""
+    admin_role = (await db.execute(select(Role).where(Role.name == RoleName.admin))).scalar_one()
+    grant = (
+        await db.execute(
+            select(RolePermission).where(
+                RolePermission.role_id == admin_role.id, RolePermission.permission == "contracts.view"
+            )
+        )
+    ).scalar_one()
+    await db.delete(grant)
+    await db.commit()
+    try:
+        resp = await admin_client.post(
+            "/profile/notifications/toggle", data={"event_type": "contract_renewal_due", "subscribed": "true"},
+        )
+        assert "text-bg-danger" in resp.text
+        assert "do not have permission" in resp.text.lower()
+    finally:
+        db.add(RolePermission(role_id=admin_role.id, permission="contracts.view"))
+        await db.commit()

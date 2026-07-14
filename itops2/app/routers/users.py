@@ -16,7 +16,8 @@ from sqlalchemy.orm import selectinload
 
 from app.core.auth import CurrentUser, get_current_user, require
 from app.core.db import get_db
-from app.core.models import AuditLog, AuthSource, Company, Role, User
+from app.core.models import AuditLog, AuthSource, Company, NotificationEvent, NotificationSubscription, Role, User
+from app.core.notifications import EVENT_PERMISSION, EVENT_TYPES
 from app.core.security import hash_password, verify_password
 from app.core.settings_store import load_settings
 from app.templating import templates
@@ -187,10 +188,58 @@ async def profile(
     db: AsyncSession = Depends(get_db),
 ):
     me = await db.get(User, user.id)
+    subscribed = {
+        s
+        for (s,) in (
+            await db.execute(
+                select(NotificationSubscription.event_type).where(NotificationSubscription.user_id == user.id)
+            )
+        ).all()
+    }
+    # Only offer a checkbox for events this user's role can actually
+    # receive (matches the permission gate applied at send time in
+    # app/core/notifications.py) -- no point showing a subscription
+    # toggle that would silently never fire.
+    available_events = [e for e in EVENT_TYPES if user.can(e["permission"])]
     return templates.TemplateResponse(
         request, "users/profile.html",
-        {"user": user, "is_local": me.auth_source == AuthSource.local},
+        {
+            "user": user,
+            "is_local": me.auth_source == AuthSource.local,
+            "available_events": available_events,
+            "subscribed": {e.value for e in subscribed},
+        },
     )
+
+
+@router.post("/profile/notifications/toggle", response_class=HTMLResponse)
+async def toggle_notification_subscription(
+    request: Request,
+    event_type: str = Form(""),
+    subscribed: str = Form("false"),
+    user: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if event_type not in NotificationEvent.__members__:
+        return _toast(request, False, "Unknown event type.")
+    if not user.can(EVENT_PERMISSION[event_type]):
+        return _toast(request, False, "You do not have permission to receive this notification.")
+    want = subscribed == "true"
+
+    existing = (
+        await db.execute(
+            select(NotificationSubscription).where(
+                NotificationSubscription.user_id == user.id,
+                NotificationSubscription.event_type == NotificationEvent[event_type],
+            )
+        )
+    ).scalar_one_or_none()
+    if want and existing is None:
+        db.add(NotificationSubscription(user_id=user.id, event_type=NotificationEvent[event_type]))
+    elif not want and existing is not None:
+        await db.delete(existing)
+    await db.commit()
+    return _toast(request, True, "Saved.")
 
 
 @router.post("/profile/password", response_class=HTMLResponse)

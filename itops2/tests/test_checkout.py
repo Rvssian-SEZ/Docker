@@ -4,6 +4,7 @@ open checkout per asset at the DB level.
 """
 
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import select
@@ -12,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.models import (
     Asset,
     AssetModel,
+    AuthSource,
     Category,
     Checkout,
     Location,
@@ -221,3 +223,63 @@ async def test_checkin_without_open_checkout_rejected(admin_client, db):
     )
     assert "text-bg-danger" in resp.text
     assert "not currently checked out" in resp.text.lower()
+
+
+async def _make_target_user(db, username="checkout-target", email="target@example.test"):
+    role_id = await _admin_role_id(db)
+    user = User(username=username, email=email, auth_source=AuthSource.local, password_hash="x", role_id=role_id)
+    db.add(user)
+    await db.commit()
+    return user
+
+
+async def _admin_role_id(db) -> int:
+    return (await db.execute(select(User.role_id).where(User.is_breakglass.is_(True)))).scalar_one()
+
+
+async def test_checkout_to_user_notifies_target_by_email(admin_client, db):
+    """Wiring test (Phase 8 chunk B): checking an asset out to a user
+    with an email queues notify_checkout with that email as the direct
+    recipient -- the actual send is covered by test_notifications.py,
+    this only proves the router calls it with the right arguments."""
+    asset, deployable, deployed, pending = await _setup(db)
+    target = await _make_target_user(db, username="checkout-target-1", email="target1@example.test")
+
+    with patch("app.routers.assets.notify_checkout", new_callable=AsyncMock) as mock_notify:
+        resp = await admin_client.post(
+            f"/assets/{asset.id}/checkout",
+            data={"target_user_id": target.id, "status_label_id": deployed.id},
+        )
+    assert resp.status_code == 204
+    mock_notify.assert_called_once_with(asset.asset_tag, target.email)
+
+
+async def test_checkout_to_location_notifies_with_no_direct_recipient(admin_client, db):
+    asset, deployable, deployed, pending = await _setup(db)
+    location = Location(name="HQ")
+    db.add(location)
+    await db.commit()
+
+    with patch("app.routers.assets.notify_checkout", new_callable=AsyncMock) as mock_notify:
+        resp = await admin_client.post(
+            f"/assets/{asset.id}/checkout",
+            data={"target_location_id": location.id, "status_label_id": deployed.id},
+        )
+    assert resp.status_code == 204
+    mock_notify.assert_called_once_with(asset.asset_tag, None)
+
+
+async def test_checkin_notifies_the_original_target_user(admin_client, db):
+    asset, deployable, deployed, pending = await _setup(db)
+    target = await _make_target_user(db, username="checkout-target-2", email="target2@example.test")
+    await admin_client.post(
+        f"/assets/{asset.id}/checkout",
+        data={"target_user_id": target.id, "status_label_id": deployed.id},
+    )
+
+    with patch("app.routers.assets.notify_checkin", new_callable=AsyncMock) as mock_notify:
+        resp = await admin_client.post(
+            f"/assets/{asset.id}/checkin", data={"status_label_id": deployable.id},
+        )
+    assert resp.status_code == 204
+    mock_notify.assert_called_once_with(asset.asset_tag, target.email)

@@ -52,7 +52,7 @@ endpoint is asking for an accidental full disk.
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -78,6 +78,7 @@ from app.core.models import (
     StatusType,
     User,
 )
+from app.core.notifications import notify_checkin, notify_checkout
 from app.core.settings_store import load_settings
 from app.templating import templates
 
@@ -629,6 +630,7 @@ async def asset_delete(
 async def asset_checkout(
     request: Request,
     asset_id: int,
+    background_tasks: BackgroundTasks,
     target_user_id: str = Form(""),
     target_location_id: str = Form(""),
     target_asset_id: str = Form(""),
@@ -658,8 +660,12 @@ async def asset_checkout(
         return _toast(request, False, "Pick exactly one target: user, location, or asset.")
     target_kind, target_id = chosen[0]
 
-    if target_kind == "user" and await db.get(User, target_id) is None:
-        return _toast(request, False, "Unknown user.")
+    target_user_email = None
+    if target_kind == "user":
+        target_user = await db.get(User, target_id)
+        if target_user is None:
+            return _toast(request, False, "Unknown user.")
+        target_user_email = target_user.email
     if target_kind == "location" and await db.get(Location, target_id) is None:
         return _toast(request, False, "Unknown location.")
     if target_kind == "asset":
@@ -710,6 +716,7 @@ async def asset_checkout(
         # but fail safe rather than corrupt state.
         await db.rollback()
         return _toast(request, False, "Already checked out (concurrent request) — refresh and try again.")
+    background_tasks.add_task(notify_checkout, asset.asset_tag, target_user_email)
     return _refresh()
 
 
@@ -717,6 +724,7 @@ async def asset_checkout(
 async def asset_checkin(
     request: Request,
     asset_id: int,
+    background_tasks: BackgroundTasks,
     status_label_id: int | None = Form(None),
     notes: str = Form(""),
     user: CurrentUser = Depends(require("checkout.perform")),
@@ -744,6 +752,11 @@ async def asset_checkin(
     if open_checkout is None:
         return _toast(request, False, "No open checkout found for this asset.")
 
+    target_user_email = None
+    if open_checkout.target_user_id is not None:
+        target_user = await db.get(User, open_checkout.target_user_id)
+        target_user_email = target_user.email if target_user else None
+
     now = datetime.now(timezone.utc)
     checkin_notes = notes.strip() or None
     open_checkout.checked_in_at = now
@@ -765,6 +778,7 @@ async def asset_checkin(
         )
     )
     await db.commit()
+    background_tasks.add_task(notify_checkin, asset.asset_tag, target_user_email)
     return _refresh()
 
 

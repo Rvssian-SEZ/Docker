@@ -29,6 +29,10 @@ from app.main import app  # noqa: E402
 # Truncated before every test. Roles/permissions/breakglass user/currencies
 # are seeded once per session by bootstrap() and deliberately left alone —
 # tests that need extra users/currencies create their own with unique names.
+# core_settings IS truncated (Phase 8's SMTP-config tests are the first to
+# ever write to it) -- every key already falls back to its DEFAULTS value
+# when no row exists, so a clean table is equivalent to "everything at
+# defaults" and prevents one test's SMTP config from leaking into the next.
 TRUNCATE_TABLES = (
     "core_assets",
     "core_checkouts",
@@ -39,6 +43,7 @@ TRUNCATE_TABLES = (
     "core_contract_assets",
     "core_inventory_items",
     "core_notification_subscriptions",
+    "core_settings",
     "core_audit_log",
     "core_models",
     "core_status_labels",

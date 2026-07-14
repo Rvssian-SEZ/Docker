@@ -22,5 +22,22 @@
   {% else %}
   <div class="alert alert-info">Your account authenticates externally; manage your password in your identity provider.</div>
   {% endif %}
+
+  <h2 class="h5 mb-3 mt-4">Email notifications</h2>
+  {% if available_events %}
+  <p class="text-secondary small">Changes save instantly.</p>
+  {% for e in available_events %}
+  <div class="form-check form-switch mb-2">
+    <input class="form-check-input" type="checkbox" id="notif-{{ e.key }}"
+           {{ 'checked' if e.key in subscribed }}
+           hx-post="/profile/notifications/toggle"
+           hx-vals='js:{event_type: "{{ e.key }}", subscribed: event.target.checked ? "true" : "false"}'
+           hx-target="#toast-area" hx-swap="innerHTML">
+    <label class="form-check-label" for="notif-{{ e.key }}">{{ e.label }}</label>
+  </div>
+  {% endfor %}
+  {% else %}
+  <p class="text-secondary small">No notification events are available to your role.</p>
+  {% endif %}
 </div>
 {% endblock %}
