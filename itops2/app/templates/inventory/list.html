@@ -10,63 +10,8 @@
   {% endif %}
 </div>
 
-{% if filter_active %}
-<div class="alert alert-secondary d-flex justify-content-between align-items-center py-2">
-  <span><i class="bi bi-funnel me-1"></i>Showing low-stock items only ({{ items|length }}).</span>
-  <a href="/inventory" class="btn btn-sm btn-outline-secondary">Clear filter</a>
-</div>
-{% endif %}
-
-<table class="table table-hover align-middle" style="table-layout: fixed;">
-  <colgroup>
-    <col>
-    <col style="width: 10rem;">
-    <col style="width: 10rem;">
-    <col style="width: 8rem;">
-    <col style="width: 8rem;">
-    {% if can_manage %}<col style="width: 9rem;">{% endif %}
-  </colgroup>
-  <thead><tr>
-    <th>Name</th><th>Category</th><th>Location</th><th>Quantity</th><th>Unit cost</th>
-    {% if can_manage %}<th></th>{% endif %}
-  </tr></thead>
-  <tbody>
-  {% for item in items %}
-    {% set low = item.min_quantity is not none and item.quantity <= item.min_quantity %}
-    <tr class="{{ 'table-warning' if low }}">
-      <td class="text-truncate" style="max-width: 0;" title="{{ item.name }}">{{ item.name }}</td>
-      <td class="text-truncate" style="max-width: 0;">{{ item.category.name }}</td>
-      <td class="text-truncate" style="max-width: 0;">{{ item.location.name if item.location else '—' }}</td>
-      <td>
-        {{ item.quantity }}
-        {% if low %}<span class="badge text-bg-warning ms-1" title="At or below minimum ({{ item.min_quantity }})">low</span>{% endif %}
-      </td>
-      <td>{{ item.unit_cost ~ ' ' ~ item.currency if item.unit_cost is not none else '—' }}</td>
-      {% if can_manage %}
-      <td class="text-end">
-        <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#adjustModal"
-                data-id="{{ item.id }}" data-name="{{ item.name }}" data-quantity="{{ item.quantity }}" title="Adjust quantity">
-          <i class="bi bi-plus-slash-minus"></i>
-        </button>
-        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#editModal"
-                data-id="{{ item.id }}" data-name="{{ item.name }}" data-category-id="{{ item.category_id }}"
-                data-location-id="{{ item.location_id or '' }}" data-min-quantity="{{ item.min_quantity if item.min_quantity is not none else '' }}"
-                data-unit-cost="{{ item.unit_cost if item.unit_cost is not none else '' }}" data-currency="{{ item.currency or '' }}"
-                data-notes="{{ item.notes or '' }}" title="Edit">
-          <i class="bi bi-pencil"></i>
-        </button>
-        <button class="btn btn-outline-danger btn-sm" hx-post="/inventory/{{ item.id }}/delete"
-                hx-target="#toast-area" hx-swap="innerHTML" hx-confirm="Delete '{{ item.name }}'?">
-          <i class="bi bi-trash"></i>
-        </button>
-      </td>
-      {% endif %}
-    </tr>
-  {% else %}
-    <tr><td colspan="6" class="text-secondary">No inventory items yet.</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
+{% include "inventory/_filters.html" %}
+{% include "inventory/_table.html" %}
 
 {% if can_manage %}
 <div class="modal fade" id="createModal" tabindex="-1">

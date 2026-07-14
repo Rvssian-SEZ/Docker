@@ -99,35 +99,49 @@ async def _validate_unit_cost(db: AsyncSession, unit_cost: str, currency: str):
 @router.get("", response_class=HTMLResponse)
 async def inventory_list(
     request: Request,
-    low_stock: str | None = None,
+    category_id: str = "",
+    location_id: str = "",
+    low_stock: str = "",
+    q: str = "",
     user: CurrentUser = Depends(require("inventory.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """`low_stock=1` (added for the Dashboard's card, Phase 8) filters to
-    items at or below their min_quantity — same condition as the list's
-    own low-stock badge."""
-    ctx = await _form_context(db)
-    items = (
-        (
-            await db.execute(
-                select(InventoryItem)
-                .options(selectinload(InventoryItem.category), selectinload(InventoryItem.location))
-                .order_by(InventoryItem.name)
-            )
-        )
-        .scalars()
-        .all()
+    """Filter bar: category, location, low-stock-only toggle, name
+    search — all in SQL. low_stock=1 predates the filter bar (the
+    Dashboard's card already linked to it in Phase 8) and keeps the same
+    meaning: at or below min_quantity, same condition as the list's own
+    low-stock badge."""
+    query = select(InventoryItem).options(
+        selectinload(InventoryItem.category), selectinload(InventoryItem.location)
     )
+    if category_id.isdigit():
+        query = query.where(InventoryItem.category_id == int(category_id))
+    if location_id.isdigit():
+        query = query.where(InventoryItem.location_id == int(location_id))
     if low_stock == "1":
-        items = [i for i in items if i.min_quantity is not None and i.quantity <= i.min_quantity]
-    ctx.update(
-        {
-            "user": user,
-            "items": items,
-            "can_manage": user.can("inventory.manage"),
-            "filter_active": low_stock == "1",
-        }
-    )
+        query = query.where(
+            InventoryItem.min_quantity.isnot(None), InventoryItem.quantity <= InventoryItem.min_quantity
+        )
+    if q.strip():
+        query = query.where(InventoryItem.name.ilike(f"%{q.strip()}%"))
+
+    query = query.order_by(InventoryItem.name)
+    items = (await db.execute(query)).scalars().unique().all()
+
+    ctx = {
+        "user": user,
+        "items": items,
+        "can_manage": user.can("inventory.manage"),
+        "filter_active": bool(category_id or location_id or low_stock == "1" or q.strip()),
+        "category_id": category_id,
+        "location_id": location_id,
+        "low_stock": low_stock,
+        "q": q,
+    }
+    if request.headers.get("hx-request") == "true":
+        return templates.TemplateResponse(request, "inventory/_table.html", ctx)
+
+    ctx.update(await _form_context(db))
     return templates.TemplateResponse(request, "inventory/list.html", ctx)
 
 
