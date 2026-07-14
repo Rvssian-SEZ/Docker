@@ -29,6 +29,14 @@ from app.core.security import hash_password
 from app.core.settings_store import save_setting
 
 
+def _row(tag: str) -> str:
+    """A table row's asset-tag link text -- unlike a bare tag substring,
+    this can't collide with the Assets filter bar's own dropdown options
+    (every status label is always listed there, and _make_asset's status
+    labels embed the tag, e.g. "Status-IT-FILT01")."""
+    return f">{tag}</a>"
+
+
 async def _breakglass_id(db) -> int:
     return (await db.execute(select(User.id).where(User.is_breakglass.is_(True)))).scalar_one()
 
@@ -102,8 +110,8 @@ async def test_assets_list_filter_by_status_type(admin_client, db):
     await _make_asset(db, "IT-FILT02", status_type=StatusType.archived)
 
     resp = await admin_client.get("/assets?status_type=archived")
-    assert "IT-FILT02" in resp.text
-    assert "IT-FILT01" not in resp.text
+    assert _row("IT-FILT02") in resp.text
+    assert _row("IT-FILT01") not in resp.text
 
 
 async def test_assets_list_filter_by_checkout_state(admin_client, db):
@@ -129,12 +137,12 @@ async def test_assets_list_filter_by_checkout_state(admin_client, db):
     await db.commit()
 
     overdue_resp = await admin_client.get("/assets?checkout_state=overdue")
-    assert "IT-OVERDUE" in overdue_resp.text
-    assert "IT-DUESOON" not in overdue_resp.text
+    assert _row("IT-OVERDUE") in overdue_resp.text
+    assert _row("IT-DUESOON") not in overdue_resp.text
 
     due_soon_resp = await admin_client.get("/assets?checkout_state=due_soon")
-    assert "IT-DUESOON" in due_soon_resp.text
-    assert "IT-OVERDUE" not in due_soon_resp.text
+    assert _row("IT-DUESOON") in due_soon_resp.text
+    assert _row("IT-OVERDUE") not in due_soon_resp.text
 
 
 async def test_assets_list_filter_by_warranty_expiring(admin_client, db):
@@ -146,8 +154,8 @@ async def test_assets_list_filter_by_warranty_expiring(admin_client, db):
     await _make_asset(db, "IT-WARNFAR", purchase_date=today, warranty_months=36)
 
     resp = await admin_client.get("/assets?warranty=expiring")
-    assert "IT-WARNSOON" in resp.text
-    assert "IT-WARNFAR" not in resp.text
+    assert _row("IT-WARNSOON") in resp.text
+    assert _row("IT-WARNFAR") not in resp.text
 
 
 async def test_contracts_list_filter_by_state(admin_client, db):

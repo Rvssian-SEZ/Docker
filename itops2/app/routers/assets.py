@@ -54,7 +54,7 @@ from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -68,6 +68,7 @@ from app.core.models import (
     AssetModel,
     Attachment,
     AuditLog,
+    Category,
     Checkout,
     Company,
     Currency,
@@ -181,6 +182,19 @@ async def _form_context(db: AsyncSession) -> dict:
     }
 
 
+async def _filter_bar_context(db: AsyncSession) -> dict:
+    """Dropdown option lists for the Assets list's filter bar — a
+    superset of _form_context's status_labels (which deliberately
+    excludes status_type == deployed, since that's never offered on the
+    create/edit form). The filter bar has no such restriction: a user
+    should be able to filter to exactly the assets that ARE deployed."""
+    all_status_labels = (
+        (await db.execute(select(StatusLabel).order_by(StatusLabel.name))).scalars().all()
+    )
+    categories = (await db.execute(select(Category).order_by(Category.name))).scalars().all()
+    return {"filter_status_labels": all_status_labels, "filter_categories": categories}
+
+
 async def _get_asset_or_none(db: AsyncSession, asset_id: int) -> Asset | None:
     return (
         await db.execute(
@@ -215,66 +229,103 @@ def _effective_months(override: int | None, model_value: int | None, global_defa
 @router.get("", response_class=HTMLResponse)
 async def assets_list(
     request: Request,
-    status_type: str | None = None,
+    status_label_id: str = "",
+    category_id: str = "",
+    model_id: str = "",
+    location_id: str = "",
+    company_id: str = "",
     checkout_state: str | None = None,
+    q: str = "",
+    status_type: str | None = None,
     warranty: str | None = None,
     user: CurrentUser = Depends(require("assets.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Query-string filters (added for the Dashboard's cards to link
-    into, Phase 8) — all applied in Python after the existing full-table
-    fetch rather than pushed into SQL, matching this list's existing
-    "just load it all" style at homelab scale:
-    - status_type: one of StatusType's values.
-    - checkout_state: "overdue" or "due_soon" (open checkouts only,
-      compared against expected_checkin_at; "due_soon" = within 7 days).
-    - warranty: "expiring" (purchase_date + warranty_months within
-      warranty.alert_days, same rule as the daily digest check).
+    """All filtering happens in SQL, not Python-after-fetch — this table
+    can grow past "just load it all" scale even though most of this
+    app's other lists don't need to.
+
+    Two families of query param:
+    - The visible filter bar (assets/_filters.html): status_label_id,
+      category_id, model_id, location_id, company_id (multi-company
+      only), checkout_state=out|available, q (free text over
+      tag/serial/model name).
+    - Deep links the Dashboard's cards use, with no filter-bar control
+      of their own: status_type (coarse StatusType bucket, vs.
+      status_label_id's single exact label), checkout_state=overdue|
+      due_soon (date-window on the open checkout's expected_checkin_at),
+      warranty=expiring (purchase_date + warranty_months within
+      warranty.alert_days — the one filter with a Python-side finishing
+      pass, see below).
+
+    Returns just the table partial when hit via HTMX (the filter bar's
+    own hx-get), the full page otherwise — same URL either way, so
+    hx-push-url keeps it bookmarkable.
     """
-    assets = (
-        (
-            await db.execute(
-                select(Asset)
-                .options(
-                    selectinload(Asset.model),
-                    selectinload(Asset.status_label),
-                    selectinload(Asset.location),
-                    selectinload(Asset.checked_out_to_user),
-                    selectinload(Asset.checked_out_to_location),
-                    selectinload(Asset.checked_out_to_asset),
-                )
-                .order_by(Asset.asset_tag)
-            )
-        )
-        .scalars()
-        .all()
+    query = select(Asset).options(
+        selectinload(Asset.model),
+        selectinload(Asset.status_label),
+        selectinload(Asset.location),
+        selectinload(Asset.checked_out_to_user),
+        selectinload(Asset.checked_out_to_location),
+        selectinload(Asset.checked_out_to_asset),
     )
 
-    if status_type:
-        assets = [a for a in assets if a.status_label.status_type.value == status_type]
+    if status_label_id.isdigit():
+        query = query.where(Asset.status_label_id == int(status_label_id))
+    if status_type and status_type in StatusType.__members__:
+        query = query.join(StatusLabel, Asset.status_label_id == StatusLabel.id).where(
+            StatusLabel.status_type == StatusType(status_type)
+        )
+    if category_id.isdigit() or model_id.isdigit() or q.strip():
+        query = query.join(AssetModel, Asset.model_id == AssetModel.id)
+    if category_id.isdigit():
+        query = query.where(AssetModel.category_id == int(category_id))
+    if model_id.isdigit():
+        query = query.where(Asset.model_id == int(model_id))
+    if location_id.isdigit():
+        query = query.where(Asset.location_id == int(location_id))
+    if company_id.isdigit():
+        query = query.where(Asset.company_id == int(company_id))
 
-    if checkout_state in ("overdue", "due_soon"):
+    if checkout_state == "out":
+        query = query.where(Asset.checked_out_at.isnot(None))
+    elif checkout_state == "available":
+        # Literally "not currently checked out" -- not "deployable AND not
+        # checked out"; a pending/in-repair asset also has checked_out_at
+        # IS NULL and counts as "available" under this filter, matching
+        # the simple binary the "out"/"available" pair implies.
+        query = query.where(Asset.checked_out_at.is_(None))
+    elif checkout_state in ("overdue", "due_soon"):
         today = date.today()
-        open_expected = {
-            asset_id: expected
-            for asset_id, expected in (
-                await db.execute(
-                    select(Checkout.asset_id, Checkout.expected_checkin_at).where(
-                        Checkout.checked_in_at.is_(None), Checkout.expected_checkin_at.isnot(None)
-                    )
-                )
-            ).all()
-        }
+        query = query.join(
+            Checkout, and_(Checkout.asset_id == Asset.id, Checkout.checked_in_at.is_(None))
+        ).where(Checkout.expected_checkin_at.isnot(None))
         if checkout_state == "overdue":
-            assets = [a for a in assets if open_expected.get(a.id) and open_expected[a.id] < today]
+            query = query.where(Checkout.expected_checkin_at < today)
         else:
-            window_end = today + timedelta(days=7)
-            assets = [
-                a for a in assets
-                if open_expected.get(a.id) and today <= open_expected[a.id] <= window_end
-            ]
+            query = query.where(
+                Checkout.expected_checkin_at >= today,
+                Checkout.expected_checkin_at <= today + timedelta(days=7),
+            )
+
+    if q.strip():
+        term = f"%{q.strip()}%"
+        query = query.where(
+            or_(Asset.asset_tag.ilike(term), Asset.serial.ilike(term), AssetModel.name.ilike(term))
+        )
+
+    query = query.order_by(Asset.asset_tag)
+    assets = (await db.execute(query)).scalars().unique().all()
 
     if warranty == "expiring":
+        # Postgres's own date+interval arithmetic doesn't clamp the same
+        # way app/core/dates.add_months does for short target months (31
+        # Jan + 1mo behaves differently) -- rather than risk this filter
+        # disagreeing with the Dashboard's own warranty-expiring count
+        # (which uses add_months), narrow with a cheap SQL prefilter
+        # (purchase_date/warranty_months both set) and finish the exact
+        # comparison in Python against the same helper the Dashboard uses.
         store = await load_settings(db)
         alert_days = store.get_int("warranty.alert_days")
         today = date.today()
@@ -285,15 +336,29 @@ async def assets_list(
             and today <= add_months(a.purchase_date, a.warranty_months) <= window_end
         ]
 
-    return templates.TemplateResponse(
-        request,
-        "assets/list.html",
-        {
-            "user": user,
-            "assets": assets,
-            "filter_active": bool(status_type or checkout_state or warranty),
-        },
-    )
+    ctx = {
+        "user": user,
+        "assets": assets,
+        "filter_active": bool(
+            status_label_id or category_id or model_id or location_id or company_id
+            or checkout_state or q.strip() or status_type or warranty
+        ),
+        "status_label_id": status_label_id,
+        "category_id": category_id,
+        "model_id": model_id,
+        "location_id": location_id,
+        "company_id": company_id,
+        "checkout_state": checkout_state or "",
+        "q": q,
+    }
+    if request.headers.get("hx-request") == "true":
+        return templates.TemplateResponse(request, "assets/_table.html", ctx)
+
+    form_ctx = await _form_context(db)
+    filter_ctx = await _filter_bar_context(db)
+    ctx.update(form_ctx)
+    ctx.update(filter_ctx)
+    return templates.TemplateResponse(request, "assets/list.html", ctx)
 
 
 # ---- create ----

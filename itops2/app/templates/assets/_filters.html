@@ -1,0 +1,56 @@
+<form class="row row-cols-lg-auto g-2 align-items-center mb-3"
+      hx-get="/assets" hx-target="#assets-table" hx-swap="outerHTML" hx-push-url="true"
+      hx-trigger="change, keyup changed delay:400ms">
+  <div class="col">
+    <select class="form-select form-select-sm" name="status_label_id">
+      <option value="">All statuses</option>
+      {% for s in filter_status_labels %}
+      <option value="{{ s.id }}" {{ 'selected' if status_label_id == s.id|string }}>{{ s.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col">
+    <select class="form-select form-select-sm" name="category_id">
+      <option value="">All categories</option>
+      {% for c in filter_categories %}
+      <option value="{{ c.id }}" {{ 'selected' if category_id == c.id|string }}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col">
+    <select class="form-select form-select-sm" name="model_id">
+      <option value="">All models</option>
+      {% for m in models %}
+      <option value="{{ m.id }}" {{ 'selected' if model_id == m.id|string }}>{{ m.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col">
+    <select class="form-select form-select-sm" name="location_id">
+      <option value="">All locations</option>
+      {% for l in locations %}
+      <option value="{{ l.id }}" {{ 'selected' if location_id == l.id|string }}>{{ l.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% if multi_company %}
+  <div class="col">
+    <select class="form-select form-select-sm" name="company_id">
+      <option value="">All companies</option>
+      {% for co in companies %}
+      <option value="{{ co.id }}" {{ 'selected' if company_id == co.id|string }}>{{ co.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+  <div class="col">
+    <select class="form-select form-select-sm" name="checkout_state">
+      <option value="" {{ 'selected' if not checkout_state or checkout_state not in ('out', 'available') }}>Any checkout state</option>
+      <option value="out" {{ 'selected' if checkout_state == 'out' }}>Checked out</option>
+      <option value="available" {{ 'selected' if checkout_state == 'available' }}>Available</option>
+    </select>
+  </div>
+  <div class="col flex-grow-1">
+    <input class="form-control form-control-sm" type="search" name="q" placeholder="Search tag, serial, model…" value="{{ q or '' }}">
+  </div>
+</form>
