@@ -1,0 +1,37 @@
+<div id="contracts-table">
+{% if filter_active %}
+<div class="text-secondary small mb-2 d-flex justify-content-between align-items-center">
+  <span><i class="bi bi-funnel me-1"></i>{{ rows|length }} result(s).</span>
+  <a href="/contracts" class="btn btn-sm btn-outline-secondary">Clear filters</a>
+</div>
+{% endif %}
+<table class="table table-hover align-middle" style="table-layout: fixed;">
+  <colgroup>
+    <col>
+    <col style="width: 8rem;">
+    <col style="width: 10rem;">
+    <col style="width: 8rem;">
+    <col style="width: 8rem;">
+  </colgroup>
+  <thead><tr><th>Name</th><th>Type</th><th>Vendor</th><th>Renews</th><th>Cost</th></tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr class="{{ 'table-danger' if row.state == 'expired' else ('table-warning' if row.state == 'expiring_soon' else '') }}">
+      <td class="text-truncate" style="max-width: 0;" title="{{ row.contract.name }}">
+        <a href="/contracts/{{ row.contract.id }}">{{ row.contract.name }}</a>
+      </td>
+      <td><span class="badge text-bg-secondary">{{ row.contract.contract_type.value }}</span></td>
+      <td class="text-truncate" style="max-width: 0;">{{ row.contract.vendor or '—' }}</td>
+      <td>
+        {{ row.contract.end_date }}
+        {% if row.state == 'expired' %}<span class="badge text-bg-danger ms-1">expired</span>
+        {% elif row.state == 'expiring_soon' %}<span class="badge text-bg-warning ms-1">soon</span>{% endif %}
+      </td>
+      <td>{{ row.contract.cost ~ ' ' ~ row.contract.currency if row.contract.cost is not none else '—' }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="text-secondary">No contracts match these filters.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>

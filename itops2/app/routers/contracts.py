@@ -139,37 +139,61 @@ async def _validate_fields(
 
 # ---- list ----
 
+async def _filter_bar_context() -> dict:
+    return {"filter_contract_types": list(ContractType)}
+
+
 @router.get("", response_class=HTMLResponse)
 async def contracts_list(
     request: Request,
-    state: str | None = None,
+    contract_type: str = "",
+    state: str = "",
+    vendor: str = "",
     user: CurrentUser = Depends(require("contracts.view")),
     db: AsyncSession = Depends(get_db),
 ):
-    """`state` query param (added for the Dashboard's card, Phase 8):
-    "expiring_soon" or "expired", filtering to just that renewal state."""
+    """Filter bar: type, expiring state (expiring_soon/expired/active —
+    "active" is this route's public name for what _renewal_state calls
+    "normal" internally, i.e. neither expired nor expiring soon), vendor
+    free-text. All in SQL — `state` is pure date comparison against
+    Contract.end_date (no month-arithmetic ambiguity like Assets'
+    warranty filter has), so unlike that one this needs no Python
+    finishing pass."""
     store = await load_settings(db)
     alert_days = store.get_int("contracts.renewal_alert_days")
     today = date.today()
+    window_end = today + timedelta(days=alert_days)
 
-    contracts = (
-        (
-            await db.execute(
-                select(Contract)
-                .options(selectinload(Contract.company), selectinload(Contract.location))
-                .order_by(Contract.end_date)
-            )
-        )
-        .scalars()
-        .all()
-    )
+    query = select(Contract).options(selectinload(Contract.company), selectinload(Contract.location))
+
+    if contract_type in ContractType.__members__:
+        query = query.where(Contract.contract_type == ContractType(contract_type))
+    if state == "expired":
+        query = query.where(Contract.end_date < today)
+    elif state == "expiring_soon":
+        query = query.where(Contract.end_date >= today, Contract.end_date <= window_end)
+    elif state == "active":
+        query = query.where(Contract.end_date > window_end)
+    if vendor.strip():
+        query = query.where(Contract.vendor.ilike(f"%{vendor.strip()}%"))
+
+    query = query.order_by(Contract.end_date)
+    contracts = (await db.execute(query)).scalars().unique().all()
     rows = [{"contract": c, "state": _renewal_state(c.end_date, today, alert_days)} for c in contracts]
-    if state in ("expiring_soon", "expired"):
-        rows = [r for r in rows if r["state"] == state]
 
-    return templates.TemplateResponse(
-        request, "contracts/list.html", {"user": user, "rows": rows, "filter_active": state in ("expiring_soon", "expired")},
-    )
+    ctx = {
+        "user": user,
+        "rows": rows,
+        "filter_active": bool(contract_type or state or vendor.strip()),
+        "contract_type": contract_type,
+        "state": state,
+        "vendor": vendor,
+    }
+    if request.headers.get("hx-request") == "true":
+        return templates.TemplateResponse(request, "contracts/_table.html", ctx)
+
+    ctx.update(await _filter_bar_context())
+    return templates.TemplateResponse(request, "contracts/list.html", ctx)
 
 
 # ---- create ----

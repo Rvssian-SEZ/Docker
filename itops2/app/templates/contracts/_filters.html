@@ -1,0 +1,23 @@
+<form class="row row-cols-lg-auto g-2 align-items-center mb-3"
+      hx-get="/contracts" hx-target="#contracts-table" hx-swap="outerHTML" hx-push-url="true"
+      hx-trigger="change, keyup changed delay:400ms">
+  <div class="col">
+    <select class="form-select form-select-sm" name="contract_type">
+      <option value="">All types</option>
+      {% for t in filter_contract_types %}
+      <option value="{{ t.value }}" {{ 'selected' if contract_type == t.value }}>{{ t.value }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col">
+    <select class="form-select form-select-sm" name="state">
+      <option value="" {{ 'selected' if not state }}>Any renewal state</option>
+      <option value="expiring_soon" {{ 'selected' if state == 'expiring_soon' }}>Expiring soon</option>
+      <option value="expired" {{ 'selected' if state == 'expired' }}>Expired</option>
+      <option value="active" {{ 'selected' if state == 'active' }}>Active</option>
+    </select>
+  </div>
+  <div class="col flex-grow-1">
+    <input class="form-control form-control-sm" type="search" name="vendor" placeholder="Search vendor…" value="{{ vendor or '' }}">
+  </div>
+</form>
