@@ -29,6 +29,10 @@ from app.main import app  # noqa: E402
 # Truncated before every test. Roles/permissions/breakglass user/currencies
 # are seeded once per session by bootstrap() and deliberately left alone —
 # tests that need extra users/currencies create their own with unique names.
+# core_departments joins that "left alone" list too, NOT because it's
+# seeded (it isn't) but because core_users.department_id FKs to it and
+# core_users is itself never truncated -- truncating core_departments
+# would CASCADE into core_users and violate that. Same fix: unique names.
 # core_settings IS truncated (Phase 8's SMTP-config tests are the first to
 # ever write to it) -- every key already falls back to its DEFAULTS value
 # when no row exists, so a clean table is equivalent to "everything at
@@ -44,6 +48,12 @@ TRUNCATE_TABLES = (
     "core_inventory_items",
     "core_inventory_adjustments",
     "core_notification_subscriptions",
+    # core_v1_import_rows references core_v1_import_batches, which
+    # references core_users -- truncating these two doesn't cascade
+    # backward to core_users (the FK points the other way), so this is
+    # safe alongside the "users are never truncated" convention below.
+    "core_v1_import_rows",
+    "core_v1_import_batches",
     "core_settings",
     "core_audit_log",
     "core_models",

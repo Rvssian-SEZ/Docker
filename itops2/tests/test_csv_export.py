@@ -209,4 +209,7 @@ async def test_users_export_lists_users(admin_client, db, settings):
     assert resp.status_code == 200
     text = resp.content.decode("utf-8-sig")
     assert settings.breakglass_username in text
-    assert text.splitlines()[0] == "username,display_name,email,role,company,auth_source,is_active,last_login_at"
+    assert text.splitlines()[0] == (
+        "username,display_name,email,phone,job_title,department,"
+        "role,company,auth_source,is_active,last_login_at"
+    )

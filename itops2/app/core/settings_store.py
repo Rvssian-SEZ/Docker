@@ -65,6 +65,20 @@ DEFAULTS: dict[str, tuple[str, str]] = {
     # Contracts: separate key from warranty.alert_days (same pattern, own
     # value) -- a shared key would silently couple two unrelated concerns.
     "contracts.renewal_alert_days": ("30", "int"),
+    # Phase 9: one-time v1 import wizard config. Kept in core_settings like
+    # every other secret this app already stores in plaintext (smtp.password,
+    # auth.oidc.client_secret) -- same "internal tool, DB is the boundary"
+    # model, no new precedent.
+    "import.v1_database_url": ("", "str"),  # postgresql://user:pass@host:port/db, read-only enforced at connect time
+    # Symbol -> ISO code map, NOT hardcoded: "Rs" only means SCR for THIS
+    # deployment. A client in another region edits this setting, not code.
+    "import.currency_symbol_map": ('{"$": "USD", "£": "GBP", "€": "EUR", "Rs": "SCR"}', "str"),
+    # Paths where v1's upload volumes are (temporarily, read-only) mounted
+    # inside this container for the file-copy step -- see the setup guide's
+    # import section for the docker-compose override procedure. Empty =
+    # metadata-only import (attachment rows created, files not copied).
+    "import.v1_asset_uploads_path": ("", "str"),
+    "import.v1_printer_uploads_path": ("", "str"),
 }
 
 

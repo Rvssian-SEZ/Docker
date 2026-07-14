@@ -27,12 +27,14 @@ from app.core.models import (
     AuditLog,
     Category,
     Company,
+    Department,
     Location,
     Manufacturer,
     StatusLabel,
     StatusType,
 )
 from app.core.photos import model_photo_attachment
+from app.core.settings_store import load_settings
 from app.templating import templates
 
 router = APIRouter(prefix="/catalog")
@@ -287,6 +289,120 @@ async def status_labels_delete(
     db: AsyncSession = Depends(get_db),
 ):
     ok, err = await _delete_named(db, StatusLabel, item_id, user, "status_label")
+    if not ok:
+        return _toast(request, False, err)
+    return _refresh()
+
+
+# ---- departments (name + optional company; Users-only, see Department docstring) ----
+
+async def _departments_form_context(db: AsyncSession) -> dict:
+    store = await load_settings(db)
+    multi_company = store.get_bool("company.multi_enabled")
+    companies = []
+    if multi_company:
+        companies = (await db.execute(select(Company).order_by(Company.name))).scalars().all()
+    return {"companies": companies, "multi_company": multi_company}
+
+
+@router.get("/departments", response_class=HTMLResponse)
+async def departments_list(
+    request: Request,
+    user: CurrentUser = Depends(require("catalog.view")),
+    db: AsyncSession = Depends(get_db),
+):
+    rows = (
+        (
+            await db.execute(
+                select(Department).options(selectinload(Department.company)).order_by(Department.name)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    ctx = await _departments_form_context(db)
+    ctx.update(
+        {
+            "user": user,
+            "rows": rows,
+            "active_tab": "departments",
+            "can_manage": user.can("catalog.manage"),
+        }
+    )
+    return templates.TemplateResponse(request, "catalog/departments.html", ctx)
+
+
+@router.post("/departments/create", response_class=HTMLResponse)
+async def departments_create(
+    request: Request,
+    name: str = Form(""),
+    company_id: str = Form(""),
+    user: CurrentUser = Depends(require("catalog.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    name = name.strip()
+    if not name:
+        return _toast(request, False, "Name is required.")
+    company_id_val = int(company_id) if company_id.isdigit() else None
+    if company_id_val is not None and await db.get(Company, company_id_val) is None:
+        return _toast(request, False, "Unknown company.")
+    dup = (
+        await db.execute(
+            select(Department.id).where(Department.name == name, Department.company_id.is_(company_id_val))
+            if company_id_val is None
+            else select(Department.id).where(Department.name == name, Department.company_id == company_id_val)
+        )
+    ).first()
+    if dup:
+        return _toast(request, False, f"'{name}' already exists for this company.")
+    row = Department(name=name, company_id=company_id_val)
+    db.add(row)
+    await db.flush()
+    db.add(AuditLog(user_id=user.id, action="create", entity_type="department", entity_id=str(row.id), detail=name))
+    await db.commit()
+    return _refresh()
+
+
+@router.post("/departments/{item_id}/update", response_class=HTMLResponse)
+async def departments_update(
+    request: Request,
+    item_id: int,
+    name: str = Form(""),
+    company_id: str = Form(""),
+    user: CurrentUser = Depends(require("catalog.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await db.get(Department, item_id)
+    if row is None:
+        return _toast(request, False, "Not found.")
+    name = name.strip()
+    if not name:
+        return _toast(request, False, "Name is required.")
+    company_id_val = int(company_id) if company_id.isdigit() else None
+    if company_id_val is not None and await db.get(Company, company_id_val) is None:
+        return _toast(request, False, "Unknown company.")
+    dup_q = select(Department.id).where(Department.name == name, Department.id != item_id)
+    dup_q = dup_q.where(Department.company_id.is_(company_id_val)) if company_id_val is None else dup_q.where(
+        Department.company_id == company_id_val
+    )
+    dup = (await db.execute(dup_q)).first()
+    if dup:
+        return _toast(request, False, f"'{name}' already exists for this company.")
+    row.name = name
+    row.company_id = company_id_val
+    db.add(AuditLog(user_id=user.id, action="update", entity_type="department", entity_id=str(item_id), detail=name))
+    await db.commit()
+    return _toast(request, True, f"Updated {name}.")
+
+
+@router.post("/departments/{item_id}/delete", response_class=HTMLResponse)
+async def departments_delete(
+    request: Request,
+    item_id: int,
+    user: CurrentUser = Depends(require("catalog.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    ok, err = await _delete_named(db, Department, item_id, user, "department")
     if not ok:
         return _toast(request, False, err)
     return _refresh()

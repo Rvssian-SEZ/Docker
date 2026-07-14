@@ -19,7 +19,16 @@ from sqlalchemy.orm import selectinload
 from app.core.auth import CurrentUser, get_current_user, require, require_all
 from app.core.csv_export import csv_response, fmt_datetime
 from app.core.db import get_db
-from app.core.models import AuditLog, AuthSource, Company, NotificationEvent, NotificationSubscription, Role, User
+from app.core.models import (
+    AuditLog,
+    AuthSource,
+    Company,
+    Department,
+    NotificationEvent,
+    NotificationSubscription,
+    Role,
+    User,
+)
 from app.core.notifications import EVENT_PERMISSION, EVENT_TYPES
 from app.core.scoping import company_scope
 from app.core.security import hash_password, verify_password
@@ -40,7 +49,12 @@ async def _form_context(db: AsyncSession) -> dict:
         companies = (
             (await db.execute(select(Company).order_by(Company.name))).scalars().all()
         )
-    return {"roles": roles, "companies": companies, "multi_company": multi}
+    departments = (
+        (await db.execute(select(Department).options(selectinload(Department.company)).order_by(Department.name)))
+        .scalars()
+        .all()
+    )
+    return {"roles": roles, "companies": companies, "multi_company": multi, "departments": departments}
 
 
 @router.get("/users", response_class=HTMLResponse)
@@ -53,7 +67,7 @@ async def users_list(
         (
             await db.execute(
                 select(User)
-                .options(selectinload(User.role), selectinload(User.company))
+                .options(selectinload(User.role), selectinload(User.company), selectinload(User.department))
                 .order_by(User.username)
             )
         )
@@ -75,17 +89,27 @@ async def users_export(
     company.scoped_users is on, same as every other export."""
     store = await load_settings(db)
     scope_company_id = company_scope(user, store)
-    query = select(User).options(selectinload(User.role), selectinload(User.company)).order_by(User.username)
+    query = (
+        select(User)
+        .options(selectinload(User.role), selectinload(User.company), selectinload(User.department))
+        .order_by(User.username)
+    )
     if scope_company_id is not None:
         query = query.where(User.company_id == scope_company_id)
     users = (await db.execute(query)).scalars().unique().all()
 
-    fieldnames = ["username", "display_name", "email", "role", "company", "auth_source", "is_active", "last_login_at"]
+    fieldnames = [
+        "username", "display_name", "email", "phone", "job_title", "department",
+        "role", "company", "auth_source", "is_active", "last_login_at",
+    ]
     rows = [
         {
             "username": u.username,
             "display_name": u.display_name or "",
             "email": u.email or "",
+            "phone": u.phone or "",
+            "job_title": u.job_title or "",
+            "department": u.department.name if u.department else "",
             "role": u.role.name.value,
             "company": u.company.name if u.company else "",
             "auth_source": u.auth_source.value,
@@ -106,6 +130,9 @@ async def users_create(
     password: str = Form(""),
     role_id: int | None = Form(None),
     company_id: str = Form(""),
+    phone: str = Form(""),
+    job_title: str = Form(""),
+    department_id: str = Form(""),
     user: CurrentUser = Depends(require("users.manage")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -123,6 +150,9 @@ async def users_create(
         return _toast(request, False, "Role is required.")
     if await db.get(Role, role_id) is None:
         return _toast(request, False, "Unknown role.")
+    department_id_val = int(department_id) if department_id.isdigit() else None
+    if department_id_val is not None and await db.get(Department, department_id_val) is None:
+        return _toast(request, False, "Unknown department.")
 
     new_user = User(
         username=username,
@@ -132,6 +162,9 @@ async def users_create(
         password_hash=hash_password(password),
         role_id=role_id,
         company_id=int(company_id) if company_id.isdigit() else None,
+        phone=phone.strip() or None,
+        job_title=job_title.strip() or None,
+        department_id=department_id_val,
     )
     db.add(new_user)
     await db.flush()
@@ -154,6 +187,9 @@ async def users_update(
     role_id: int | None = Form(None),
     company_id: str = Form(""),
     is_active: str = Form("false"),
+    phone: str = Form(""),
+    job_title: str = Form(""),
+    department_id: str = Form(""),
     user: CurrentUser = Depends(require("users.manage")),
     db: AsyncSession = Depends(get_db),
 ):
@@ -178,6 +214,12 @@ async def users_update(
         target.is_active = active
 
     target.company_id = int(company_id) if company_id.isdigit() else None
+    department_id_val = int(department_id) if department_id.isdigit() else None
+    if department_id_val is not None and await db.get(Department, department_id_val) is None:
+        return _toast(request, False, "Unknown department.")
+    target.phone = phone.strip() or None
+    target.job_title = job_title.strip() or None
+    target.department_id = department_id_val
 
     db.add(
         AuditLog(
@@ -223,7 +265,7 @@ async def profile(
     user: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    me = await db.get(User, user.id)
+    me = await db.get(User, user.id, options=[selectinload(User.department)])
     subscribed = {
         s
         for (s,) in (
@@ -244,6 +286,9 @@ async def profile(
             "is_local": me.auth_source == AuthSource.local,
             "available_events": available_events,
             "subscribed": {e.value for e in subscribed},
+            "phone": me.phone,
+            "job_title": me.job_title,
+            "department": me.department,
         },
     )
 

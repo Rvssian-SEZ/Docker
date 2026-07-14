@@ -67,6 +67,35 @@ class Company(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class Department(Base):
+    """A Catalog lookup, tightly scoped: name + an OPTIONAL company_id —
+    unlike Locations/Manufacturers/Categories (no company axis at all)
+    but also unlike Users (company_id required to mean anything). Two
+    companies can each have their own "IT" department without
+    colliding, so uniqueness is on (name, company_id) not name alone;
+    Postgres's NULL <> NULL means multiple company-less "IT" rows
+    wouldn't collide either, but the Catalog CRUD blocks duplicate
+    names within the same scope at the app level regardless (matches
+    every other Catalog entity's friendly-toast-not-a-500 UX).
+    Added for Phase 9 (v1 import) — v1's `department` was free text on
+    users, imported/synthesized here (see core_v1_import_rows) — but
+    it's a first-class Catalog concept from here on, not import-only.
+    Deliberately scoped to Users ONLY (department_id lives on
+    core_users, not core_assets) — that's the whole "tightly scoped"
+    point: this isn't a general-purpose second location axis.
+    """
+
+    __tablename__ = "core_departments"
+    __table_args__ = (UniqueConstraint("name", "company_id", name="uq_department_name_company"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), index=True)
+    company_id: Mapped[int | None] = mapped_column(ForeignKey("core_companies.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    company: Mapped[Company | None] = relationship(foreign_keys=[company_id])
+
+
 class Location(Base):
     __tablename__ = "core_locations"
 
@@ -167,6 +196,13 @@ class User(Base):
     password_hash: Mapped[str | None] = mapped_column(String(255))
     role_id: Mapped[int] = mapped_column(ForeignKey("core_roles.id"))
     company_id: Mapped[int | None] = mapped_column(ForeignKey("core_companies.id"), index=True)
+    # phone/job_title/department_id: added for Phase 9 (v1 import) --
+    # v1 tracked these per-user and v2 had nowhere to put them. Deliberately
+    # NOT added to Asset -- Department is a Users-only concept (see
+    # Department's docstring).
+    phone: Mapped[str | None] = mapped_column(String(50))
+    job_title: Mapped[str | None] = mapped_column(String(200))
+    department_id: Mapped[int | None] = mapped_column(ForeignKey("core_departments.id"), index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_breakglass: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -174,6 +210,7 @@ class User(Base):
 
     role: Mapped[Role] = relationship()
     company: Mapped[Company | None] = relationship()
+    department: Mapped[Department | None] = relationship(foreign_keys=[department_id])
 
 
 class AppSetting(Base):
@@ -583,3 +620,83 @@ class InventoryAdjustment(Base):
 
     item: Mapped[InventoryItem] = relationship(foreign_keys=[item_id])
     adjuster: Mapped[User] = relationship(foreign_keys=[adjusted_by])
+
+
+class ImportBatchStatus(str, enum.Enum):
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+
+
+class ImportRowOutcome(str, enum.Enum):
+    created = "created"
+    skipped = "skipped"
+    flagged = "flagged"
+    failed = "failed"
+
+
+class V1ImportBatch(Base):
+    """One run of the Phase 9 v1-import wizard, dry-run or real. Rows
+    live in V1ImportRow, one per source row the wizard looked at —
+    together these ARE the traceability trail ("which v1 row became
+    which v2 row"), so no imported_from_v1_id column is scattered
+    across every target table (core_assets, core_contracts, ...); one
+    join against v1_id/v2_entity_id answers that for anything, forever.
+    dry_run batches never commit their target-side writes (the
+    importer wraps them in a transaction that always rolls back) but
+    still log rows here for the preview — excluded from the
+    already-imported idempotency check (see V1ImportRow) so a dry run
+    never blocks or gets confused with the real run that follows it.
+    """
+
+    __tablename__ = "core_v1_import_batches"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_by: Mapped[int] = mapped_column(ForeignKey("core_users.id"))
+    dry_run: Mapped[bool] = mapped_column(Boolean, default=False)
+    status: Mapped[ImportBatchStatus] = mapped_column(
+        Enum(ImportBatchStatus, name="core_import_batch_status"), default=ImportBatchStatus.running
+    )
+
+    starter: Mapped[User] = relationship(foreign_keys=[started_by])
+
+
+class V1ImportRow(Base):
+    """One row per v1 source row the wizard examined. The partial
+    unique index enforces "at most one *created* v2 row per v1 source
+    row" at the DB level, not just an app-level check-before-insert —
+    same DB-level-guarantee-over-app-level-discipline pattern already
+    used for core_checkouts' one-open-checkout-per-asset index. Real
+    (non-dry-run) batches only: a dry run's rows are excluded from that
+    index (see the partial index's WHERE clause) and from the
+    already-imported lookup the importer uses to decide skip-vs-create
+    on a re-run.
+    """
+
+    __tablename__ = "core_v1_import_rows"
+    __table_args__ = (
+        Index(
+            "uq_v1_import_row_created_once",
+            "v1_table", "v1_id",
+            unique=True,
+            postgresql_where=text("outcome = 'created' AND is_dry_run = false"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("core_v1_import_batches.id"), index=True)
+    # Denormalized from batch.dry_run: a partial index's WHERE clause can
+    # only reference columns on the indexed table itself, not a joined
+    # one, so this can't just be `batch.dry_run` looked up at query time.
+    is_dry_run: Mapped[bool] = mapped_column(Boolean, default=False)
+    v1_table: Mapped[str] = mapped_column(String(100), index=True)
+    v1_id: Mapped[int] = mapped_column(Integer, index=True)
+    v2_entity_type: Mapped[str] = mapped_column(String(50))
+    v2_entity_id: Mapped[int | None] = mapped_column(Integer)
+    outcome: Mapped[ImportRowOutcome] = mapped_column(Enum(ImportRowOutcome, name="core_import_row_outcome"))
+    detail: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    batch: Mapped[V1ImportBatch] = relationship(foreign_keys=[batch_id])

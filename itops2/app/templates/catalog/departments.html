@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Catalog — {{ app_name }}{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">Catalog</h1>
+{% include "catalog/_tabs.html" %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 col-lg-9">
+  <h2 class="h5 mb-0">Departments</h2>
+  {% if can_manage %}
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createItem">
+    <i class="bi bi-plus-lg me-1"></i>New department
+  </button>
+  {% endif %}
+</div>
+<p class="text-secondary col-lg-9 small">Tightly scoped to Users — assigned on a user's profile, not on assets.
+{% if multi_company %}Optionally tied to a company; leave blank for a department shared across all companies.{% endif %}</p>
+
+<table class="table table-hover align-middle col-lg-9" style="table-layout: fixed;">
+  <colgroup>
+    <col>
+    {% if multi_company %}<col style="width: 12rem;">{% endif %}
+    {% if can_manage %}<col style="width: 3rem;">{% endif %}
+  </colgroup>
+  <thead><tr>
+    <th>Name</th>{% if multi_company %}<th>Company</th>{% endif %}
+    {% if can_manage %}<th></th>{% endif %}
+  </tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      {% if can_manage %}
+      <td>
+        <input class="form-control form-control-sm w-100" name="name" value="{{ row.name }}"
+               hx-post="/catalog/departments/{{ row.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+               hx-trigger="change" hx-include="closest tr">
+      </td>
+      {% if multi_company %}
+      <td>
+        <select name="company_id" class="form-select form-select-sm w-100"
+                hx-post="/catalog/departments/{{ row.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+                hx-trigger="change" hx-include="closest tr">
+          <option value="" {{ 'selected' if not row.company_id }}>— all companies —</option>
+          {% for c in companies %}
+          <option value="{{ c.id }}" {{ 'selected' if c.id == row.company_id }}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      {% endif %}
+      <td class="text-end">
+        <button class="btn btn-outline-danger btn-sm" hx-post="/catalog/departments/{{ row.id }}/delete"
+                hx-target="#toast-area" hx-swap="innerHTML"
+                hx-confirm="Delete '{{ row.name }}'?">
+          <i class="bi bi-trash"></i>
+        </button>
+      </td>
+      {% else %}
+      <td class="text-truncate" style="max-width: 0;" title="{{ row.name }}">{{ row.name }}</td>
+      {% if multi_company %}<td>{{ row.company.name if row.company else '—' }}</td>{% endif %}
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="3" class="text-secondary">No departments yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if can_manage %}
+<div class="modal fade" id="createItem" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <form hx-post="/catalog/departments/create" hx-target="#toast-area" hx-swap="innerHTML">
+      <div class="modal-header"><h5 class="modal-title">New department</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-3"><label class="form-label">Name</label>
+          <input name="name" class="form-control" required autofocus></div>
+        {% if multi_company %}
+        <div class="mb-3"><label class="form-label">Company</label>
+          <select name="company_id" class="form-select">
+            <option value="">— all companies —</option>
+            {% for c in companies %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+          </select></div>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary">Create</button>
+      </div>
+    </form>
+  </div></div>
+</div>
+{% endif %}
+{% endblock %}

@@ -17,9 +17,10 @@
   </div>
 </div>
 
+<div class="table-responsive">
 <table class="table table-hover align-middle">
   <thead><tr>
-    <th>Username</th><th>Display name</th><th>Email</th><th>Auth</th><th>Role</th>
+    <th>Username</th><th>Display name</th><th>Email</th><th>Phone</th><th>Title</th><th>Department</th><th>Auth</th><th>Role</th>
     {% if multi_company %}<th>Company</th>{% endif %}
     <th>Active</th>
     {% if user.can('users.manage') %}<th></th>{% endif %}
@@ -33,11 +34,19 @@
       </td>
       <td>{{ u.display_name or '—' }}</td>
       <td>{{ u.email or '—' }}</td>
-      <td><span class="badge text-bg-secondary">{{ u.auth_source.value }}</span></td>
       {% if user.can('users.manage') %}
-      <td colspan="{{ 3 if multi_company else 2 }}">
+      <td colspan="{{ 7 if multi_company else 6 }}">
         <form hx-post="/users/{{ u.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
-              hx-trigger="change" class="d-flex gap-2 align-items-center">
+              hx-trigger="change" class="d-flex gap-2 align-items-center flex-wrap">
+          <input name="phone" class="form-control form-control-sm" style="width:8rem" placeholder="Phone" value="{{ u.phone or '' }}">
+          <input name="job_title" class="form-control form-control-sm" style="width:8rem" placeholder="Title" value="{{ u.job_title or '' }}">
+          <select name="department_id" class="form-select form-select-sm" style="width:9rem">
+            <option value="">— no department —</option>
+            {% for d in departments %}
+            <option value="{{ d.id }}" {{ 'selected' if d.id == u.department_id }}>{{ d.name }}{{ ' (' ~ d.company.name ~ ')' if d.company else '' }}</option>
+            {% endfor %}
+          </select>
+          <span class="badge text-bg-secondary">{{ u.auth_source.value }}</span>
           <select name="role_id" class="form-select form-select-sm" style="width:auto"
                   {{ 'disabled' if u.is_breakglass }}>
             {% for r in roles %}
@@ -69,6 +78,10 @@
         {% endif %}
       </td>
       {% else %}
+      <td>{{ u.phone or '—' }}</td>
+      <td>{{ u.job_title or '—' }}</td>
+      <td>{{ u.department.name if u.department else '—' }}</td>
+      <td><span class="badge text-bg-secondary">{{ u.auth_source.value }}</span></td>
       <td class="text-capitalize">{{ u.role.name.value }}</td>
       {% if multi_company %}<td>{{ u.company.name if u.company else '—' }}</td>{% endif %}
       <td>{{ '✓' if u.is_active else '✗' }}</td>
@@ -77,6 +90,7 @@
   {% endfor %}
   </tbody>
 </table>
+</div>
 
 {% if user.can('users.manage') %}
 <!-- Create user modal -->
@@ -92,6 +106,17 @@
           <input name="display_name" class="form-control"></div>
         <div class="mb-3"><label class="form-label">Email</label>
           <input name="email" type="email" class="form-control"></div>
+        <div class="row">
+          <div class="col-md-6 mb-3"><label class="form-label">Phone</label>
+            <input name="phone" class="form-control"></div>
+          <div class="col-md-6 mb-3"><label class="form-label">Job title</label>
+            <input name="job_title" class="form-control"></div>
+        </div>
+        <div class="mb-3"><label class="form-label">Department</label>
+          <select name="department_id" class="form-select">
+            <option value="">— no department —</option>
+            {% for d in departments %}<option value="{{ d.id }}">{{ d.name }}{{ ' (' ~ d.company.name ~ ')' if d.company else '' }}</option>{% endfor %}
+          </select></div>
         <div class="mb-3"><label class="form-label">Password <span class="text-secondary">(min 10 chars)</span></label>
           <input name="password" type="password" class="form-control" minlength="10" required></div>
         <div class="mb-3"><label class="form-label">Role</label>
