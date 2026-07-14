@@ -11,6 +11,13 @@ given empty-string credentials — pass username=None/password=None
 explicitly for an unauthenticated relay. `store.get(...) or None`
 converts the settings store's "" default into a real None for this.
 
+v2 lesson: smtp.security ("none"/"starttls"/"tls") must map to explicit
+use_tls/start_tls kwargs, not be inferred — plaintext-then-upgrade
+(STARTTLS, port 587) and implicit-TLS-from-the-start (port 465) are
+different wire protocols, and guessing wrong produces a hard-to-read
+transport error (WRONG_VERSION_NUMBER against O365:587 was aiosmtplib
+speaking plaintext at a socket the server expected a TLS ClientHello on).
+
 Two kinds of recipient for an event:
 - Direct: the specific user a checkout/checkin was performed against,
   notified regardless of subscription (an operational notice about
@@ -33,6 +40,15 @@ from app.core.models import NotificationEvent, NotificationSubscription, RolePer
 from app.core.settings_store import load_settings
 
 logger = logging.getLogger(__name__)
+
+# smtp.security value -> (use_tls, start_tls) kwargs for aiosmtplib.send.
+# Explicit for all three so nothing is left to aiosmtplib's own
+# port-based auto-detection.
+SMTP_SECURITY_MODES: dict[str, tuple[bool, bool]] = {
+    "none": (False, False),
+    "starttls": (False, True),
+    "tls": (True, False),
+}
 
 # event key -> (display label, permission required to receive it)
 EVENT_TYPES: list[dict[str, str]] = [
@@ -65,13 +81,15 @@ async def send_email_raising(to_address: str, subject: str, body: str) -> None:
     message["Subject"] = subject
     message.set_content(body)
 
+    use_tls, start_tls = SMTP_SECURITY_MODES.get(store.get("smtp.security"), (False, False))
     await aiosmtplib.send(
         message,
         hostname=store.get("smtp.host"),
         port=store.get_int("smtp.port"),
         username=store.get("smtp.username") or None,
         password=store.get("smtp.password") or None,
-        use_tls=store.get_bool("smtp.use_tls"),
+        use_tls=use_tls,
+        start_tls=start_tls,
     )
 
 

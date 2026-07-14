@@ -93,7 +93,13 @@ Deployed to home lab and external client sites.
 - **Notifications:** SMTP only — unauthenticated relay (Postfix .35:25) or
   authenticated (O365/Gmail), configured in Settings. Per-user event
   subscription list. (v1 lesson: aiosmtplib needs explicit
-  username=None/password=None on unauthenticated port 25.)
+  username=None/password=None on unauthenticated port 25. v2 lesson,
+  found live against O365: a single "Use TLS" boolean can't tell
+  STARTTLS (port 587, plaintext-then-upgrade) from implicit TLS (port
+  465, TLS from the first byte) apart — replaced with
+  smtp.security: none/starttls/tls, explicit use_tls/start_tls kwargs
+  to aiosmtplib for every mode, nothing left to its own port-based
+  guessing. See build-order Phase 8 for the fix and the migration.)
 - **Reporting:** CSV export on tables. Nothing fancier.
 - **v1 import:** one-time admin wizard, module-pickable, takes a v1 DB
   connection string, parses v1's free-text currency fields ("1000 SCR", "£200")
@@ -382,6 +388,18 @@ search columns, async engine with pooling (already configured in app/core/db.py)
    now**; the Assets/Contracts list pages themselves still don't enforce
    company.scoped_users, a gap that predates this phase and wasn't in
    scope to close here.
+   Post-launch fix (found live against a real O365 tenant, before Phase
+   9): smtp.use_tls (bool) replaced with smtp.security (none/starttls/
+   tls) — see the v1-lessons-style note under Locked-in decisions
+   above. bootstrap.py migrates the old setting once, using smtp.port
+   to disambiguate what the old bool couldn't (587 -> starttls, 465 ->
+   tls, regardless of the old bool's value) since that ambiguity is
+   exactly what caused the bug. The already-deployed instance had
+   already run the naive pre-fix migration (use_tls=true -> "tls" on
+   port 587, still wrong) before the port-aware version shipped, so its
+   smtp.security was corrected by hand via the Settings UI rather than
+   by a second migration pass (the migration only runs once, and by
+   design never overwrites a value that's already set).
 9. ⬜ v1 import wizard.
 10. ⬜ Polish + Setup & Deployment Guide (dark-themed HTML, grows per phase —
     skeleton in docs/setup-guide.html).

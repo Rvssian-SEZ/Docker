@@ -13,6 +13,16 @@
       <label class="form-check-label" for="f-{{ loop.index }}">{{ f.label }}</label>
       <div class="form-text">{{ f.help }}</div>
     </div>
+    {% elif f.key == 'smtp.security' %}
+    <div class="mb-3">
+      <label class="form-label">{{ f.label }}</label>
+      <select class="form-select" name="{{ f.key }}">
+        {% for value, label in smtp_security_options %}
+        <option value="{{ value }}" {{ 'selected' if f.value == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <div class="form-text">{{ f.help }}</div>
+    </div>
     {% else %}
     <div class="mb-3">
       <label class="form-label">{{ f.label }}</label>

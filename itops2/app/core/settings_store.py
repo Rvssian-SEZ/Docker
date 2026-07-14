@@ -44,7 +44,13 @@ DEFAULTS: dict[str, tuple[str, str]] = {
     "smtp.enabled": ("false", "bool"),
     "smtp.host": ("", "str"),
     "smtp.port": ("25", "int"),
-    "smtp.use_tls": ("false", "bool"),
+    # "none" (plaintext, e.g. an internal relay on 25), "starttls" (plaintext
+    # connect then upgrade, e.g. port 587), "tls" (implicit TLS from the
+    # start, e.g. port 465) -- a single use_tls bool couldn't tell "starttls"
+    # and "tls" apart, which is what broke O365:587 (WRONG_VERSION_NUMBER:
+    # we spoke plaintext SMTP at a socket O365 expected a TLS ClientHello
+    # on). Migrated from the old smtp.use_tls bool in bootstrap.py.
+    "smtp.security": ("none", "str"),
     "smtp.username": ("", "str"),        # empty = unauthenticated relay
     "smtp.password": ("", "str"),
     "smtp.from_address": ("", "str"),

@@ -14,11 +14,11 @@ from app.core.notifications import send_email_raising, subscribed_recipients
 from app.core.settings_store import save_setting
 
 
-async def _enable_smtp(db, host="mail.example.test", username="", password=""):
+async def _enable_smtp(db, host="mail.example.test", username="", password="", security="none"):
     await save_setting(db, "smtp.enabled", "true")
     await save_setting(db, "smtp.host", host)
     await save_setting(db, "smtp.port", "25")
-    await save_setting(db, "smtp.use_tls", "false")
+    await save_setting(db, "smtp.security", security)
     await save_setting(db, "smtp.username", username)
     await save_setting(db, "smtp.password", password)
     await save_setting(db, "smtp.from_address", "itops2@example.test")
@@ -55,6 +55,28 @@ async def test_send_passes_through_real_credentials_when_configured(db):
         await send_email_raising("someone@example.test", "subj", "body")
     assert mock_send.call_args.kwargs["username"] == "relayuser"
     assert mock_send.call_args.kwargs["password"] == "relaypass"
+
+
+@pytest.mark.parametrize(
+    "security,expected_use_tls,expected_start_tls",
+    [
+        ("none", False, False),
+        ("starttls", False, True),
+        ("tls", True, False),
+    ],
+)
+async def test_send_maps_security_mode_to_explicit_tls_kwargs(db, security, expected_use_tls, expected_start_tls):
+    """The bug this fix closes: a single smtp.use_tls bool couldn't tell
+    STARTTLS (port 587, plaintext-then-upgrade) from implicit TLS (port
+    465, TLS from the first byte) apart, which broke O365:587 with
+    WRONG_VERSION_NUMBER -- aiosmtplib spoke plaintext at a socket the
+    server expected a TLS ClientHello on. Both kwargs must be explicit,
+    nothing left to aiosmtplib's own port-based guessing."""
+    await _enable_smtp(db, security=security)
+    with patch("app.core.notifications.aiosmtplib.send", new_callable=AsyncMock) as mock_send:
+        await send_email_raising("someone@example.test", "subj", "body")
+    assert mock_send.call_args.kwargs["use_tls"] is expected_use_tls
+    assert mock_send.call_args.kwargs["start_tls"] is expected_start_tls
 
 
 async def test_test_send_route_reports_failure_as_toast(admin_client, db):

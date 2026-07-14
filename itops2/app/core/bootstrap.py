@@ -6,6 +6,7 @@ Idempotent — safe to run on every startup:
   (never overwrites an admin-tuned matrix)
 - ensures the break-glass local admin exists and is active
 - seeds SCR/USD/GBP/EUR currencies if missing (never touches existing rows)
+- migrates one-off settings-key renames (see _migrate_smtp_security below)
 """
 
 import logging
@@ -15,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.models import AuthSource, Currency, Role, RoleName, RolePermission, User
+from app.core.models import AppSetting, AuthSource, Currency, Role, RoleName, RolePermission, User
 from app.core.permissions import DEFAULTS
 
 DEFAULT_CURRENCIES = (("SCR", "SR"), ("USD", "$"), ("GBP", "£"), ("EUR", "€"))
@@ -76,4 +77,40 @@ async def bootstrap(db: AsyncSession) -> None:
         if code not in existing_codes:
             db.add(Currency(code=code, symbol=symbol, active=True))
 
+    await _migrate_smtp_security(db)
+
     await db.commit()
+
+
+async def _migrate_smtp_security(db: AsyncSession) -> None:
+    """One-off: smtp.use_tls (bool) -> smtp.security ("none"/"starttls"/
+    "tls") — a single boolean couldn't distinguish STARTTLS (port 587)
+    from implicit TLS (port 465), which broke O365 (WRONG_VERSION_NUMBER:
+    plaintext spoken at a socket the server expected TLS on). Runs once:
+    the old row is deleted after translating it, so this is a no-op on
+    every startup after the first.
+
+    The guess uses smtp.port, not just the old bool, precisely because
+    "use_tls=true" is ambiguous between "tls" and "starttls" — the exact
+    ambiguity that produced this bug in the first place (a real
+    deployment had use_tls=true on port 587, which needs "starttls", not
+    "tls"). Port 465 -> tls, port 587 -> starttls (both regardless of the
+    old bool, since those ports only make sense one way); anything else
+    falls back to the old bool (true -> tls, false -> none) since there's
+    no port-based signal to go on."""
+    old = await db.get(AppSetting, "smtp.use_tls")
+    if old is None:
+        return
+    new = await db.get(AppSetting, "smtp.security")
+    if new is None:
+        port_row = await db.get(AppSetting, "smtp.port")
+        port = port_row.value if port_row is not None else ""
+        if port == "465":
+            guess = "tls"
+        elif port == "587":
+            guess = "starttls"
+        else:
+            guess = "tls" if old.value == "true" else "none"
+        db.add(AppSetting(key="smtp.security", value=guess))
+    await db.delete(old)
+    log.info("Migrated smtp.use_tls -> smtp.security")

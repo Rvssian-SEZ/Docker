@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import CurrentUser, require
 from app.core.db import get_db
 from app.core.models import AuditLog, Currency, ExchangeRate
-from app.core.notifications import send_email_raising
+from app.core.notifications import SMTP_SECURITY_MODES, send_email_raising
 from app.core.settings_store import DEFAULTS, load_settings, save_setting
 from app.templating import templates
 from app.version import __version__
@@ -199,7 +199,7 @@ NOTIFICATIONS_KEYS = [
     "smtp.enabled",
     "smtp.host",
     "smtp.port",
-    "smtp.use_tls",
+    "smtp.security",
     "smtp.username",
     "smtp.password",
     "smtp.from_address",
@@ -208,12 +208,19 @@ NOTIFICATIONS_KEYS = [
 NOTIFICATIONS_LABELS = {
     "smtp.enabled": ("Enable email notifications", "Master switch — off means nothing is ever sent"),
     "smtp.host": ("SMTP host", "e.g. mail.example.com"),
-    "smtp.port": ("SMTP port", "25 (unauthenticated relay), 587 (STARTTLS), 465 (implicit TLS)"),
-    "smtp.use_tls": ("Use TLS", "Enable for port 465/587; leave off for an internal unauthenticated relay on 25"),
+    "smtp.port": ("SMTP port", "25 -> None, 587 -> STARTTLS, 465 -> TLS"),
+    "smtp.security": ("Security", "None (port 25), STARTTLS (port 587), or TLS (port 465) — must match the port"),
     "smtp.username": ("Username", "Leave blank for an unauthenticated relay"),
     "smtp.password": ("Password", "Leave blank for an unauthenticated relay"),
     "smtp.from_address": ("From address", "e.g. itops2@example.com"),
 }
+
+# Rendered as a <select> in settings/notifications.html — value, display label.
+SMTP_SECURITY_OPTIONS = [
+    ("none", "None (plaintext)"),
+    ("starttls", "STARTTLS"),
+    ("tls", "TLS"),
+]
 
 
 @router.get("/notifications", response_class=HTMLResponse)
@@ -236,7 +243,12 @@ async def settings_notifications(
     return templates.TemplateResponse(
         request,
         "settings/notifications.html",
-        {"user": user, "fields": fields, "active_tab": "notifications"},
+        {
+            "user": user,
+            "fields": fields,
+            "active_tab": "notifications",
+            "smtp_security_options": SMTP_SECURITY_OPTIONS,
+        },
     )
 
 
@@ -259,6 +271,8 @@ async def settings_notifications_save(
                     "partials/toast.html",
                     {"ok": False, "message": f"{NOTIFICATIONS_LABELS[key][0]} must be a number."},
                 )
+            if key == "smtp.security" and value not in SMTP_SECURITY_MODES:
+                return _toast(request, False, "Security must be None, STARTTLS, or TLS.")
         await save_setting(db, key, value)
     db.add(AuditLog(user_id=user.id, action="update", entity_type="settings", detail="notifications"))
     await db.commit()
