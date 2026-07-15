@@ -496,9 +496,87 @@ search columns, async engine with pooling (already configured in app/core/db.py)
       volume on every test run — enough accumulated runs filled the
       docker-test host's disk to 85% and broke a run outright. Fixed
       with `-v`; freed ~4GB pruning the backlog.
-9. ⬜ v1 import wizard.
+9. ✅ v1 import wizard, **deployed and verified in production**. Built as five
+   reviewable chunks, in dependency order (each with its own tests, deployed
+   and verified before the next started).
+   Chunk 1 — schema: core_departments (name + optional company_id, scoped to
+   Users only per the design decided with Alex — department_id lives on
+   core_users, not core_assets); phone/job_title/department_id added to
+   core_users; core_v1_import_batches + core_v1_import_rows, the wizard's
+   whole traceability mechanism — one row per v1 source row examined, a join
+   on (v1_table, v1_id, v2_entity_id) answers "which v1 row became which v2
+   row" for anything, forever, instead of an imported_from_v1_id column
+   scattered across every target table. A partial unique index enforces "at
+   most one *created* v2 row per v1 source row" at the DB level (same
+   DB-level-guarantee pattern as core_checkouts' one-open-checkout index),
+   scoped to real (non-dry-run) rows via a denormalized is_dry_run column — a
+   partial index's WHERE clause can't reach a joined table's column.
+   Chunk 2 — read-only connection + currency parsing: app/core/v1_source.py's
+   V1Source connects with `default_transaction_read_only=on` at the Postgres
+   protocol level (v1 rejects any write structurally, not because app code
+   chooses not to send one) and additionally wraps every fetch in its own
+   read-only transaction; its public interface is fetch()/close()/connect()
+   only — no execute() exists to reach for. app/core/v1_currency.py parses
+   v1's free-text money fields ("1000 SCR", "£200", "Rs 10000.00") against
+   the import.currency_symbol_map setting (not hardcoded — "Rs" only means
+   SCR for one specific deployment); a bare number with no symbol/code is
+   never defaulted to a currency, always flagged for manual review instead.
+   Chunk 3 — module mappers (app/core/import_mappers/), one v1 module per
+   file, all sharing Manufacturer/Category/Model/StatusLabel/Department/
+   Location synthesis helpers (case-insensitive dedup, "Unknown X" placeholder
+   for blanks, never a guessed specific value): Users (matched by username
+   alone, mirroring oidc.py's own provision_user() — a match backfills only
+   currently-NULL fields, never overwrites); Assets + Checkouts (v1's
+   "assigned" status is never written directly to status_label_id — a
+   deployed-type status is only reachable via a real checkout, so the asset
+   is created Available first and a synthesized Checkout is opened once it
+   has an id, replaying the same fields the live checkout route itself
+   sets); Equipment + its full lending_records history (checkout state
+   derived entirely from lending_records, not v1's own status enum, to avoid
+   trusting two overlapping signals — every lend/return cycle becomes its
+   own Checkout row, open or closed, not just a current-state snapshot);
+   Printers + printer_repairs (no checkout replay — v1 printers have no
+   assigned-user concept at all); Attachments (asset photos via v1's
+   photo_is_model_photo flag, which maps directly onto v2's own two-level
+   model/asset photo mechanism with no new logic needed; printer_attachments)
+   — both copied from v1's read-only bind-mounted upload volumes via a new
+   app/core/attachments.py:copy_from_disk(), same storage convention as the
+   live upload routes; Contracts (v1's saas/support/vendor collapse onto
+   v2's subscription/contract/contract — v1 has no license concept at all;
+   a v1 "cancelled" status has nothing to map to since v2 computes
+   active/expiring/expired from end_date rather than storing a status, so
+   cancelled contracts are flagged, not imported); Inventory (opening_stock
+   becomes the starting quantity, then stock_receipts + inventory_deployments
+   are replayed as core_inventory_adjustments in TRUE chronological order
+   merged across both v1 source tables — quantity_after is stored explicitly
+   per InventoryAdjustment's own design, so replaying by insertion order
+   instead of timestamp order would produce wrong running totals). Real bug
+   caught by the test suite before it ever reached staging: a single v1 row
+   producing two tracked artifacts (an asset's photo, a deployment's return)
+   under the SAME v1_table/v1_id as its parent collided with the partial
+   unique index — fixed by giving each derived artifact its own v1_table
+   namespace (e.g. "it_assets_photo", "inventory_deployments_return").
+   Chunk 4 — the wizard itself: app/core/import_mappers/orchestrator.py
+   runs the selected modules in a FIXED dependency order (not
+   admin-configurable — Users before anything referencing it, it_assets
+   before its photos, etc.) and commits; there's no separate "roll back
+   the preview" step because every mapper already skips its own
+   target-table writes when batch.dry_run is set while STILL writing its
+   V1ImportRow either way, which is the whole reason is_dry_run exists as
+   a real, persisted column. A run that fails partway still commits
+   whatever it already flushed — partial progress on a real run is real
+   progress, and the partial unique index means a later re-run picks up
+   exactly where it left off. Settings → Import (new tab) makes the four
+   import.* settings (v1_database_url, currency_symbol_map, and the two
+   upload paths) editable; the v1 Import page (sidebar, import.run
+   permission) is a module picker + dry-run/real switch + batch history,
+   and each batch's detail page is both the results view and the
+   flagged-row manual-review queue (a simple filter on V1ImportRow.outcome,
+   no separate mechanism needed).
+   280 tests across the five chunks (up from 185 before Phase 9 started).
 10. ⬜ Polish + Setup & Deployment Guide (dark-themed HTML, grows per phase —
-    skeleton in docs/setup-guide.html).
+    skeleton in docs/setup-guide.html; the v1 import section (§16) is
+    already written as part of Phase 9).
 
 ## Deploy procedure
 After code changes, deploy to docker-test (root@192.168.110.50,

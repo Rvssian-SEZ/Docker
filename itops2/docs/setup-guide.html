@@ -362,7 +362,99 @@ is on, a user with a company assigned sees dashboard counts for their own
 company only. The Assets/Licenses &amp; Contracts list pages themselves don't
 enforce this scoping yet — only the dashboard does, for now.</p>
 
-<h2>16. Importing from ITOps v1 <span class="todo">(Phase 9)</span></h2>
+<h2>16. Importing from ITOps v1</h2>
+<p>A one-time admin wizard that reads directly from a v1 Postgres database and
+creates the equivalent v2 records — users, assets, checkouts, printers, maintenance
+history, contracts, and inventory (with its full stock-movement history), plus
+asset photos and printer attachments if the v1 upload volumes are made available.
+It is module-pickable (run only the pieces relevant to a given migration) and safe
+to re-run: already-imported rows are recognised and skipped, never duplicated.</p>
+
+<div class="callout danger">
+<strong>Read-only, structurally.</strong> The wizard's connection to v1 is opened
+with <code>default_transaction_read_only=on</code> at the Postgres protocol level —
+v1 rejects any write the wizard could ever attempt, regardless of what the
+application code does. This is enforced by Postgres itself, not by the wizard
+simply choosing not to send writes.
+</div>
+
+<h3>16.1 Configure the connection</h3>
+<p>Go to <strong>Settings → Import</strong> and fill in:</p>
+<table>
+<tr><th>Field</th><th>Notes</th></tr>
+<tr><td>v1 database connection string</td><td><code>postgresql://user:pass@host:port/db</code> —
+the v1 Postgres instance must be reachable from the itops2 container (same Docker
+host, same network, or routable otherwise).</td></tr>
+<tr><td>Currency symbol map (JSON)</td><td>Maps v1's free-text money symbols to ISO
+codes, e.g. <code>{"$": "USD", "£": "GBP", "€": "EUR", "Rs": "SCR"}</code>. This is a
+setting, not hardcoded, because a symbol like "Rs" only means one specific currency
+for one specific deployment — a client migrating from a different region edits this
+map, not code. A v1 amount with no recognisable symbol or ISO code is never guessed;
+it's imported with cost left blank and flagged for manual review.</td></tr>
+<tr><td>v1 asset / printer uploads path</td><td>In-container paths where v1's upload
+volumes are read-only bind-mounted — see 16.2. Leave both blank to run a
+metadata-only import (all records created, no photos/attachments copied).</td></tr>
+</table>
+
+<h3>16.2 (Optional) Mount v1's upload volumes read-only</h3>
+<p>Only needed if you want asset photos and printer attachments copied over. Add a
+<code>docker-compose.override.yml</code> alongside the v2 stack's compose file,
+naming v1's actual Docker volumes (adjust to match your v1 deployment) mounted
+<code>:ro</code>:</p>
+<pre>services:
+  app:
+    volumes:
+      - itops_asset_uploads:/v1-uploads/assets:ro
+      - itops_printer_uploads:/v1-uploads/printers:ro
+
+volumes:
+  itops_asset_uploads:
+    external: true
+  itops_printer_uploads:
+    external: true</pre>
+<p>Apply it and set the matching paths in Settings → Import:</p>
+<pre>docker compose up -d   # picks up the override, recreates the app container</pre>
+<table>
+<tr><th>Setting</th><th>Value</th></tr>
+<tr><td>v1 asset uploads path</td><td><code>/v1-uploads/assets</code></td></tr>
+<tr><td>v1 printer uploads path</td><td><code>/v1-uploads/printers</code></td></tr>
+</table>
+<div class="callout warn">The <code>:ro</code> flag is what makes this safe — the
+container is structurally unable to write to v1's files no matter what runs inside
+it, the same read-only guarantee as the database connection. Once the import is
+finished, remove the override file and run <code>docker compose up -d</code> again
+to un-mount the volumes; there's no reason for v2 to keep access to v1's files
+after a one-time migration.</div>
+
+<h3>16.3 Run the wizard</h3>
+<p>Go to <strong>v1 Import</strong> in the sidebar (requires the <code>import.run</code>
+permission — admin-only by default).</p>
+<p><span class="step">1</span>Pick the modules to import (all seven are selected by
+default) and leave <strong>Dry run</strong> selected — this previews exactly what
+would be created/skipped/flagged without writing anything to Users, Assets, or any
+other target table.</p>
+<p><span class="step">2</span>Open the resulting batch and review the
+<strong>Flagged</strong> tab — this is the manual-review queue: v1 rows the wizard
+couldn't safely import on its own judgement (an unparseable cost, a cancelled
+contract, a blank required date, a v1 row referencing something not yet imported).
+Each flagged row's detail explains exactly why.</p>
+<p><span class="step">3</span>Fix what's fixable on the v1 side (or accept the gap —
+flagged rows are skipped, not blocking) and re-run the dry run to confirm.</p>
+<p><span class="step">4</span>Switch to <strong>Run for real</strong> and run again.
+Module order is fixed (not admin-configurable) because later modules depend on
+earlier ones — e.g. Assets' checkout replay needs Users imported first, Inventory's
+stock-movement replay needs Inventory Items imported first. A module that's skipped
+or hasn't run yet simply shows up as a flagged "run module X first" row rather than
+failing the whole batch.</p>
+
+<div class="callout">
+<strong>Re-running is always safe.</strong> Every v1 row the wizard successfully
+creates is tracked; a second run recognises anything already imported and skips it
+rather than duplicating it — enforced at the database level, not just by
+application logic. If a run fails partway through (e.g. the v1 connection drops),
+whatever was already imported stays imported; re-running afterward picks up only
+what's left.
+</div>
 
 <h2>17. Upgrades &amp; backups</h2>
 <pre>docker compose pull && docker compose up -d   # upgrade
