@@ -51,8 +51,23 @@ DEFAULTS: dict[str, tuple[str, str]] = {
     # we spoke plaintext SMTP at a socket O365 expected a TLS ClientHello
     # on). Migrated from the old smtp.use_tls bool in bootstrap.py.
     "smtp.security": ("none", "str"),
-    "smtp.username": ("", "str"),        # empty = unauthenticated relay
-    "smtp.password": ("", "str"),
+    # "basic" (username/password AUTH, or none at all when smtp.username is
+    # blank -- the historical unauthenticated-relay path) or "oauth2"
+    # (XOAUTH2 client-credentials, Microsoft 365). Defaults to "basic" for
+    # every existing install with NO migration needed: "basic" mode's send
+    # behavior is byte-for-byte what this app already did before oauth2
+    # existed, whether smtp.username was set or left blank, so a fresh
+    # settings key that just defaults to "basic" is already correct for
+    # both pre-existing configurations -- there's nothing to migrate.
+    "smtp.auth_mode": ("basic", "str"),
+    "smtp.username": ("", "str"),        # basic mode; empty = unauthenticated relay
+    "smtp.password": ("", "str"),        # basic mode
+    # oauth2 mode (client-credentials flow, no user interaction, no refresh
+    # token) -- see app/core/smtp_oauth2.py. Never persisted anywhere but
+    # here; the access token itself is cached in memory only.
+    "smtp.oauth2_tenant_id": ("", "str"),
+    "smtp.oauth2_client_id": ("", "str"),
+    "smtp.oauth2_client_secret": ("", "str"),
     "smtp.from_address": ("", "str"),
     # Notifications: last date (ISO, YYYY-MM-DD) the daily scheduled-check
     # tick ran -- not a user-facing setting, just a persisted marker so the

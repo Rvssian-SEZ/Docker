@@ -200,19 +200,27 @@ NOTIFICATIONS_KEYS = [
     "smtp.host",
     "smtp.port",
     "smtp.security",
+    "smtp.auth_mode",
     "smtp.username",
     "smtp.password",
+    "smtp.oauth2_tenant_id",
+    "smtp.oauth2_client_id",
+    "smtp.oauth2_client_secret",
     "smtp.from_address",
 ]
 
 NOTIFICATIONS_LABELS = {
     "smtp.enabled": ("Enable email notifications", "Master switch — off means nothing is ever sent"),
-    "smtp.host": ("SMTP host", "e.g. mail.example.com"),
-    "smtp.port": ("SMTP port", "25 -> None, 587 -> STARTTLS, 465 -> TLS"),
+    "smtp.host": ("SMTP host", "e.g. mail.example.com, or smtp.office365.com for OAuth2"),
+    "smtp.port": ("SMTP port", "25 -> None, 587 -> STARTTLS (also OAuth2), 465 -> TLS"),
     "smtp.security": ("Security", "None (port 25), STARTTLS (port 587), or TLS (port 465) — must match the port"),
+    "smtp.auth_mode": ("Authentication", "Basic (username/password, or none) or OAuth2 (Microsoft 365)"),
     "smtp.username": ("Username", "Leave blank for an unauthenticated relay"),
     "smtp.password": ("Password", "Leave blank for an unauthenticated relay"),
-    "smtp.from_address": ("From address", "e.g. itops2@example.com"),
+    "smtp.oauth2_tenant_id": ("Tenant ID", "Entra (Azure AD) directory (tenant) ID"),
+    "smtp.oauth2_client_id": ("Client ID", "Application (client) ID of the registered Entra app"),
+    "smtp.oauth2_client_secret": ("Client secret", "From the Entra app's Certificates & secrets"),
+    "smtp.from_address": ("From address", "e.g. itops2@example.com — for OAuth2 must be the mailbox the app was granted SendAs rights to"),
 }
 
 # Rendered as a <select> in settings/notifications.html — value, display label.
@@ -221,6 +229,21 @@ SMTP_SECURITY_OPTIONS = [
     ("starttls", "STARTTLS"),
     ("tls", "TLS"),
 ]
+
+SMTP_AUTH_MODE_OPTIONS = [
+    ("basic", "Basic (username/password)"),
+    ("oauth2", "OAuth2 (Microsoft 365)"),
+]
+
+# Which of NOTIFICATIONS_KEYS the settings/notifications.html template
+# shows for each smtp.auth_mode -- kept here (not duplicated in the
+# template) so the "what belongs to which mode" list has one source of
+# truth. smtp.enabled/host/port/security/auth_mode/from_address are
+# mode-independent and always shown.
+SMTP_AUTH_MODE_FIELDS = {
+    "basic": ["smtp.username", "smtp.password"],
+    "oauth2": ["smtp.oauth2_tenant_id", "smtp.oauth2_client_id", "smtp.oauth2_client_secret"],
+}
 
 
 @router.get("/notifications", response_class=HTMLResponse)
@@ -248,6 +271,9 @@ async def settings_notifications(
             "fields": fields,
             "active_tab": "notifications",
             "smtp_security_options": SMTP_SECURITY_OPTIONS,
+            "smtp_auth_mode_options": SMTP_AUTH_MODE_OPTIONS,
+            "smtp_auth_mode_fields": SMTP_AUTH_MODE_FIELDS,
+            "current_auth_mode": store.get("smtp.auth_mode"),
         },
     )
 
@@ -273,6 +299,8 @@ async def settings_notifications_save(
                 )
             if key == "smtp.security" and value not in SMTP_SECURITY_MODES:
                 return _toast(request, False, "Security must be None, STARTTLS, or TLS.")
+            if key == "smtp.auth_mode" and value not in dict(SMTP_AUTH_MODE_OPTIONS):
+                return _toast(request, False, "Authentication must be Basic or OAuth2.")
         await save_setting(db, key, value)
     db.add(AuditLog(user_id=user.id, action="update", entity_type="settings", detail="notifications"))
     await db.commit()
