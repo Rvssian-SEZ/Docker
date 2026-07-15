@@ -140,6 +140,26 @@ search columns, async engine with pooling (already configured in app/core/db.py)
   `model_id=notanumber`), for whatever a future route misses. Non-htmx
   requests are untouched (still get the normal 422) — this is a courtesy
   for the app's own UI, not a blanket behavior change.
+- Inline-edit table rows: never wrap several editable fields in one
+  colspan'd `<td>` with an internal flexbox `<form>` — a `<form>` can't
+  legally span multiple `<td>`s, so the fields never actually
+  participate in the table's column layout and drift out from under
+  their `<th>` headers (first found in Catalog's six inline-edit tabs,
+  Phase 6; recurred in the Users list until fixed post-Phase-9). The
+  default for ANY table with per-row inline editing: real one-field-
+  per-`<td>` matching the header count exactly, `table-layout: fixed`
+  + an explicit `<colgroup>` (narrow fixed widths for short fields —
+  phone/status/badges/switches — one flexible unwidthed `<col>` for
+  free-text columns like name/description), `w-100` on each input/
+  select, and `hx-post`/`hx-trigger="change"`/`hx-include="closest tr"`
+  on every individual field (not a wrapping `<form>`) — htmx's
+  documented pattern for "save the whole row on any field's change"
+  without a `<form>` ancestor. Wrap the table in `.table-responsive`
+  so a narrow viewport scrolls horizontally instead of wrapping cell
+  content into misalignment. Purely read-only/display tables (one
+  `<td>` per `<th>`, no inline form controls) don't need this — the
+  bug only exists where multiple editable fields were squeezed into
+  fewer cells than headers.
 
 ## Build order & status
 1. ✅ Scaffold: compose (app + postgres:16-alpine), Dockerfile, CI workflow,
@@ -574,6 +594,24 @@ search columns, async engine with pooling (already configured in app/core/db.py)
    flagged-row manual-review queue (a simple filter on V1ImportRow.outcome,
    no separate mechanism needed).
    280 tests across the five chunks (up from 185 before Phase 9 started).
+   Post-Phase-9 fix: the Users list table had inherited the same
+   colspan'd-`<td>`-plus-flexbox-`<form>` bug the Catalog tables had
+   before their Phase 6 fix (see "v1 lessons already encoded here" above)
+   — Phone/Title/Department/Role/Company/Active all jammed into one
+   merged cell, drifting out from under their headers, worst on
+   Department where the "no department" placeholder truncated in a
+   too-narrow select. Fixed with the same treatment: real per-column
+   `<td>`s, `table-layout: fixed` + `colgroup` (Department widened to
+   12rem specifically to stop the truncation), and `hx-include="closest
+   tr"` on every field instead of the wrapping `<form>`. Swept every
+   other table for the same pattern (asset detail tabs, contracts
+   detail, import batch review, inventory adjustment history, currency
+   settings, permissions grid) — none of the others had it; Catalog's
+   own tables and the Contracts/Printers/Inventory list pages already
+   had `table-layout: fixed` from having been built after the original
+   fix. The pattern itself is now documented as the standing default
+   for inline-edit tables, not just a one-off fix, so it doesn't need
+   rediscovering a third time.
 10. ⬜ Polish + Setup & Deployment Guide (dark-themed HTML, grows per phase —
     skeleton in docs/setup-guide.html; the v1 import section (§16) is
     already written as part of Phase 9).

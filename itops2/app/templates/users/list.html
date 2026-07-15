@@ -18,7 +18,20 @@
 </div>
 
 <div class="table-responsive">
-<table class="table table-hover align-middle">
+<table class="table table-hover align-middle" style="table-layout: fixed;">
+  <colgroup>
+    <col>
+    <col>
+    <col>
+    <col style="width: 8rem;">
+    <col style="width: 9rem;">
+    <col style="width: 12rem;">
+    <col style="width: 6rem;">
+    <col style="width: 8rem;">
+    {% if multi_company %}<col style="width: 9rem;">{% endif %}
+    <col style="width: 4rem;">
+    {% if user.can('users.manage') %}<col style="width: 3rem;">{% endif %}
+  </colgroup>
   <thead><tr>
     <th>Username</th><th>Display name</th><th>Email</th><th>Phone</th><th>Title</th><th>Department</th><th>Auth</th><th>Role</th>
     {% if multi_company %}<th>Company</th>{% endif %}
@@ -28,48 +41,67 @@
   <tbody>
   {% for u in users %}
     <tr>
-      <td>
+      <td class="text-truncate">
         {{ u.username }}
         {% if u.is_breakglass %}<span class="badge text-bg-warning ms-1" title="Permanent local admin">break-glass</span>{% endif %}
       </td>
-      <td>{{ u.display_name or '—' }}</td>
-      <td>{{ u.email or '—' }}</td>
+      <td class="text-truncate" title="{{ u.display_name or '' }}">{{ u.display_name or '—' }}</td>
+      <td class="text-truncate" title="{{ u.email or '' }}">{{ u.email or '—' }}</td>
       {% if user.can('users.manage') %}
-      <td colspan="{{ 7 if multi_company else 6 }}">
-        <form hx-post="/users/{{ u.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
-              hx-trigger="change" class="d-flex gap-2 align-items-center flex-wrap">
-          <input name="phone" class="form-control form-control-sm" style="width:8rem" placeholder="Phone" value="{{ u.phone or '' }}">
-          <input name="job_title" class="form-control form-control-sm" style="width:8rem" placeholder="Title" value="{{ u.job_title or '' }}">
-          <select name="department_id" class="form-select form-select-sm" style="width:9rem">
-            <option value="">— no department —</option>
-            {% for d in departments %}
-            <option value="{{ d.id }}" {{ 'selected' if d.id == u.department_id }}>{{ d.name }}{{ ' (' ~ d.company.name ~ ')' if d.company else '' }}</option>
-            {% endfor %}
-          </select>
-          <span class="badge text-bg-secondary">{{ u.auth_source.value }}</span>
-          <select name="role_id" class="form-select form-select-sm" style="width:auto"
-                  {{ 'disabled' if u.is_breakglass }}>
-            {% for r in roles %}
-            <option value="{{ r.id }}" {{ 'selected' if r.id == u.role_id }} class="text-capitalize">{{ r.name.value }}</option>
-            {% endfor %}
-          </select>
-          {% if u.is_breakglass %}<input type="hidden" name="role_id" value="{{ u.role_id }}">{% endif %}
-          {% if multi_company %}
-          <select name="company_id" class="form-select form-select-sm" style="width:auto">
-            <option value="">— no company —</option>
-            {% for c in companies %}
-            <option value="{{ c.id }}" {{ 'selected' if c.id == u.company_id }}>{{ c.name }}</option>
-            {% endfor %}
-          </select>
-          {% endif %}
-          <div class="form-check form-switch mb-0">
-            <input class="form-check-input" type="checkbox" name="is_active" value="true"
-                   {{ 'checked' if u.is_active }} {{ 'disabled' if u.is_breakglass }}>
-            {% if u.is_breakglass %}<input type="hidden" name="is_active" value="true">{% endif %}
-          </div>
-        </form>
+      <td>
+        <input name="phone" class="form-control form-control-sm w-100" placeholder="Phone" value="{{ u.phone or '' }}"
+               hx-post="/users/{{ u.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+               hx-trigger="change" hx-include="closest tr">
       </td>
       <td>
+        <input name="job_title" class="form-control form-control-sm w-100" placeholder="Title" value="{{ u.job_title or '' }}"
+               hx-post="/users/{{ u.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+               hx-trigger="change" hx-include="closest tr">
+      </td>
+      <td>
+        <select name="department_id" class="form-select form-select-sm w-100"
+                hx-post="/users/{{ u.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+                hx-trigger="change" hx-include="closest tr">
+          <option value="">— none —</option>
+          {% for d in departments %}
+          <option value="{{ d.id }}" {{ 'selected' if d.id == u.department_id }}>{{ d.name }}{{ ' (' ~ d.company.name ~ ')' if d.company else '' }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      <td><span class="badge text-bg-secondary">{{ u.auth_source.value }}</span></td>
+      <td>
+        <select name="role_id" class="form-select form-select-sm w-100"
+                hx-post="/users/{{ u.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+                hx-trigger="change" hx-include="closest tr"
+                {{ 'disabled' if u.is_breakglass }}>
+          {% for r in roles %}
+          <option value="{{ r.id }}" {{ 'selected' if r.id == u.role_id }} class="text-capitalize">{{ r.name.value }}</option>
+          {% endfor %}
+        </select>
+        {% if u.is_breakglass %}<input type="hidden" name="role_id" value="{{ u.role_id }}">{% endif %}
+      </td>
+      {% if multi_company %}
+      <td>
+        <select name="company_id" class="form-select form-select-sm w-100"
+                hx-post="/users/{{ u.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+                hx-trigger="change" hx-include="closest tr">
+          <option value="">— none —</option>
+          {% for c in companies %}
+          <option value="{{ c.id }}" {{ 'selected' if c.id == u.company_id }}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </td>
+      {% endif %}
+      <td>
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" name="is_active" value="true"
+                 hx-post="/users/{{ u.id }}/update" hx-target="#toast-area" hx-swap="innerHTML"
+                 hx-trigger="change" hx-include="closest tr"
+                 {{ 'checked' if u.is_active }} {{ 'disabled' if u.is_breakglass }}>
+          {% if u.is_breakglass %}<input type="hidden" name="is_active" value="true">{% endif %}
+        </div>
+      </td>
+      <td class="text-center">
         {% if u.auth_source.value == 'local' %}
         <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal"
                 data-bs-target="#resetPw" data-userid="{{ u.id }}" data-username="{{ u.username }}">
@@ -78,12 +110,12 @@
         {% endif %}
       </td>
       {% else %}
-      <td>{{ u.phone or '—' }}</td>
-      <td>{{ u.job_title or '—' }}</td>
-      <td>{{ u.department.name if u.department else '—' }}</td>
+      <td class="text-truncate">{{ u.phone or '—' }}</td>
+      <td class="text-truncate">{{ u.job_title or '—' }}</td>
+      <td class="text-truncate" title="{{ u.department.name if u.department else '' }}">{{ u.department.name if u.department else '—' }}</td>
       <td><span class="badge text-bg-secondary">{{ u.auth_source.value }}</span></td>
       <td class="text-capitalize">{{ u.role.name.value }}</td>
-      {% if multi_company %}<td>{{ u.company.name if u.company else '—' }}</td>{% endif %}
+      {% if multi_company %}<td class="text-truncate">{{ u.company.name if u.company else '—' }}</td>{% endif %}
       <td>{{ '✓' if u.is_active else '✗' }}</td>
       {% endif %}
     </tr>
