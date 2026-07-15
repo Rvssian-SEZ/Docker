@@ -30,7 +30,6 @@ generated tag without writing, so it's shown as "auto-generated".
 
 from datetime import date, datetime, timezone
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.import_mappers.catalog import (
@@ -40,8 +39,8 @@ from app.core.import_mappers.catalog import (
     resolve_or_plan_model,
     resolve_or_plan_status_label,
 )
-from app.core.import_mappers.common import record_row
-from app.core.models import Asset, Checkout, ImportRowOutcome, StatusType, V1ImportBatch, V1ImportRow
+from app.core.import_mappers.common import next_asset_tag, record_row, v2_entity_id_for_v1_row
+from app.core.models import Asset, Checkout, ImportRowOutcome, StatusType, V1ImportBatch
 from app.core.settings_store import SettingsStore
 from app.core.v1_currency import load_symbol_map, parse_v1_money
 
@@ -52,40 +51,6 @@ V1_STATUS_PLAN = {
     "retired": ("Retired", StatusType.archived),
     "lost": ("Lost", StatusType.archived),
 }
-
-
-async def v2_user_id_for_v1_user(db: AsyncSession, v1_user_id: int) -> int | None:
-    """Looks up which v2 user a v1 users.id was imported to, via the
-    Users mapper's own V1ImportRow trail -- the generic traceability
-    mechanism doubling as a cross-mapper join, so this module never
-    needs its own copy of "have I seen this v1 user before"."""
-    return (
-        await db.execute(
-            select(V1ImportRow.v2_entity_id)
-            .where(
-                V1ImportRow.v1_table == "users",
-                V1ImportRow.v1_id == v1_user_id,
-                V1ImportRow.is_dry_run.is_(False),
-                V1ImportRow.v2_entity_id.is_not(None),
-            )
-            .order_by(V1ImportRow.created_at.desc())
-            .limit(1)
-        )
-    ).scalars().first()
-
-
-async def next_asset_tag(db: AsyncSession, prefix: str, pad: int) -> str:
-    """Same algorithm as app/routers/assets.py's _next_asset_tag. Safe to
-    call once per row inside this mapper's loop because each created
-    asset is flushed before the next row is processed, so the next
-    call's own SELECT already sees it."""
-    tags = (await db.execute(select(Asset.asset_tag).where(Asset.asset_tag.like(f"{prefix}%")))).scalars().all()
-    max_n = 0
-    for tag in tags:
-        suffix = tag[len(prefix):]
-        if suffix.isdigit():
-            max_n = max(max_n, int(suffix))
-    return f"{prefix}{max_n + 1:0{pad}d}"
 
 
 def months_between(start: date, end: date) -> int:
@@ -171,7 +136,9 @@ async def import_assets(db: AsyncSession, source, batch: V1ImportBatch, store: S
         await db.flush()
 
         if label_type == StatusType.deployed:
-            v2_user_id = await v2_user_id_for_v1_user(db, row["assigned_user_id"]) if row["assigned_user_id"] else None
+            v2_user_id = (
+                await v2_entity_id_for_v1_row(db, "users", row["assigned_user_id"]) if row["assigned_user_id"] else None
+            )
             if v2_user_id is None:
                 detail_notes.append(
                     "v1 status=assigned but assigned_user_id has no imported v2 user -- "

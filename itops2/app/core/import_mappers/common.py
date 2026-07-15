@@ -14,7 +14,7 @@ mapper's own get-or-create logic follows.
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.models import Department, ImportRowOutcome, Location, V1ImportBatch, V1ImportRow
+from app.core.models import Asset, Department, ImportRowOutcome, Location, V1ImportBatch, V1ImportRow
 
 
 async def record_row(
@@ -91,3 +91,41 @@ async def resolve_or_plan_location(db: AsyncSession, cache: dict, name: str, dry
     await db.flush()
     cache[key] = loc.id
     return loc.id, True
+
+
+async def v2_entity_id_for_v1_row(db: AsyncSession, v1_table: str, v1_id: int) -> int | None:
+    """Looks up which v2 entity a v1 (table, id) pair was imported to, via
+    the generic V1ImportRow trail -- the traceability mechanism doubling
+    as a cross-mapper join, so e.g. equipment's lending_records (needing
+    the v2 asset for a v1 equipment_id) or it_assets (needing the v2 user
+    for a v1 assigned_user_id) never need their own copy of "have I seen
+    this v1 row before"."""
+    return (
+        await db.execute(
+            select(V1ImportRow.v2_entity_id)
+            .where(
+                V1ImportRow.v1_table == v1_table,
+                V1ImportRow.v1_id == v1_id,
+                V1ImportRow.is_dry_run.is_(False),
+                V1ImportRow.v2_entity_id.is_not(None),
+            )
+            .order_by(V1ImportRow.created_at.desc())
+            .limit(1)
+        )
+    ).scalars().first()
+
+
+async def next_asset_tag(db: AsyncSession, prefix: str, pad: int) -> str:
+    """Same algorithm as app/routers/assets.py's _next_asset_tag --
+    duplicated rather than imported, since routers depend on core
+    modules and not the reverse (see CLAUDE.md). Safe to call once per
+    row inside a mapper's loop because each created asset is flushed
+    before the next row is processed, so the next call's own SELECT
+    already sees it."""
+    tags = (await db.execute(select(Asset.asset_tag).where(Asset.asset_tag.like(f"{prefix}%")))).scalars().all()
+    max_n = 0
+    for tag in tags:
+        suffix = tag[len(prefix):]
+        if suffix.isdigit():
+            max_n = max(max_n, int(suffix))
+    return f"{prefix}{max_n + 1:0{pad}d}"
