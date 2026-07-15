@@ -18,6 +18,17 @@ different wire protocols, and guessing wrong produces a hard-to-read
 transport error (WRONG_VERSION_NUMBER against O365:587 was aiosmtplib
 speaking plaintext at a socket the server expected a TLS ClientHello on).
 
+smtp.auth_mode ("basic"/"oauth2") is a second, orthogonal axis: "basic"
+is everything above (aiosmtplib's own convenience send(), username/
+password AUTH or none at all). "oauth2" is Microsoft 365 XOAUTH2
+(client-credentials, see app/core/smtp_oauth2.py) and bypasses
+aiosmtplib.send() entirely — it needs a raw aiosmtplib.SMTP session so
+the SASL exchange can be driven by hand (aiosmtplib has no built-in
+XOAUTH2 mechanism). oauth2 mode always does STARTTLS regardless of
+smtp.security's value: that setting exists for basic mode's
+none/starttls/tls choice, but M365's OAuth2 SMTP submission endpoint
+only ever speaks STARTTLS on 587, so there's nothing to choose there.
+
 Two kinds of recipient for an event:
 - Direct: the specific user a checkout/checkin was performed against,
   notified regardless of subscription (an operational notice about
@@ -37,7 +48,8 @@ from sqlalchemy import select
 
 from app.core.db import SessionLocal
 from app.core.models import NotificationEvent, NotificationSubscription, RolePermission, User
-from app.core.settings_store import load_settings
+from app.core.settings_store import SettingsStore, load_settings
+from app.core.smtp_oauth2 import get_access_token, xoauth2_authenticate
 
 logger = logging.getLogger(__name__)
 
@@ -75,11 +87,16 @@ async def send_email_raising(to_address: str, subject: str, body: str) -> None:
     if not store.get("smtp.host"):
         raise RuntimeError("SMTP host is not configured.")
 
+    from_address = store.get("smtp.from_address") or "itops2@localhost"
     message = EmailMessage()
-    message["From"] = store.get("smtp.from_address") or "itops2@localhost"
+    message["From"] = from_address
     message["To"] = to_address
     message["Subject"] = subject
     message.set_content(body)
+
+    if store.get("smtp.auth_mode") == "oauth2":
+        await _send_via_oauth2(message, from_address, store)
+        return
 
     use_tls, start_tls = SMTP_SECURITY_MODES.get(store.get("smtp.security"), (False, False))
     await aiosmtplib.send(
@@ -91,6 +108,41 @@ async def send_email_raising(to_address: str, subject: str, body: str) -> None:
         use_tls=use_tls,
         start_tls=start_tls,
     )
+
+
+async def _send_via_oauth2(message: EmailMessage, from_address: str, store: SettingsStore) -> None:
+    """The XOAUTH2 send path: aiosmtplib.send()'s convenience wrapper has
+    no way to plug in a custom AUTH mechanism, so this drives a raw
+    aiosmtplib.SMTP session by hand instead — connect plaintext, STARTTLS
+    (always, regardless of smtp.security — see module docstring),
+    re-EHLO to refresh the post-TLS capability list, authenticate via
+    the manual SASL exchange in smtp_oauth2.py, then send. The
+    connection is always closed via quit() in a finally, even when
+    authentication itself fails, so a bad token/secret doesn't leak a
+    half-open socket."""
+    tenant_id = store.get("smtp.oauth2_tenant_id")
+    client_id = store.get("smtp.oauth2_client_id")
+    client_secret = store.get("smtp.oauth2_client_secret")
+    if not (tenant_id and client_id and client_secret):
+        raise RuntimeError("OAuth2 tenant ID, client ID, and client secret must all be configured.")
+
+    token = await get_access_token(tenant_id, client_id, client_secret)
+
+    smtp = aiosmtplib.SMTP(
+        hostname=store.get("smtp.host"), port=store.get_int("smtp.port"),
+        use_tls=False, start_tls=False,
+    )
+    await smtp.connect()
+    try:
+        await smtp.starttls()
+        await smtp.ehlo()
+        await xoauth2_authenticate(smtp, from_address, token)
+        await smtp.send_message(message)
+    finally:
+        try:
+            await smtp.quit()
+        except Exception:
+            pass
 
 
 async def send_email(to_address: str, subject: str, body: str) -> None:
