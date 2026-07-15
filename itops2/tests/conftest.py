@@ -117,3 +117,33 @@ async def admin_client(client: AsyncClient, settings) -> AsyncClient:
     )
     assert resp.status_code == 302
     return client
+
+
+class FakeV1Source:
+    """Test double for app.core.v1_source.V1Source, used by every Phase 9
+    module-mapper test -- canned rows per v1 table, matched by substring
+    against the query text (each mapper queries exactly one v1 table per
+    fetch() call, so "FROM users" / "FROM it_assets" / etc. is enough to
+    disambiguate). Keeps mapper tests independent of a real asyncpg
+    connection -- that plumbing is covered on its own in test_v1_source.py."""
+
+    def __init__(self, tables: dict[str, list[dict]]):
+        self._tables = tables
+
+    async def fetch(self, sql, *params):
+        for marker, rows in self._tables.items():
+            if marker in sql:
+                return rows
+        raise AssertionError(f"FakeV1Source: no fixture rows registered for query: {sql}")
+
+
+async def make_import_batch(db, dry_run=False):
+    from sqlalchemy import select as _select
+
+    from app.core.models import User, V1ImportBatch
+
+    admin_id = (await db.execute(_select(User.id).where(User.is_breakglass.is_(True)))).scalar_one()
+    batch = V1ImportBatch(started_by=admin_id, dry_run=dry_run)
+    db.add(batch)
+    await db.flush()
+    return batch
