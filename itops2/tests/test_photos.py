@@ -1,8 +1,14 @@
-"""Two-level asset photos (post-Phase-8 refinement): thumbnail
-generation at upload time (not on every list render), the model-level
-photo (dedicated upload/remove routes, replace-not-accumulate), the
-per-asset override (reuses the existing attachment upload -- no new
-route), and the effective-photo fallback (asset's own > model's).
+"""Two-level asset photos (post-Phase-8 refinement, with a follow-up UI
+fix once the wizard's own dedicated upload/remove widget shipped):
+thumbnail generation at upload time (not on every list render), the
+model-level photo (dedicated upload/remove routes, replace-not-
+accumulate), the per-asset override (a dedicated upload/remove widget
+that's non-destructive -- unlike the model's, it does NOT delete older
+image attachments, since assets already have a full attachments list
+UI where those stay recoverable; the generic attachment upload route
+still also counts any image toward "the photo", most-recent-wins, for
+backward compatibility), and the effective-photo fallback (asset's own
+> model's).
 """
 
 import io
@@ -232,3 +238,110 @@ async def test_asset_photo_routes_404_with_no_photo_anywhere(admin_client, db):
     asset = await _make_asset(db, model)
     assert (await admin_client.get(f"/assets/{asset.id}/photo/thumbnail")).status_code == 404
     assert (await admin_client.get(f"/assets/{asset.id}/photo/full")).status_code == 404
+
+
+# ---- asset's own photo: dedicated upload/remove widget ----
+# (the actual bug fix: uploading a photo previously had no discoverable,
+# visually distinct affordance on the asset detail page -- it silently
+# rode the generic attachment upload form. These routes give it the
+# same kind of dedicated widget the model photo already had.)
+
+async def test_asset_photo_upload_via_dedicated_route(admin_client, db):
+    model = await _make_model(db)
+    asset = await _make_asset(db, model)
+    resp = await admin_client.post(
+        f"/assets/{asset.id}/photo",
+        files={"file": ("own.png", _png_bytes((9, 9, 9)), "image/png")},
+    )
+    assert resp.status_code == 204
+
+    att = (await db.execute(select(Attachment).where(Attachment.entity_type == "asset"))).scalar_one()
+    assert att.original_filename == "own.png"
+    thumb = thumbnail_path("asset", str(asset.id), att.stored_filename)
+    assert thumb.exists()
+
+
+async def test_asset_photo_upload_rejects_non_image(admin_client, db):
+    model = await _make_model(db)
+    asset = await _make_asset(db, model)
+    resp = await admin_client.post(
+        f"/assets/{asset.id}/photo",
+        files={"file": ("doc.pdf", b"not an image", "application/pdf")},
+    )
+    assert "text-bg-danger" in resp.text
+    assert "image" in resp.text.lower()
+    assert (await db.execute(select(Attachment))).first() is None
+
+
+async def test_asset_photo_upload_does_not_delete_older_photos(admin_client, db):
+    """Deliberately different from the model's replace-only behavior --
+    assets have a full attachments list UI, so older photos stay
+    recoverable rather than being deleted on replace."""
+    model = await _make_model(db)
+    asset = await _make_asset(db, model)
+    first = await admin_client.post(
+        f"/assets/{asset.id}/photo", files={"file": ("one.png", _png_bytes((1, 1, 1)), "image/png")},
+    )
+    assert first.status_code == 204
+    second = await admin_client.post(
+        f"/assets/{asset.id}/photo", files={"file": ("two.png", _png_bytes((2, 2, 2)), "image/png")},
+    )
+    assert second.status_code == 204
+
+    rows = (await db.execute(select(Attachment).where(Attachment.entity_type == "asset"))).scalars().all()
+    assert len(rows) == 2  # both kept, unlike the model's photo route
+
+    resp = await admin_client.get(f"/assets/{asset.id}/photo/full")
+    with Image.open(io.BytesIO(resp.content)) as img:
+        assert img.getpixel((0, 0)) == (2, 2, 2)  # most recent still wins for display
+
+
+async def test_asset_photo_delete_removes_only_the_own_photo(admin_client, db):
+    model = await _make_model(db)
+    asset = await _make_asset(db, model)
+    await admin_client.post(
+        f"/catalog/models/{model.id}/photo", files={"file": ("model.png", _png_bytes((3, 3, 3)), "image/png")},
+    )
+    await admin_client.post(
+        f"/assets/{asset.id}/photo", files={"file": ("own.png", _png_bytes((4, 4, 4)), "image/png")},
+    )
+    att = (await db.execute(select(Attachment).where(Attachment.entity_type == "asset"))).scalar_one()
+    path = Path(get_settings().attachments_dir) / "asset" / str(asset.id) / att.stored_filename
+    thumb = thumbnail_path("asset", str(asset.id), att.stored_filename)
+    assert path.exists() and thumb.exists()
+
+    resp = await admin_client.post(f"/assets/{asset.id}/photo/delete")
+    assert resp.status_code == 204
+    assert (await db.execute(select(Attachment).where(Attachment.entity_type == "asset"))).first() is None
+    assert not path.exists()
+    assert not thumb.exists()
+
+    # falls back to the model's photo, which must still exist untouched
+    model_att = (await db.execute(select(Attachment).where(Attachment.entity_type == "model"))).scalar_one()
+    assert model_att is not None
+    fallback = await admin_client.get(f"/assets/{asset.id}/photo/full")
+    assert fallback.status_code == 200
+
+
+async def test_asset_photo_delete_with_no_own_photo_is_a_friendly_noop(admin_client, db):
+    model = await _make_model(db)
+    asset = await _make_asset(db, model)
+    resp = await admin_client.post(f"/assets/{asset.id}/photo/delete")
+    assert "text-bg-danger" in resp.text
+    assert "no photo" in resp.text.lower()
+
+
+async def test_asset_photo_upload_blocked_when_archived(admin_client, db):
+    model = await _make_model(db)
+    archived_status = StatusLabel(name="Archived-Photo-Test", status_type=StatusType.archived)
+    db.add(archived_status)
+    await db.flush()
+    asset = Asset(asset_tag="IT-PH-ARCH", model_id=model.id, status_label_id=archived_status.id)
+    db.add(asset)
+    await db.commit()
+
+    resp = await admin_client.post(
+        f"/assets/{asset.id}/photo", files={"file": ("x.png", _png_bytes(), "image/png")},
+    )
+    assert "text-bg-danger" in resp.text
+    assert "archived" in resp.text.lower()

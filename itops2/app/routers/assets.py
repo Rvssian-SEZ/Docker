@@ -82,7 +82,7 @@ from app.core.models import (
     User,
 )
 from app.core.notifications import notify_checkin, notify_checkout
-from app.core.photos import effective_asset_photo
+from app.core.photos import asset_photo_attachment, effective_asset_photo
 from app.core.scoping import company_scope
 from app.core.settings_store import load_settings
 from app.templating import templates
@@ -1099,9 +1099,79 @@ async def asset_attachment_delete(
 
 
 # ---- photo (Phase 8 refinement: two-level asset photos) ----
-# No new upload route here -- any image uploaded through the attachment
-# upload route above already becomes eligible as this asset's photo (the
-# most recent image-type attachment wins). See app/core/photos.py.
+# Any image uploaded through the generic attachment upload route above
+# was already eligible to become this asset's photo (most recent image-
+# type attachment wins, see app/core/photos.py) -- but that gave the
+# feature no discoverable, visually distinct affordance: nothing on the
+# detail page told an admin that uploading an image there did anything
+# special. These two routes give the asset's own photo the same kind of
+# dedicated, explicit widget the model photo already has (see
+# catalog.py's model_photo_upload/delete), while deliberately NOT
+# adopting that route's "delete the previous one" behavior -- assets
+# already have a full attachments list UI where older photos stay
+# visible/recoverable/deletable, unlike models, so per-asset photos stay
+# non-destructive: uploading a new one just outranks the old one for
+# display purposes (most recent wins), it doesn't erase it.
+
+@router.post("/{asset_id}/photo", response_class=HTMLResponse)
+async def asset_photo_upload(
+    request: Request,
+    asset_id: int,
+    file: UploadFile | None = File(None),
+    user: CurrentUser = Depends(require("assets.edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    asset = await db.get(Asset, asset_id, options=[selectinload(Asset.status_label)])
+    if asset is None:
+        return _toast(request, False, "Asset not found.")
+    if asset.status_label.status_type == StatusType.archived:
+        return _toast(request, False, "Archived — restore it before changing its photo.")
+    if file is None or not file.filename:
+        return _toast(request, False, "No file selected.")
+    if not (file.content_type or "").startswith("image/"):
+        return _toast(request, False, "Only image files can be used as a photo.")
+
+    stored_name, size, err = await save_upload(file, "asset", str(asset_id))
+    if err:
+        return _toast(request, False, err)
+
+    db.add(
+        Attachment(
+            entity_type="asset", entity_id=str(asset_id), original_filename=file.filename,
+            stored_filename=stored_name, content_type=file.content_type, size_bytes=size,
+            uploaded_by=user.id,
+        )
+    )
+    db.add(AuditLog(user_id=user.id, action="photo_update", entity_type="asset", entity_id=str(asset_id), detail=file.filename))
+    await db.commit()
+    return _refresh()
+
+
+@router.post("/{asset_id}/photo/delete", response_class=HTMLResponse)
+async def asset_photo_delete(
+    request: Request,
+    asset_id: int,
+    user: CurrentUser = Depends(require("assets.edit")),
+    db: AsyncSession = Depends(get_db),
+):
+    asset = await db.get(Asset, asset_id, options=[selectinload(Asset.status_label)])
+    if asset is None:
+        return _toast(request, False, "Asset not found.")
+    if asset.status_label.status_type == StatusType.archived:
+        return _toast(request, False, "Archived — restore it before changing its photo.")
+    photo = await asset_photo_attachment(db, asset_id)
+    if photo is None:
+        return _toast(request, False, "This asset has no photo of its own to remove.")
+
+    path = attachment_dir("asset", str(asset_id)) / photo.stored_filename
+    thumb_path = thumbnail_path("asset", str(asset_id), photo.stored_filename)
+    await db.delete(photo)
+    db.add(AuditLog(user_id=user.id, action="photo_delete", entity_type="asset", entity_id=str(asset_id), detail=photo.original_filename))
+    await db.commit()
+    path.unlink(missing_ok=True)
+    thumb_path.unlink(missing_ok=True)
+    return _refresh()
+
 
 @router.get("/{asset_id}/photo/thumbnail")
 async def asset_photo_thumbnail(

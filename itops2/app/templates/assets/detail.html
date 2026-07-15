@@ -18,8 +18,18 @@
 
 <div class="row mb-4 col-lg-8">
   <div class="col-md-3">
-    <img src="/assets/{{ asset.id }}/photo/full" style="max-width:100%; max-height:160px;"
-         class="rounded" onerror="this.style.display='none'">
+    <span class="photo-thumb position-relative d-block rounded bg-body-secondary" style="width:100%; max-width:160px; aspect-ratio:1;">
+      <i class="bi bi-laptop text-secondary position-absolute top-50 start-50 translate-middle fs-2"></i>
+      <img src="/assets/{{ asset.id }}/photo/full" loading="lazy"
+           class="position-absolute top-0 start-0 w-100 h-100 rounded" style="object-fit:cover;"
+           onerror="this.remove()">
+    </span>
+    <div class="form-text small mb-1">Own photo, else the model's (Catalog → Models).</div>
+    {% if user.can('assets.edit') and not is_archived %}
+    <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#assetPhotoModal">
+      <i class="bi bi-camera me-1"></i>Photo
+    </button>
+    {% endif %}
   </div>
   <div class="col-md-3"><div class="text-secondary small">Model</div>{{ asset.model.name }} ({{ asset.model.manufacturer.name }})</div>
   <div class="col-md-3"><div class="text-secondary small">Effective depreciation</div>
@@ -27,8 +37,38 @@
   <div class="col-md-3"><div class="text-secondary small">Effective EOL</div>
     {{ effective_eol_months ~ ' months' if effective_eol_months is not none else '—' }}</div>
 </div>
-<p class="text-secondary small col-lg-8">Photo shown is this asset's own (if uploaded as an attachment below) or
-falls back to its model's photo (Catalog → Models).</p>
+
+{% if user.can('assets.edit') and not is_archived %}
+<div class="modal fade" id="assetPhotoModal" tabindex="-1">
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">Photo — {{ asset.asset_tag }}</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body text-center">
+      <img id="assetPhotoPreview" src="" style="max-width:100%; max-height:300px;" class="mb-3 rounded"
+           onerror="this.style.display='none'">
+      <form hx-post="/assets/{{ asset.id }}/photo" hx-target="#toast-area" hx-swap="innerHTML" hx-encoding="multipart/form-data">
+        <input type="file" name="file" accept="image/*" class="form-control mb-2" required>
+        <button class="btn btn-primary btn-sm">Upload</button>
+      </form>
+      <button type="button" class="btn btn-outline-danger btn-sm mt-2"
+              hx-post="/assets/{{ asset.id }}/photo/delete" hx-target="#toast-area" hx-swap="innerHTML"
+              hx-confirm="Remove this asset's own photo? Falls back to the model's photo, if any.">
+        Remove photo
+      </button>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+    </div>
+  </div></div>
+</div>
+<script>
+document.getElementById('assetPhotoModal')?.addEventListener('show.bs.modal', () => {
+  const img = document.getElementById('assetPhotoPreview');
+  img.style.display = '';
+  img.src = `/assets/{{ asset.id }}/photo/full?_=${Date.now()}`;
+});
+</script>
+{% endif %}
 
 {% if is_printer and not is_archived %}
 <div class="card mb-4 col-lg-8"><div class="card-body">
