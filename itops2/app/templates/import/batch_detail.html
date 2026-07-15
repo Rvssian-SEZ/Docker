@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Import batch #{{ batch.id }} — {{ app_name }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0">
+    Import batch #{{ batch.id }}
+    {% if batch.dry_run %}<span class="badge text-bg-secondary">Dry run</span>{% endif %}
+  </h1>
+  <a href="/import" class="btn btn-outline-secondary btn-sm">Back to wizard</a>
+</div>
+
+<div class="mb-4 small text-secondary">
+  Started {{ batch.started_at.strftime('%d/%m/%Y %H:%M') }} by {{ batch.starter.display_name or batch.starter.username }}
+  {% if batch.finished_at %} — finished {{ batch.finished_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
+  — status:
+  <span class="badge text-bg-{{ 'success' if batch.status.value == 'completed' else ('danger' if batch.status.value == 'failed' else 'secondary') }}">
+    {{ batch.status.value }}
+  </span>
+</div>
+
+<div class="d-flex gap-2 mb-4 flex-wrap">
+  <a href="/import/batches/{{ batch.id }}" class="btn btn-sm {{ 'btn-secondary' if not outcome_filter else 'btn-outline-secondary' }}">
+    All ({{ counts.values() | sum }})
+  </a>
+  {% for oc in ['created', 'skipped', 'flagged', 'failed'] %}
+  <a href="/import/batches/{{ batch.id }}?outcome={{ oc }}" class="btn btn-sm {{ 'btn-secondary' if outcome_filter == oc else 'btn-outline-secondary' }}">
+    {{ oc | capitalize }} ({{ counts.get(oc, 0) }})
+  </a>
+  {% endfor %}
+</div>
+
+<div class="table-responsive">
+<table class="table table-sm">
+  <thead><tr><th>v1 table</th><th>v1 id</th><th>Outcome</th><th>v2 entity</th><th>Detail</th></tr></thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.v1_table }}</td>
+      <td>{{ r.v1_id }}</td>
+      <td>
+        <span class="badge text-bg-{{ 'success' if r.outcome.value == 'created' else ('warning' if r.outcome.value == 'flagged' else ('danger' if r.outcome.value == 'failed' else 'secondary')) }}">
+          {{ r.outcome.value }}
+        </span>
+      </td>
+      <td>{{ r.v2_entity_type }}{% if r.v2_entity_id %} #{{ r.v2_entity_id }}{% endif %}</td>
+      <td class="small">{{ r.detail or '' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="text-secondary">No rows.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

@@ -23,6 +23,7 @@ from app.routers import auth as auth_router
 from app.routers import catalog as catalog_router
 from app.routers import contracts as contracts_router
 from app.routers import dashboard as dashboard_router
+from app.routers import import_wizard as import_wizard_router
 from app.routers import inventory as inventory_router
 from app.routers import maintenance as maintenance_router
 from app.routers import permissions as permissions_router
@@ -87,6 +88,7 @@ app.include_router(maintenance_router.router)
 app.include_router(printers_router.router)
 app.include_router(contracts_router.router)
 app.include_router(inventory_router.router)
+app.include_router(import_wizard_router.router)
 
 
 @app.exception_handler(RequiresLoginException)

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}v1 Import — {{ app_name }}{% endblock %}
+{% block content %}
+<h1 class="h3 mb-4">v1 Import Wizard</h1>
+
+{% if not v1_database_configured %}
+<div class="alert alert-warning">
+  No v1 database connection configured. <a href="/settings/import">Set it up in Settings &rarr; Import</a> first.
+</div>
+{% endif %}
+
+<div class="card mb-4 col-lg-8">
+  <div class="card-body">
+    <h2 class="h5 mb-3">Run import</h2>
+    <form hx-post="/import" hx-target="#toast-area" hx-swap="innerHTML">
+      <div class="mb-3">
+        {% for key, label, fn in modules %}
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="module_{{ key }}" value="true" id="mod-{{ key }}" checked>
+          <label class="form-check-label" for="mod-{{ key }}">{{ label }}</label>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="mb-3">
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="dry_run" value="true" id="dry-run-yes" checked>
+          <label class="form-check-label" for="dry-run-yes">Dry run — preview only, writes nothing</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input class="form-check-input" type="radio" name="dry_run" value="false" id="dry-run-no">
+          <label class="form-check-label" for="dry-run-no">Run for real</label>
+        </div>
+      </div>
+      <button class="btn btn-primary" {% if not v1_database_configured %}disabled{% endif %}>
+        <span class="htmx-indicator spinner-border spinner-border-sm me-1"></span>Start
+      </button>
+    </form>
+  </div>
+</div>
+
+<h2 class="h5 mb-3">Recent runs</h2>
+<div class="table-responsive">
+<table class="table table-sm">
+  <thead>
+    <tr>
+      <th>Started</th><th>By</th><th>Mode</th><th>Status</th>
+      <th>Created</th><th>Skipped</th><th>Flagged</th><th>Failed</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for b in batches %}
+    <tr>
+      <td>{{ b.started_at.strftime('%d/%m/%Y %H:%M') }}</td>
+      <td>{{ b.starter.display_name or b.starter.username }}</td>
+      <td>{{ 'Dry run' if b.dry_run else 'Real' }}</td>
+      <td>
+        <span class="badge text-bg-{{ 'success' if b.status.value == 'completed' else ('danger' if b.status.value == 'failed' else 'secondary') }}">
+          {{ b.status.value }}
+        </span>
+      </td>
+      <td>{{ counts_by_batch.get(b.id, {}).get('created', 0) }}</td>
+      <td>{{ counts_by_batch.get(b.id, {}).get('skipped', 0) }}</td>
+      <td>{{ counts_by_batch.get(b.id, {}).get('flagged', 0) }}</td>
+      <td>{{ counts_by_batch.get(b.id, {}).get('failed', 0) }}</td>
+      <td><a href="/import/batches/{{ b.id }}" class="btn btn-sm btn-outline-secondary">View</a></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="9" class="text-secondary">No import runs yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

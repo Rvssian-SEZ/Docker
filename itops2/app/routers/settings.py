@@ -298,6 +298,75 @@ async def settings_notifications_test_send(
     return _toast(request, True, f"Test email sent to {to}.")
 
 
+# Keys editable on the Import tab (Phase 9 v1 import wizard config).
+IMPORT_KEYS = [
+    "import.v1_database_url",
+    "import.currency_symbol_map",
+    "import.v1_asset_uploads_path",
+    "import.v1_printer_uploads_path",
+]
+
+IMPORT_LABELS = {
+    "import.v1_database_url": (
+        "v1 database connection string",
+        "postgresql://user:pass@host:port/db — connects strictly read-only",
+    ),
+    "import.currency_symbol_map": (
+        "Currency symbol map (JSON)",
+        'e.g. {"$": "USD", "£": "GBP", "€": "EUR", "Rs": "SCR"} — "Rs" only means SCR for THIS deployment',
+    ),
+    "import.v1_asset_uploads_path": (
+        "v1 asset uploads path (in-container)",
+        "Path where v1's asset-photo upload volume is read-only bind-mounted — see the setup guide's import section",
+    ),
+    "import.v1_printer_uploads_path": (
+        "v1 printer uploads path (in-container)",
+        "Path where v1's printer-attachment upload volume is read-only bind-mounted",
+    ),
+}
+
+
+@router.get("/import", response_class=HTMLResponse)
+async def settings_import(
+    request: Request,
+    user: CurrentUser = Depends(require("settings.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    store = await load_settings(db)
+    fields = [
+        {
+            "key": k,
+            "label": IMPORT_LABELS[k][0],
+            "help": IMPORT_LABELS[k][1],
+            "type": DEFAULTS[k][1],
+            "value": store.get(k),
+        }
+        for k in IMPORT_KEYS
+    ]
+    return templates.TemplateResponse(
+        request,
+        "settings/import.html",
+        {"user": user, "fields": fields, "active_tab": "import"},
+    )
+
+
+@router.post("/import", response_class=HTMLResponse)
+async def settings_import_save(
+    request: Request,
+    user: CurrentUser = Depends(require("settings.manage")),
+    db: AsyncSession = Depends(get_db),
+):
+    form = await request.form()
+    for key in IMPORT_KEYS:
+        value = str(form.get(key, "")).strip()
+        await save_setting(db, key, value)
+    db.add(AuditLog(user_id=user.id, action="update", entity_type="settings", detail="import"))
+    await db.commit()
+    return templates.TemplateResponse(
+        request, "partials/toast.html", {"ok": True, "message": "Import settings saved."}
+    )
+
+
 @router.get("/about", response_class=HTMLResponse)
 async def settings_about(
     request: Request,

@@ -35,6 +35,9 @@
       {% if user and user.can('users.view') %}
       <li><a href="/users" class="nav-link"><i class="bi bi-people me-2"></i>Users</a></li>
       {% endif %}
+      {% if user and user.can('import.run') %}
+      <li><a href="/import" class="nav-link"><i class="bi bi-cloud-arrow-down me-2"></i>v1 Import</a></li>
+      {% endif %}
       {% if user and user.can('settings.manage') %}
       <li><a href="/settings" class="nav-link"><i class="bi bi-gear me-2"></i>Settings</a></li>
       {% endif %}
