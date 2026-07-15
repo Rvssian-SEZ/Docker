@@ -14,6 +14,7 @@ requirement exists to avoid), stored alongside the original under
 .../thumbs/{stem}.jpg.
 """
 
+import shutil
 import uuid
 from pathlib import Path
 
@@ -84,6 +85,34 @@ async def save_upload(upload: UploadFile, entity_type: str, entity_id: str) -> t
             # caught here). None of PIL's failure modes should ever turn
             # into a failed attachment upload -- thumbnailing is strictly
             # best-effort.
+            pass
+
+    return stored_name, size, None
+
+
+def copy_from_disk(source: Path, entity_type: str, entity_id: str, content_type: str | None = None) -> tuple[str, int, str | None]:
+    """Same storage convention as save_upload() (UUID-based stored name,
+    thumbnail-on-image, identical disk layout) but for a file that
+    already exists on disk rather than an HTTP UploadFile -- used by the
+    Phase 9 import wizard to copy attachments out of v1's read-only
+    bind-mounted upload volume. Returns (stored_filename, size_bytes,
+    error)."""
+    if not source.is_file():
+        return "", 0, "source file not found"
+    size = source.stat().st_size
+    if size > MAX_ATTACHMENT_SIZE:
+        return "", 0, f"File too large (max {MAX_ATTACHMENT_SIZE // (1024 * 1024)} MB)."
+    stored_name = f"{uuid.uuid4()}{source.suffix}"
+    directory = attachment_dir(entity_type, entity_id)
+    directory.mkdir(parents=True, exist_ok=True)
+    dest = directory / stored_name
+    shutil.copyfile(source, dest)
+
+    if (content_type or "").startswith("image/"):
+        try:
+            _make_thumbnail(dest, thumbnail_path(entity_type, entity_id, stored_name))
+        except Exception:
+            # Same deliberately broad best-effort rule as save_upload().
             pass
 
     return stored_name, size, None
