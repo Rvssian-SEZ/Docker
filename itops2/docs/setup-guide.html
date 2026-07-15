@@ -352,6 +352,106 @@ there — a role change immediately adds or removes the relevant checkboxes.</p>
 configuration needed) and batched into a single digest email per event type, so
 subscribers get one email listing everything due rather than one per item.</p>
 
+<h3>14.2 Authentication: Basic vs OAuth2 (Microsoft 365)</h3>
+<p><strong>Authentication</strong> on the Notifications tab picks between two
+independent modes:</p>
+<table>
+<tr><th>Mode</th><th>When to use it</th></tr>
+<tr><td>Basic</td><td>Username/password AUTH, or no authentication at all when
+Username is left blank (an internal unauthenticated relay). The default —
+every install that predates OAuth2 support keeps working unchanged.</td></tr>
+<tr><td>OAuth2 (Microsoft 365)</td><td>Modern auth against Exchange Online —
+required once a tenant disables legacy username/password SMTP AUTH, which is
+Microsoft's current default for new tenants. Uses the client-credentials
+flow (no user ever signs in interactively) against an app registered in
+Entra ID.</td></tr>
+</table>
+<div class="callout warn">
+OAuth2 mode always connects with STARTTLS on port 587 — Security/port fields
+are a Basic-mode-only choice and are ignored in OAuth2 mode, since Exchange
+Online's OAuth2 SMTP submission endpoint doesn't offer an alternative.
+</div>
+<p class="muted">Feature status: built and unit-tested against a mocked token
+endpoint and SMTP session; the token-acquisition HTTP call has additionally
+been live-verified against the real <code>login.microsoftonline.com</code>
+endpoint. The XOAUTH2 SMTP exchange itself is <strong>awaiting verification
+against a real tenant + mailbox</strong> — the same honestly-flagged status
+this guide gives LDAP (§6.2). Report back what a real send attempt does if
+you're the first to configure this against production M365.</p>
+
+<h4>Entra app registration</h4>
+<p><span class="step">1</span>In the
+<a href="https://entra.microsoft.com">Entra admin center</a>: <strong>App
+registrations → New registration</strong>. Give it a name (e.g. "ITOps v2
+SMTP"), leave it single-tenant, and skip the redirect URI — client-credentials
+flow never redirects a browser anywhere.</p>
+<p><span class="step">2</span>On the app's <strong>Overview</strong> page, note
+the <strong>Application (client) ID</strong> and <strong>Directory (tenant)
+ID</strong> — these go into Settings → Notifications → Client ID / Tenant ID.</p>
+<p><span class="step">3</span><strong>Certificates &amp; secrets → New client
+secret</strong>. Copy the secret's <em>value</em> immediately — Entra shows it
+exactly once and never again. This goes into Settings → Notifications →
+Client secret.</p>
+<p><span class="step">4</span><strong>API permissions → Add a permission → APIs
+my organization uses</strong> → search "Office 365 Exchange Online" →
+<strong>Application permissions</strong> → check <code>SMTP.SendAsApp</code> →
+Add permissions.</p>
+<div class="callout danger">
+<strong>Grant admin consent.</strong> Adding the permission alone does nothing —
+click <strong>Grant admin consent for &lt;tenant&gt;</strong> on the same page
+(requires a Global or Privileged Role Administrator). Until this is done the
+app can request a token successfully but every send will be rejected.
+</div>
+
+<h4>Exchange service principal + application access policy</h4>
+<p>Two more steps happen in Exchange Online PowerShell, not the Entra portal —
+<code>SMTP.SendAsApp</code> alone would let the app send as
+<strong>any mailbox in the tenant</strong> if left unscoped, so an application
+access policy restricting it to one mailbox (or a mail-enabled security group)
+is not optional hardening, it's the only thing standing between this
+integration and every mailbox in the org.</p>
+<pre># Install once if needed: Install-Module -Name ExchangeOnlineManagement
+Connect-ExchangeOnline
+
+# Links the Entra app registration to an Exchange service principal.
+# -ObjectId is the ENTERPRISE APPLICATION's Object ID (Entra ID -> Enterprise
+# applications -> search the app name -> Overview -> Object ID) -- NOT the
+# Application (client) ID from step 2 above. Easy to mix up; they're both GUIDs.
+New-ServicePrincipal `
+  -AppId "&lt;Application (client) ID&gt;" `
+  -ObjectId "&lt;Enterprise Application Object ID&gt;" `
+  -DisplayName "ITOps v2 SMTP"
+
+# Restricts SendAsApp to exactly the mailbox ITOps v2 sends from -- without
+# this, the app can send as every mailbox in the tenant.
+New-ApplicationAccessPolicy `
+  -AppId "&lt;Application (client) ID&gt;" `
+  -PolicyScopeGroupId "itops2@yourtenant.com" `
+  -AccessRight RestrictAccess `
+  -Description "Restrict ITOps v2 to its own mailbox"
+
+# Confirms the policy actually restricts as expected (should report access
+# ALLOWED for itops2@yourtenant.com and DENIED for any other mailbox).
+Test-ApplicationAccessPolicy -AppId "&lt;Application (client) ID&gt;" -Identity "itops2@yourtenant.com"</pre>
+
+<h4>Tenant-level SMTP AUTH — the protocol gate</h4>
+<div class="callout danger">
+OAuth2 credentials authenticate the connection; they don't by themselves
+re-enable the SMTP AUTH <em>protocol</em>. Microsoft disables SMTP AUTH
+tenant-wide by default for new tenants — with it off, the connection is
+refused before XOAUTH2 is ever evaluated, producing a generic "authentication
+unsuccessful" that has nothing to do with the app registration being wrong.
+</div>
+<pre># Check + enable SMTP AUTH for just the sending mailbox (narrower, preferred):
+Get-CASMailbox -Identity itops2@yourtenant.com | Select-Object SmtpClientAuthenticationDisabled
+Set-CASMailbox -Identity itops2@yourtenant.com -SmtpClientAuthenticationDisabled $false
+
+# Or tenant-wide, if that's already your organization's posture:
+Set-TransportConfig -SmtpClientAuthenticationDisabled $false</pre>
+<p class="muted">Changes here can take up to an hour to propagate on
+Microsoft's side — a send failing immediately after making this change isn't
+necessarily a sign anything is misconfigured.</p>
+
 <h2>15. Dashboard</h2>
 <p>The landing page. Each card links straight into the relevant list, pre-filtered:
 asset counts by status, checkouts overdue / due back within 7 days, warranties

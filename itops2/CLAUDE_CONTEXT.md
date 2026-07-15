@@ -612,6 +612,56 @@ search columns, async engine with pooling (already configured in app/core/db.py)
    fix. The pattern itself is now documented as the standing default
    for inline-edit tables, not just a one-off fix, so it doesn't need
    rediscovering a third time.
+   Post-Phase-9 fix: the asset's own photo (the per-asset half of the
+   two-level photo design under item 8's Post-launch feature note) had
+   no discoverable upload/remove UI — it silently rode the generic
+   attachment upload form with only a line of hint text, no marker that
+   an uploaded image became "the photo." Gave it a dedicated widget
+   (camera-icon button + modal) mirroring the model photo's own,
+   deliberately NOT copying that route's replace-deletes-previous
+   behavior — assets already have a full attachments list where older
+   photos stay recoverable, unlike models, so the new
+   POST /assets/{id}/photo(/delete) routes keep the existing non-
+   destructive "most recent image wins" storage intact and just add the
+   missing explicit affordance on top of it.
+   Post-Phase-9 feature: OAuth2 (XOAUTH2) SMTP as a third smtp.auth_mode
+   alongside the existing basic/unauthenticated path — Microsoft 365
+   tenants increasingly disable legacy SMTP AUTH by default, requiring
+   modern auth even for a simple notification relay. smtp.auth_mode
+   ("basic"/"oauth2", default "basic") needed no bootstrap migration —
+   basic mode's send behavior is exactly what every existing install
+   already did, whether smtp.username was set or blank, so a fresh
+   settings key defaulting to "basic" is already correct with nothing
+   to translate. OAuth2 uses the client-credentials flow only (no user
+   interaction, no refresh token, no token ever persisted — cached in
+   memory only, keyed on the credentials themselves so an admin editing
+   Settings invalidates the cache for free) against
+   login.microsoftonline.com, scope https://outlook.office365.com/.default.
+   aiosmtplib has no built-in XOAUTH2 mechanism, so the SASL exchange
+   (app/core/smtp_oauth2.py) is done by hand via aiosmtplib.SMTP's own
+   execute_command() — the same primitive its auth_plain()/auth_login()
+   are built on — handling all three response shapes a real exchange can
+   produce (235 success, 334-continuation-then-close-out, direct 535),
+   and decoding the base64+JSON error payload the server returns on
+   failure so Microsoft's actual error reaches the test-send toast
+   instead of a bare SMTP response code. OAuth2 mode always STARTTLS on
+   587 regardless of smtp.security's value (that setting is basic-mode-
+   only; Exchange Online's OAuth2 SMTP endpoint has no alternative).
+   **Feature status: built, unit-tested (mocked token endpoint + SMTP
+   session), and the token-acquisition HTTP call live-verified against
+   the real login.microsoftonline.com endpoint (a real AADSTS900021
+   error came back correctly decoded through to the toast). The XOAUTH2
+   SMTP exchange itself is awaiting verification against a real tenant +
+   mailbox** — same honestly-flagged status as LDAP (item 3 above), not
+   claimed as fully proven when it isn't. Setup guide §14.2 walks a
+   client's M365 admin through the full chain this needs: Entra app
+   registration, admin consent for the SMTP.SendAsApp application
+   permission, linking the app to an Exchange service principal, an
+   application access policy restricting SendAsApp to one mailbox (the
+   permission alone would grant send-as on every mailbox in the tenant
+   if left unscoped), and the separate tenant-level SMTP AUTH protocol
+   gate Microsoft disables by default for new tenants — valid OAuth2
+   credentials still get rejected if that protocol switch is off.
 10. ⬜ Polish + Setup & Deployment Guide (dark-themed HTML, grows per phase —
     skeleton in docs/setup-guide.html; the v1 import section (§16) is
     already written as part of Phase 9).
