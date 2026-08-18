@@ -206,9 +206,13 @@ async def ad_laps_reveal(
     except AdNotConfigured:
         return templates.TemplateResponse(request, "ad/not_configured.html", {"user": user}, status_code=200)
     try:
-        found = ldap_client.find_user(conn, store.get("ad.base_dn"), sam)
+        # Computer accounts' sAMAccountName always ends in "$" (unlike user
+        # accounts) - the LDAPS lookup needs it even though Semaphore's
+        # Get-LapsADPassword -Identity call (below) accepts the bare name.
+        computer_sam = sam if sam.endswith("$") else f"{sam}$"
+        found = ldap_client.find_user(conn, store.get("ad.base_dn"), computer_sam)
         if found is None:
-            return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"No object found for '{sam}'."})
+            return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"No computer object found for '{sam}'."})
         _check_scope(store, found["dn"], user)
     except ScopeDenied as exc:
         return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": exc.message})
