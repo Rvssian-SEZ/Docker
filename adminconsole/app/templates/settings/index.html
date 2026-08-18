@@ -78,6 +78,26 @@
   </div>
 
   <div class="accordion-item">
+    <h2 class="accordion-header"><button class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#automation">Automation (Semaphore — LAPS retrieval)</button></h2>
+    <div id="automation" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+      <div class="accordion-body">
+        <p class="text-secondary small">Windows LAPS on this domain stores passwords DPAPI-NG-encrypted, which needs a real Windows-side decrypt — Semaphore runs that via its existing Kerberos/WinRM trust to the DCs. Uses a dedicated Semaphore account (task_runner role, scoped to one project), not the shared admin login.</p>
+        <form method="post" action="/settings/automation">
+          <div class="mb-2"><label class="form-label">Semaphore URL</label><input name="semaphore.url" class="form-control" value="{{ store.get('semaphore.url') }}"></div>
+          <div class="mb-2"><label class="form-label">Username</label><input name="semaphore.username" class="form-control" value="{{ store.get('semaphore.username') }}"></div>
+          <div class="mb-2">
+            <label class="form-label">Password {% if store.is_set('semaphore.password') %}<span class="badge text-bg-success">set</span>{% else %}<span class="badge text-bg-secondary">not set</span>{% endif %}</label>
+            <input name="semaphore.password" type="password" class="form-control" placeholder="Leave blank to keep existing">
+          </div>
+          <div class="mb-2"><label class="form-label">Project ID</label><input name="semaphore.project_id" class="form-control" value="{{ store.get('semaphore.project_id') }}"></div>
+          <div class="mb-2"><label class="form-label">LAPS-read Template ID</label><input name="semaphore.laps_template_id" class="form-control" value="{{ store.get('semaphore.laps_template_id') }}"></div>
+          <button class="btn btn-sm btn-outline-light">Save</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="accordion-item">
     <h2 class="accordion-header"><button class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#smtp">SMTP</button></h2>
     <div id="smtp" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
       <div class="accordion-body">

@@ -1,0 +1,76 @@
+"""Triggers the Semaphore playbook that reads a computer's Windows LAPS
+password (SAA/playbooks/admin_read_laps_password.yml in the Semaphore
+repo) — see that file's docstring and app/core/laps_pending.py for why
+this exists instead of a direct WinRM/Kerberos call from this container:
+Semaphore already has proven Kerberos/WinRM trust to the DCs, and adding
+that whole stack here too would duplicate it and need its own broad
+domain credential, working against the least-privilege point of
+provisioning svc-adminconsole in the first place.
+
+This module only triggers the run and polls Semaphore for pass/fail
+status — it never reads the task's stdout for the password (there isn't
+one there; see the playbook). The actual value arrives via the
+/internal/laps-callback route, awaited separately by
+app/core/laps_pending.py.
+
+Semaphore credentials (semaphore.url/username/password) are configured
+in Settings like everything else, using a dedicated Semaphore account
+(adminconsole-svc, task_runner role on that one project — confirmed
+scoped, not admin) rather than the shared Semaphore admin login.
+"""
+
+import asyncio
+import logging
+
+import httpx
+
+from app.core.settings_store import SettingsStore
+
+logger = logging.getLogger(__name__)
+
+
+class SemaphoreError(Exception):
+    """User-presentable Semaphore trigger/poll failure."""
+
+
+async def trigger_laps_read(store: SettingsStore, *, target_computer: str, callback_url: str) -> None:
+    """Fire-and-poll: starts the task and waits for it to leave the
+    running state, raising on error/stop so the caller can surface a
+    clear message. Does NOT return the password — see module docstring.
+    """
+    base_url = store.get("semaphore.url").rstrip("/")
+    username = store.get("semaphore.username")
+    password = store.get_secret("semaphore.password")
+    project_id = store.get_int("semaphore.project_id")
+    template_id = store.get_int("semaphore.laps_template_id")
+    if not (base_url and username and password and project_id and template_id):
+        raise SemaphoreError("Semaphore is not configured (Settings -> Automation).")
+
+    async with httpx.AsyncClient(base_url=base_url, timeout=15) as client:
+        login_resp = await client.post("/api/auth/login", json={"auth": username, "password": password})
+        if login_resp.status_code != 204:
+            raise SemaphoreError("Semaphore login failed — check semaphore.username/password in Settings.")
+
+        task_resp = await client.post(
+            f"/api/project/{project_id}/tasks",
+            json={
+                "template_id": template_id,
+                "project_id": project_id,
+                "environment": (
+                    '{"target_computer": "%s", "callback_url": "%s"}' % (target_computer, callback_url)
+                ),
+            },
+        )
+        if task_resp.status_code != 201:
+            raise SemaphoreError(f"Semaphore task creation failed: {task_resp.status_code}")
+        task_id = task_resp.json()["id"]
+
+        for _ in range(20):  # ~20s max — the callback race (laps_pending's own timeout) is the real bound
+            await asyncio.sleep(1)
+            status_resp = await client.get(f"/api/project/{project_id}/tasks/{task_id}")
+            status = status_resp.json().get("status")
+            if status == "success":
+                return
+            if status in ("error", "stopped"):
+                raise SemaphoreError(f"LAPS read task failed (Semaphore task #{task_id}, status={status}).")
+        raise SemaphoreError(f"LAPS read task timed out (Semaphore task #{task_id}).")

@@ -16,12 +16,14 @@ Break-glass additionally triggers alert() on every one of these routes,
 not just at login.
 """
 
+import asyncio
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from ldap3 import Connection
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import ldap_client
+from app.core import ldap_client, laps_pending, semaphore_client
 from app.core.alerting import alert
 from app.core.audit import write_audit
 from app.core.auth import CurrentUser, require
@@ -192,6 +194,10 @@ async def ad_laps_reveal(
     db: AsyncSession = Depends(get_db),
     user: CurrentUser = Depends(require("ad.laps_read")),
 ):
+    """LDAPS confirms the computer exists and applies OU scoping, same as
+    every other action here — but the actual password comes from Semaphore
+    (see app/core/semaphore_client.py for why LDAPS alone can't read it on
+    this forest's Windows-LAPS-with-encryption setup)."""
     if not rate_check(f"laps:{user.username}", max_calls=10, window_seconds=600):
         raise HTTPException(status_code=429, detail="Too many LAPS reveals — try again shortly.")
     store = await load_settings(db)
@@ -204,24 +210,40 @@ async def ad_laps_reveal(
         if found is None:
             return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"No object found for '{sam}'."})
         _check_scope(store, found["dn"], user)
-        password = ldap_client.read_laps_password(conn, found["dn"])
     except ScopeDenied as exc:
         return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": exc.message})
-    except Exception as exc:
-        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"LAPS read failed: {exc}"})
     finally:
         conn.unbind()
 
-    outcome = "found" if password else "no_password_set_or_no_acl"
+    token, event = laps_pending.create()
+    callback_url = str(request.url_for("laps_callback", token=token))
+    trigger_task = asyncio.create_task(
+        semaphore_client.trigger_laps_read(store, target_computer=sam, callback_url=callback_url)
+    )
+    result = await laps_pending.wait_and_consume(token, event, timeout=25)
+    trigger_error: str | None = None
+    try:
+        await trigger_task
+    except semaphore_client.SemaphoreError as exc:
+        trigger_error = str(exc)
+
+    outcome = "delivered" if result else f"failed: {trigger_error or 'timed out waiting for callback'}"
     await _log_and_alert(request, user, action="laps_reveal", target_id=sam, reason=reason, detail=outcome)
     if user.is_breakglass:
         pending = getattr(request.state, "breakglass_alert_pending", None)
         if pending:
             await alert(db, subject="SAA Admin Console: break-glass LAPS reveal", body=pending)
+
+    if result is None:
+        return templates.TemplateResponse(
+            request,
+            "ad/action_result.html",
+            {"user": user, "ok": False, "message": f"LAPS read failed: {trigger_error or 'timed out'}"},
+        )
     return templates.TemplateResponse(
         request,
         "ad/laps_result.html",
-        {"user": user, "sam": sam, "password": password},
+        {"user": user, "sam": sam, "password": result["password"]},
     )
 
 

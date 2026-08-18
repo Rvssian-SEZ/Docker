@@ -1,12 +1,18 @@
 """LDAPS client for AD account management — unlock, password reset,
-enable/disable, attribute edits, and LAPS (ms-Mcs-AdmPwd) read.
+enable/disable, and attribute edits.
 
-STATUS: structurally complete, NOT yet live-verified against SAA.SC AD —
-flagged honestly rather than assumed working (same convention as itops2's
-LDAP/OAuth2 status notes). It needs the dsacls delegation prerequisites
-(spec: "AD Delegation Prerequisites") granted to the ad.bind_dn service
-account before any of these calls can succeed against a real DC, and should
-be piloted against one OU first (see spec's Open Decisions).
+LAPS is deliberately NOT read here: this forest runs Windows LAPS with
+password encryption on (confirmed live — see
+adminconsole/CLAUDE_CONTEXT.md "AD service account" section), which
+stores the password DPAPI-NG-encrypted; decrypting it needs a real
+Windows-side call (Get-LapsADPassword), not a plain LDAP attribute read.
+See app/core/semaphore_client.py + app/core/laps_pending.py for that path.
+
+STATUS: the service account (svc-adminconsole) and its domain-wide dsacls
+delegation for unlock/reset/enable-disable/attribute-edit are confirmed
+live (see CLAUDE_CONTEXT.md) — the delegation exists. The app's own LDAPS
+calls using that account have NOT yet been exercised end-to-end against a
+real account; that's the next thing to verify, not assumed working here.
 
 Connects with ldap3, TLS via LDAPS (not StartTLS — AD refuses plaintext
 password operations regardless, but LDAPS is the simpler of the two to get
@@ -96,19 +102,6 @@ def edit_attributes(conn: Connection, dn: str, changes: dict[str, str]) -> None:
     ok = conn.modify(dn, {attr: [(MODIFY_REPLACE, [value])] for attr, value in changes.items()})
     if not ok:
         raise LdapError(f"Attribute edit failed: {conn.result.get('description')}")
-
-
-def read_laps_password(conn: Connection, computer_dn: str) -> str | None:
-    """ms-Mcs-AdmPwd is a confidential attribute — requires an explicit ACL
-    grant beyond generic read-attribute delegation (spec). Returns None if
-    the attribute is absent (no rotation yet, or the ACL grant is missing —
-    the router surfaces these as distinct states via a search vs. a bind
-    error, not conflated into one generic failure)."""
-    conn.search(search_base=computer_dn, search_filter="(objectClass=computer)", search_scope="BASE", attributes=["ms-Mcs-AdmPwd"])
-    if not conn.entries:
-        return None
-    value = conn.entries[0].entry_attributes_as_dict.get("ms-Mcs-AdmPwd")
-    return value[0] if value else None
 
 
 def _escape(value: str) -> str:

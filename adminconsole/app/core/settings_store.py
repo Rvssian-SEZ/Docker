@@ -69,6 +69,13 @@ DEFAULTS: dict[str, tuple[str, str]] = {
     "smtp.port": ("25", "int"),
     "smtp.from_address": ("", "str"),
 
+    # --- Semaphore (Windows LAPS retrieval only — see app/core/semaphore_client.py) ---
+    "semaphore.url": ("http://10.10.160.59:3001", "str"),
+    "semaphore.username": ("adminconsole-svc", "str"),
+    "semaphore.password": ("", "str"),  # encrypted
+    "semaphore.project_id": ("2", "int"),
+    "semaphore.laps_template_id": ("", "int"),
+
     # --- Reporting sync ---
     "sync.frequency_minutes": ("60", "int"),
     "sync.last_run_at": ("", "str"),  # ISO timestamp marker, not user-facing
@@ -79,6 +86,7 @@ ENCRYPTED_KEYS: set[str] = {
     "graph.client_secret",
     "auth.oidc.client_secret",
     "ad.bind_password",
+    "semaphore.password",
 }
 
 

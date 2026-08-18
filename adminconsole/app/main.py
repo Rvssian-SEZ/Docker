@@ -18,6 +18,7 @@ from app.routers import ad_accounts as ad_router
 from app.routers import audit_log as audit_router
 from app.routers import auth as auth_router
 from app.routers import dashboard as dashboard_router
+from app.routers import internal as internal_router
 from app.routers import settings as settings_router
 from app.version import __version__
 
@@ -45,6 +46,7 @@ app.include_router(auth_router.router)
 app.include_router(settings_router.router)
 app.include_router(audit_router.router)
 app.include_router(ad_router.router)
+app.include_router(internal_router.router)
 
 
 @app.exception_handler(RequiresLoginException)

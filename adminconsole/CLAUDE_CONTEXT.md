@@ -166,6 +166,50 @@ irreversible in practice. Before LAPS retrieval can work at all:
 Every other AD write path (unlock/reset/enable-disable/attribute-edit)
 is unaffected — only LAPS retrieval is blocked pending this decision.
 
+## Windows LAPS retrieval — hybrid LDAPS + Semaphore (2026-08-18)
+Confirmed live (`SAA/playbooks/admin_check_laps_variant.yml` in the
+Semaphore repo, read-only): this forest runs **Windows LAPS with password
+encryption on** — `msLAPS-EncryptedPassword` is populated,
+`msLAPS-Password` (plaintext) is empty. Decrypting the encrypted value
+needs a real Windows-side call to the domain's Group Key Distribution
+Service (`Get-LapsADPassword -AsPlainText`) — not reachable from a plain
+LDAPS client, so `app/core/ldap_client.py` no longer has a LAPS function
+at all (removed the legacy-`ms-Mcs-AdmPwd` one, which targeted an
+attribute that doesn't even exist in this forest's schema).
+- **Design**: the `/ad/{sam}/laps` route still uses LDAPS to confirm the
+  computer exists and apply OU scoping (same as every other action), then
+  triggers `SAA/playbooks/admin_read_laps_password.yml` via Semaphore's
+  REST API (`app/core/semaphore_client.py`) — reusing Semaphore's already-
+  proven Kerberos/WinRM trust to the DCs instead of adding that whole
+  stack (krb5 client, pykerberos, /etc/krb5.conf) into this container too,
+  which would also mean holding a second broad domain credential here,
+  working against the whole point of provisioning a scoped
+  `svc-adminconsole` account in the first place.
+- **The password never touches Semaphore's persistent storage.** Confirmed
+  live that Semaphore has no task-output deletion API
+  (`DELETE /api/project/{id}/tasks/{id}` → 400) — anything printed to
+  stdout there sits in Semaphore's history indefinitely, which would
+  violate the spec's "never cached beyond the single view" for LAPS.
+  Instead the Ansible task POSTs the password directly to a per-request,
+  single-use, ~30s-TTL callback URL
+  (`/internal/laps-callback/{token}`, `app/core/laps_pending.py` +
+  `app/routers/internal.py`) that the app is already awaiting — Semaphore
+  only ever sees non-secret status (`delivered`/`callback_failed`/
+  `laps_read_failed`) in its own task log.
+- **Semaphore access**: a dedicated `adminconsole-svc` Semaphore user was
+  created with **task_runner** role scoped to project 2 only (confirmed:
+  not owner/admin) — the app never uses the shared `admin@saa.sc` Semaphore
+  login. Configured in Settings → Automation
+  (`semaphore.url`/`username`/`password`/`project_id`/`laps_template_id`).
+- **STATUS: built, not yet live-verified end-to-end** — the callback
+  requires the DC to make an outbound HTTPS call to
+  `https://adminconsole.saa.sc/internal/laps-callback/...`, which needs
+  (a) that path being reachable from the DC's network position and (b)
+  the DC trusting the wildcard `*.saa.sc` cert's issuing CA. Neither has
+  been confirmed live yet — first real LAPS reveal attempt will surface
+  either issue immediately via a clear `callback_failed` status in the
+  Semaphore task if it doesn't work.
+
 ## v1 lessons already encoded here (carried over from itops2 + found live)
 - HTML checkboxes are absent from form data when unchecked — the Settings
   save route explicitly writes "false" for a missing bool-typed key
