@@ -69,6 +69,47 @@ def find_user(conn: Connection, base_dn: str, sam_account_name: str) -> dict | N
     return {"dn": entry.entry_dn, "attributes": entry.entry_attributes_as_dict}
 
 
+def search_accounts(conn: Connection, base_dn: str, query: str, *, limit: int = 50) -> list[dict]:
+    """Name/username search across users AND computers — sAMAccountName,
+    givenName, sn, displayName, cn, all OR'd together, prefix-wildcarded
+    by default. A computer's real sAMAccountName always ends in "$"
+    (find_user() below still needs that spelled out exactly for the
+    single-account action routes), but a prefix search like "asedgwick*"
+    matches "SAA-ASEDGWICK$" fine on its own — the trailing "$" just
+    falls inside the wildcard's match, so computers show up without the
+    caller ever typing "$" themselves. If the query already contains "*",
+    it's used verbatim (the user is doing their own wildcard pattern);
+    otherwise a trailing "*" is appended for prefix matching.
+    """
+    pattern = query if "*" in query else f"{query}*"
+    escaped = _escape_wildcard(pattern)
+    filt = (
+        f"(|(sAMAccountName={escaped})(givenName={escaped})(sn={escaped})"
+        f"(displayName={escaped})(cn={escaped}))"
+    )
+    conn.search(
+        search_base=base_dn,
+        search_filter=filt,
+        search_scope=SUBTREE,
+        attributes=["sAMAccountName", "displayName", "mail", "objectClass"],
+        size_limit=limit,
+    )
+    results = []
+    for entry in conn.entries:
+        attrs = entry.entry_attributes_as_dict
+        object_classes = [c.lower() for c in attrs.get("objectClass", [])]
+        results.append(
+            {
+                "dn": entry.entry_dn,
+                "sam": (attrs.get("sAMAccountName") or [""])[0],
+                "display_name": (attrs.get("displayName") or [""])[0],
+                "mail": (attrs.get("mail") or [""])[0],
+                "is_computer": "computer" in object_classes,
+            }
+        )
+    return results
+
+
 def unlock_account(conn: Connection, dn: str) -> None:
     """Clears lockoutTime — the documented way to unlock an AD account
     over LDAP (there is no dedicated "unlock" verb)."""
@@ -113,8 +154,10 @@ def edit_attributes(conn: Connection, dn: str, changes: dict[str, str]) -> None:
 
 
 def _escape(value: str) -> str:
-    """Minimal RFC 4515 filter escaping for the one place we interpolate
-    user input into a filter string (sAMAccountName lookups)."""
+    """Minimal RFC 4515 filter escaping for exact-match lookups (unlock/
+    reset/enable-disable/attribute-edit/LAPS all resolve one already-known
+    sAMAccountName this way) — "*" IS escaped here since these calls must
+    never accidentally wildcard-match the wrong account."""
     return (
         value.replace("\\", "\\5c")
         .replace("*", "\\2a")
@@ -122,3 +165,12 @@ def _escape(value: str) -> str:
         .replace(")", "\\29")
         .replace("\x00", "\\00")
     )
+
+
+def _escape_wildcard(value: str) -> str:
+    """Same RFC 4515 escaping as _escape(), EXCEPT "*" is left alone —
+    used only by search_accounts(), where "*" is a deliberate, intended
+    wildcard, not user input to neutralize. Parens/backslash/null are
+    still escaped so a search box can't be used for filter injection
+    (e.g. typing `)(uid=*))(|(uid=` to widen or break out of the filter)."""
+    return value.replace("\\", "\\5c").replace("(", "\\28").replace(")", "\\29").replace("\x00", "\\00")

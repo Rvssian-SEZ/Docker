@@ -4,57 +4,65 @@
 
 <form method="get" action="/ad" class="row g-2 mb-4">
   <div class="col-auto">
-    <input type="text" name="q" class="form-control" placeholder="sAMAccountName" value="{{ q }}" autofocus>
+    <input type="text" name="q" class="form-control" placeholder="Name, username, or partial match (e.g. alexand*)" value="{{ q }}" autofocus style="width: 22rem">
   </div>
   <div class="col-auto"><button class="btn btn-outline-light">Search</button></div>
 </form>
 
 {% if error %}<div class="alert alert-warning">{{ error }}</div>{% endif %}
 
-{% if result %}
-{% set attrs = result.attributes %}
-<div class="card">
-  <div class="card-body">
-    <h2 class="h5">{{ attrs.get('displayName', [q])[0] if attrs.get('displayName') else q }}</h2>
-    <p class="text-secondary small mb-3">{{ result.dn }}</p>
-    <dl class="row small">
-      <dt class="col-3">sAMAccountName</dt><dd class="col-9">{{ attrs.get('sAMAccountName', [''])[0] }}</dd>
-      <dt class="col-3">Email</dt><dd class="col-9">{{ attrs.get('mail', [''])[0] if attrs.get('mail') else '—' }}</dd>
-      <dt class="col-3">Title</dt><dd class="col-9">{{ attrs.get('title', [''])[0] if attrs.get('title') else '—' }}</dd>
-      <dt class="col-3">Department</dt><dd class="col-9">{{ attrs.get('department', [''])[0] if attrs.get('department') else '—' }}</dd>
-    </dl>
-
-    <div class="d-flex flex-wrap gap-2 mt-3">
-      {% if user.can('ad.unlock') %}
-      <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#unlockModal">Unlock</button>
-      {% endif %}
-      {% if user.can('ad.reset_password') %}
-      <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#resetModal">Reset Password</button>
-      {% endif %}
-      {% if user.can('ad.enable_disable') %}
-      <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#enableModal">Enable</button>
-      <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#disableModal">Disable</button>
-      {% endif %}
-      {% if user.can('ad.laps_read') %}
-      <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#lapsModal">LAPS Reveal</button>
-      {% endif %}
-    </div>
-  </div>
+{% if results %}
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <thead><tr><th>Name</th><th>Username</th><th>Email</th><th>Type</th><th></th></tr></thead>
+  <tbody>
+  {% for r in results %}
+    <tr>
+      <td>{{ r.display_name or '—' }}</td>
+      <td>{{ r.sam }}</td>
+      <td>{{ r.mail or '—' }}</td>
+      <td><span class="badge {% if r.is_computer %}text-bg-info{% else %}text-bg-secondary{% endif %}">{{ 'Computer' if r.is_computer else 'User' }}</span></td>
+      <td class="text-end">
+        {% if r.is_computer %}
+          {% if user.can('ad.laps_read') %}
+          <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#lapsModal{{ loop.index }}">LAPS Reveal</button>
+          {% endif %}
+        {% else %}
+          {% if user.can('ad.unlock') %}<button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#unlockModal{{ loop.index }}">Unlock</button>{% endif %}
+          {% if user.can('ad.reset_password') %}<button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#resetModal{{ loop.index }}">Reset PW</button>{% endif %}
+          {% if user.can('ad.enable_disable') %}
+          <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#enableModal{{ loop.index }}">Enable</button>
+          <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#disableModal{{ loop.index }}">Disable</button>
+          {% endif %}
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
 </div>
 
-{% set sam = attrs.get('sAMAccountName', [q])[0] %}
-
-<div class="modal fade" id="unlockModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
-  <form method="post" action="/ad/{{ sam }}/unlock">
-    <div class="modal-header"><h5 class="modal-title">Unlock {{ sam }}</h5></div>
+{% for r in results %}
+{% if r.is_computer %}
+<div class="modal fade" id="lapsModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/ad/{{ r.sam }}/laps">
+    <div class="modal-header"><h5 class="modal-title">Reveal LAPS password for {{ r.sam }}</h5></div>
+    <div class="modal-body"><label class="form-label">Reason / ticket ref (required)</label><input name="reason" class="form-control" required></div>
+    <div class="modal-footer"><button class="btn btn-info">Reveal</button></div>
+  </form>
+</div></div></div>
+{% else %}
+<div class="modal fade" id="unlockModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/ad/{{ r.sam }}/unlock">
+    <div class="modal-header"><h5 class="modal-title">Unlock {{ r.sam }}</h5></div>
     <div class="modal-body"><label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required></div>
     <div class="modal-footer"><button class="btn btn-warning">Unlock</button></div>
   </form>
 </div></div></div>
 
-<div class="modal fade" id="resetModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
-  <form method="post" action="/ad/{{ sam }}/reset-password">
-    <div class="modal-header"><h5 class="modal-title">Reset password for {{ sam }}</h5></div>
+<div class="modal fade" id="resetModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/ad/{{ r.sam }}/reset-password">
+    <div class="modal-header"><h5 class="modal-title">Reset password for {{ r.sam }}</h5></div>
     <div class="modal-body">
       <div class="mb-2"><label class="form-label">New password</label><input name="new_password" type="password" class="form-control" required></div>
       <div class="form-check mb-2"><input type="checkbox" class="form-check-input" name="force_change" value="true" checked><label class="form-check-label">Require change at next logon</label></div>
@@ -64,28 +72,22 @@
   </form>
 </div></div></div>
 
-<div class="modal fade" id="enableModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
-  <form method="post" action="/ad/{{ sam }}/enable">
-    <div class="modal-header"><h5 class="modal-title">Enable {{ sam }}</h5></div>
+<div class="modal fade" id="enableModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/ad/{{ r.sam }}/enable">
+    <div class="modal-header"><h5 class="modal-title">Enable {{ r.sam }}</h5></div>
     <div class="modal-body"><label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required></div>
     <div class="modal-footer"><button class="btn btn-success">Enable</button></div>
   </form>
 </div></div></div>
 
-<div class="modal fade" id="disableModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
-  <form method="post" action="/ad/{{ sam }}/disable">
-    <div class="modal-header"><h5 class="modal-title">Disable {{ sam }}</h5></div>
+<div class="modal fade" id="disableModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/ad/{{ r.sam }}/disable">
+    <div class="modal-header"><h5 class="modal-title">Disable {{ r.sam }}</h5></div>
     <div class="modal-body"><label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required></div>
     <div class="modal-footer"><button class="btn btn-danger">Disable</button></div>
   </form>
 </div></div></div>
-
-<div class="modal fade" id="lapsModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
-  <form method="post" action="/ad/{{ sam }}/laps">
-    <div class="modal-header"><h5 class="modal-title">Reveal LAPS password for {{ sam }}</h5></div>
-    <div class="modal-body"><label class="form-label">Reason / ticket ref (required)</label><input name="reason" class="form-control" required></div>
-    <div class="modal-footer"><button class="btn btn-info">Reveal</button></div>
-  </form>
-</div></div></div>
+{% endif %}
+{% endfor %}
 {% endif %}
 {% endblock %}

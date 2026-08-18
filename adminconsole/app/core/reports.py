@@ -67,9 +67,32 @@ async def service_health(store: SettingsStore) -> list[dict]:
     return await _cached("service_health", fetch)
 
 
+def _bytes_to_gb(rows: list[dict]) -> list[dict]:
+    """Graph's mailbox report gives raw byte counts (e.g. "35438544628"
+    for Storage Used) — confirmed live these are unreadable as a table.
+    Any column literally named "X (Byte)" becomes "X (GB)", 2 decimals,
+    same position in the row (so column order doesn't shift around)."""
+    if not rows or not any(k.endswith("(Byte)") for k in rows[0]):
+        return rows
+    out = []
+    for row in rows:
+        new_row = {}
+        for k, v in row.items():
+            if k.endswith("(Byte)"):
+                gb_key = f"{k[:-len('(Byte)')]}(GB)"
+                try:
+                    new_row[gb_key] = round(int(v) / (1024**3), 2) if v not in ("", None) else ""
+                except (ValueError, TypeError):
+                    new_row[gb_key] = v
+            else:
+                new_row[k] = v
+        out.append(new_row)
+    return out
+
+
 async def mailbox_health(store: SettingsStore) -> dict:
     async def fetch():
-        rows = await graph_client.get_report_csv(store, "/reports/getMailboxUsageDetail(period='D7')")
+        rows = _bytes_to_gb(await graph_client.get_report_csv(store, "/reports/getMailboxUsageDetail(period='D7')"))
         return {"columns": _columns(rows), "rows": rows}
 
     return await _cached("mailbox_health", fetch)

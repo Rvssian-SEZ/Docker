@@ -110,15 +110,15 @@ async def ad_search_page(
     store = await load_settings(db)
     if not (store.get("ad.ldaps_url") and store.get("ad.bind_dn") and store.get("ad.base_dn")):
         return templates.TemplateResponse(request, "ad/not_configured.html", {"user": user}, status_code=200)
-    result = None
+    results = []
     error = None
     if q:
         try:
             conn = _open_conn(store)
             try:
-                result = ldap_client.find_user(conn, store.get("ad.base_dn"), q.strip())
-                if result is None:
-                    error = f"No account found for '{q.strip()}'."
+                results = ldap_client.search_accounts(conn, store.get("ad.base_dn"), q.strip())
+                if not results:
+                    error = f"No accounts found matching '{q.strip()}'."
             finally:
                 conn.unbind()
         except AdNotConfigured:
@@ -126,7 +126,7 @@ async def ad_search_page(
         except Exception as exc:
             error = f"AD search failed: {exc}"
     return templates.TemplateResponse(
-        request, "ad/search.html", {"user": user, "q": q or "", "result": result, "error": error}
+        request, "ad/search.html", {"user": user, "q": q or "", "results": results, "error": error}
     )
 
 
@@ -224,7 +224,7 @@ async def ad_laps_reveal(
     trigger_task = asyncio.create_task(
         semaphore_client.trigger_laps_read(store, target_computer=sam, callback_url=callback_url)
     )
-    result = await laps_pending.wait_and_consume(token, event, timeout=25)
+    result = await laps_pending.wait_and_consume(token, event, timeout=90)
     trigger_error: str | None = None
     try:
         await trigger_task

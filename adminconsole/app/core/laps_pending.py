@@ -14,7 +14,7 @@ import asyncio
 import secrets
 import time
 
-_TTL_SECONDS = 30
+_TTL_SECONDS = 100
 _pending: dict[str, dict] = {}
 
 

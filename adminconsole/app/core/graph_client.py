@@ -137,7 +137,9 @@ async def get_report_csv(store: SettingsStore, path: str) -> list[dict]:
     import csv
     import io
 
-    reader = csv.DictReader(io.StringIO(resp.text))
+    # Confirmed live: these CSVs are UTF-8-BOM'd, which otherwise ends up
+    # glued onto the first column's name (e.g. "﻿Report Refresh Date").
+    reader = csv.DictReader(io.StringIO(resp.text.lstrip("﻿")))
     return list(reader)
 
 

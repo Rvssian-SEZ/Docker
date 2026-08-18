@@ -65,7 +65,13 @@ async def trigger_laps_read(store: SettingsStore, *, target_computer: str, callb
             raise SemaphoreError(f"Semaphore task creation failed: {task_resp.status_code}")
         task_id = task_resp.json()["id"]
 
-        for _ in range(20):  # ~20s max — the callback race (laps_pending's own timeout) is the real bound
+        # Confirmed live (task #60): repo clone + WinRM/Kerberos setup +
+        # the actual GKDS decrypt call can legitimately take well over
+        # 20s — a real reveal timed out here even though the task itself
+        # later showed "success", because the DC's callback POST arrived
+        # after this had already given up and the app deleted the pending
+        # slot (laps_pending's TTL). Both budgets now aligned around ~90s.
+        for _ in range(90):
             await asyncio.sleep(1)
             status_resp = await client.get(f"/api/project/{project_id}/tasks/{task_id}")
             status = status_resp.json().get("status")
