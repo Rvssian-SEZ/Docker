@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-4"><i class="bi bi-bar-chart me-2"></i>Reporting</h1>
+<div class="alert alert-warning">
+  Graph is not configured yet. {% if user and user.can('settings.manage') %}<a href="/settings">Configure the app registration in Settings</a>.{% else %}Ask an administrator to configure it in Settings.{% endif %}
+</div>
+{% endblock %}

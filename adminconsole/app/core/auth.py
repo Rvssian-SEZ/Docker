@@ -129,6 +129,20 @@ def require(permission: str):
     return checker
 
 
+def require_all(*permissions: str):
+    """Like require(), but needs every listed permission at once — e.g.
+    CSV export needs both the report's own view permission (so export
+    can't leak data the UI wouldn't show) AND reports.export itself."""
+
+    async def checker(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+        missing = [p for p in permissions if not user.can(p)]
+        if missing:
+            raise HTTPException(status_code=403, detail=f"Missing permission(s): {', '.join(missing)}")
+        return user
+
+    return checker
+
+
 def touch_reauth(request: Request) -> None:
     request.session["reauth_at"] = datetime.now(timezone.utc).isoformat()
 

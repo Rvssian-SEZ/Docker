@@ -304,13 +304,32 @@ concrete reminder that "builds and imports cleanly" is not "works":
    grant the dsacls delegation to a pilot OU (per spec's Open Decisions),
    fill in the Settings → AD section, then verify search/unlock/reset/
    enable-disable/LAPS one at a time against a test account.
-3. ⬜ NOT STARTED: Graph reporting (license overview, security posture,
-   mailbox health, activity trends, service health ticker, stale
-   accounts), `sync.py` standalone cron script, CSV/PDF export, TOTP
-   enrollment UI (break-glass TOTP secret is currently bootstrap-log-only
-   — no in-app re-enrollment flow yet if it's lost), Helpdesk L1/L2 user
-   management UI (creating local/reviewing OIDC-provisioned accounts —
-   v1 ships with zero seeded normal users by design; the first real admin
+3. ✅ Graph reporting — **live-verified 2026-08-18** against the real
+   SAA tenant (app/core/graph_client.py, app/core/reports.py,
+   app/routers/reports.py). Confirmed live: token acquisition, the actual
+   granted app roles (queried directly from the SP's own
+   appRoleAssignments, not assumed) — `Directory.Read.All`,
+   `User.Read.All`, `IdentityRiskyUser.Read.All`, `ServiceHealth.Read.All`,
+   `Reports.Read.All`, plus `AuditLog.Read.All` and
+   `UserAuthenticationMethod.Read.All` added mid-session (their calls
+   still 403'd immediately after — normal Azure AD token-claim propagation
+   delay, not a bug; graph_client's GraphPermissionError makes those
+   sections self-resolve once it catches up, no rebuild needed). Two real
+   bugs found live: Reports API endpoints 302-redirect to a signed blob
+   URL (httpx doesn't follow redirects by default — needed
+   `follow_redirects=True`), and those same endpoints return CSV unless
+   `$format=application/json` is appended.
+   **Deliberate v1 simplification**: no `sync.py` / cron / DB cache as the
+   original spec describes — live Graph queries with a 5-minute in-process
+   TTL cache instead (see reports.py's docstring). Revisit if load times,
+   rate limits, or a need for historical trend data (not just point-in-
+   time) make that insufficient.
+   **Not built**: legacy-auth detection (dropped rather than guess at
+   `auditLogs/signIns` filter syntax/field names I wasn't confident of —
+   same "don't fake confidence" convention as everywhere else in this
+   project), PDF export (CSV only), TOTP re-enrollment UI (break-glass
+   TOTP secret is bootstrap-log-only), Helpdesk L1/L2 user management UI
+   (v1 ships with zero seeded normal users by design — the first admin
    signs in via Authentik with a mapped group).
 
 ## Deploy procedure (once ready for saa-docker)
