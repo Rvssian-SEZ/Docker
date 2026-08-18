@@ -71,17 +71,18 @@ def find_user(conn: Connection, base_dn: str, sam_account_name: str) -> dict | N
 
 def search_accounts(conn: Connection, base_dn: str, query: str, *, limit: int = 50) -> list[dict]:
     """Name/username search across users AND computers — sAMAccountName,
-    givenName, sn, displayName, cn, all OR'd together, prefix-wildcarded
-    by default. A computer's real sAMAccountName always ends in "$"
-    (find_user() below still needs that spelled out exactly for the
-    single-account action routes), but a prefix search like "asedgwick*"
-    matches "SAA-ASEDGWICK$" fine on its own — the trailing "$" just
-    falls inside the wildcard's match, so computers show up without the
-    caller ever typing "$" themselves. If the query already contains "*",
-    it's used verbatim (the user is doing their own wildcard pattern);
-    otherwise a trailing "*" is appended for prefix matching.
+    givenName, sn, displayName, cn, all OR'd together, substring-
+    wildcarded by default (e.g. "asedgwick" -> "*asedgwick*"). Confirmed
+    live that prefix-only wildcarding ("asedgwick*") misses computers
+    named "<PREFIX>-<username>" (e.g. "SAA-ASEDGWICK$" doesn't start with
+    "asedgwick" at all, even though it contains it) — substring matching
+    finds it without the caller needing to know the hostname's prefix
+    convention, and the "$" suffix falls inside the wildcard either way.
+    If the query already contains "*", it's used verbatim (the caller is
+    writing their own wildcard pattern, e.g. "alexand*" for a prefix-only
+    match) — only the no-wildcard default becomes a substring search.
     """
-    pattern = query if "*" in query else f"{query}*"
+    pattern = query if "*" in query else f"*{query}*"
     escaped = _escape_wildcard(pattern)
     filt = (
         f"(|(sAMAccountName={escaped})(givenName={escaped})(sn={escaped})"
