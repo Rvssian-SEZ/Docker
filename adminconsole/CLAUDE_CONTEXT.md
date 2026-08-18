@@ -110,6 +110,62 @@ implicit-consent authorization flow, same standard invalidation flow):
   an nginx-proxy-manager host pointing at whatever port the container
   ends up on. Not yet created; do this alongside the actual deploy.
 
+## AD service account — provisioned 2026-08-18
+Created via a new one-off Semaphore playbook
+(`Rvssian-SEZ/Semaphore` → `SAA/playbooks/admin_provision_adminconsole_service_account.yml`,
+run through a temporary Semaphore template, now deleted — task history
+stays in Semaphore #52-55 for audit trail), reusing the project's existing
+Kerberos/WinRM access to the DCs rather than direct DC access from here.
+- **Account**: `svc-adminconsole`, real DN
+  `CN=svc-adminconsole,OU=Service Accounts,OU=SCAA Users,DC=saa,DC=sc`
+  (discovered live via `Get-ADOrganizationalUnit -Filter` — the OU is
+  nested under `OU=SCAA Users`, not directly under the domain root as
+  first assumed; the playbook now discovers it by filter rather than
+  hardcoding the DN, so this self-corrects on any future rerun).
+  `password_never_expires` + `user_cannot_change_password` set, no group
+  membership — least privilege is via `dsacls` only, per the spec.
+- **Scope: domain-wide by explicit choice** (Alex: "will actually need
+  domainwide access" — helpdesk needs to reach accounts across the whole
+  org, not one OU). Granted at `DC=saa,DC=sc` with `/I:S` (inherit to
+  subobjects). AdminSDHolder/SDProp strips inherited ACEs from protected
+  principals (Domain Admins/Enterprise Admins/krbtgt and members), so this
+  grant does not reach those regardless of inheritance — noted to Alex
+  before running, not assumed silently.
+- **Grants confirmed live** (11 of 12 succeeded — see gap below):
+  reset password, write `lockoutTime`, write `userAccountControl`, write
+  givenName/sn/displayName/title/department/telephoneNumber/mobile/manager
+  — all exactly match `app/core/ldap_client.py`'s `EDITABLE_ATTRIBUTES` and
+  the app's unlock/reset/enable-disable code paths.
+- **Password handed to Alex out of band** (same pattern as the break-glass
+  and Authentik client-secret handoffs) — not committed anywhere. Goes
+  into Settings → AD as `ad.bind_password`, alongside `ad.bind_dn` (above)
+  and `ad.base_dn = DC=saa,DC=sc`.
+
+### Known gap: legacy LAPS is not usable yet — schema not extended
+The `RP;ms-Mcs-AdmPwd;computer` grant failed with `dsacls`'s own error
+**"No GUID Found for ms-Mcs-AdmPwd"** — not a permissions problem, the
+attribute doesn't exist in this forest's schema at all. Legacy Microsoft
+LAPS has never been schema-extended here (`Update-AdmPwdADSchema` or the
+LAPS.msi schema step was never run). This is a real, one-time, forest-wide
+schema change requiring Schema Admins rights — **not attempted**, since
+it's a different order of magnitude of change (forest schema, not a scoped
+delegation) from everything else done in this session, and genuinely
+irreversible in practice. Before LAPS retrieval can work at all:
+- Confirm which LAPS is actually in play here — this could instead be
+  **Windows LAPS** (built into Server 2019+/2022+, a different attribute
+  `msLAPS-Password` + `msLAPS-EncryptedPassword`, not `ms-Mcs-AdmPwd`) —
+  worth checking before assuming legacy LAPS is even the right target,
+  since `app/core/ldap_client.py`'s `read_laps_password()` currently only
+  reads `ms-Mcs-AdmPwd`.
+  If it's Windows LAPS, `ldap_client.py` needs a different attribute name
+  and a different `dsacls` grant syntax entirely (Windows LAPS uses its
+  own `Set-LapsADReadPasswordPermission` cmdlet, not raw `dsacls`).
+- If legacy LAPS is the intended path, extending the schema is a decision
+  for Alex to make deliberately (with its own change window), not
+  something to fold into this account's provisioning.
+Every other AD write path (unlock/reset/enable-disable/attribute-edit)
+is unaffected — only LAPS retrieval is blocked pending this decision.
+
 ## v1 lessons already encoded here (carried over from itops2 + found live)
 - HTML checkboxes are absent from form data when unchecked — the Settings
   save route explicitly writes "false" for a missing bool-typed key
