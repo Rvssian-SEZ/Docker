@@ -201,14 +201,57 @@ attribute that doesn't even exist in this forest's schema).
   not owner/admin) — the app never uses the shared `admin@saa.sc` Semaphore
   login. Configured in Settings → Automation
   (`semaphore.url`/`username`/`password`/`project_id`/`laps_template_id`).
-- **STATUS: built, not yet live-verified end-to-end** — the callback
-  requires the DC to make an outbound HTTPS call to
-  `https://adminconsole.saa.sc/internal/laps-callback/...`, which needs
-  (a) that path being reachable from the DC's network position and (b)
-  the DC trusting the wildcard `*.saa.sc` cert's issuing CA. Neither has
-  been confirmed live yet — first real LAPS reveal attempt will surface
-  either issue immediately via a clear `callback_failed` status in the
-  Semaphore task if it doesn't work.
+- **STATUS: ✅ live-verified end-to-end** (2026-08-18, against SAA-asedgwick
+  via the running app as break-glass): LDAPS lookup → OU scope check →
+  Semaphore trigger → `Get-LapsADPassword` on SCAA-PRD-DC1 → callback
+  delivery → rendered in the UI with 30s auto-hide. Confirmed both ends
+  stayed secret-free: the app's audit log shows `laps_reveal ... delivered`
+  with no password, and the Semaphore task's own output shows only
+  `STATUS=delivered` — never the value. Four real bugs found and fixed to
+  get here (see "Bugs found via live testing" below); worth knowing this
+  took several iterations, not a first-try success.
+
+## Bugs found via live testing (2026-08-18) — first real end-to-end run
+Every one of these was invisible from code review alone; each surfaced
+only once actually exercised against the real stack. Kept here as a
+concrete reminder that "builds and imports cleanly" is not "works":
+
+1. **LDAPS CERTIFICATE_VERIFY_FAILED**: `ldap_client.bind()`'s `Tls()` had
+   no `ca_certs_file` — the DC's cert is issued by the internal SAA-CA,
+   which isn't in the container's default trust store. Fixed by wiring the
+   already-existing (but previously unused) `CA_CERT_PATH` setting into
+   `Tls(ca_certs_file=...)`; cert deployed to
+   `/opt/appdata/adminconsole/certs/saa-ca-root.pem`, pulled from
+   Authentik's own crypto store (`SAA-CA Root`, already registered there).
+2. **Same root cause, different path — OIDC discovery failed too**: the
+   `*.saa.sc` wildcard cert NPM uses for `auth.saa.sc` is *also* SAA-CA-
+   issued (confirmed: `openssl s_client` shows `issuer=...CN=SAA-CA`).
+   Every earlier successful `curl` test to `auth.saa.sc` in this session
+   ran from Alex's own domain-joined machine, which already trusts SAA-CA
+   via GPO — not proof the cert is publicly trusted. `oidc.py`'s `_client()`
+   already read `ca_cert_path`, so fix #1 fixed this too, for free.
+3. **Authentik provider had `grant_types: []`** — the API creation call
+   never specified this field, and unlike the UI it didn't default to a
+   sane set, so Authentik rejected every authorize request with "Invalid
+   grant_type for provider" / `invalid_request`. Found by diffing the new
+   provider's full config against itops's working one field-by-field.
+   Fixed: `PATCH` to `["authorization_code", "implicit", "hybrid", "refresh_token"]`.
+4. **LAPS lookup used the bare hostname** — AD computer accounts'
+   `sAMAccountName` always ends in `$` (unlike user accounts); the LDAPS
+   `find_user()` call for the computer needed `f"{sam}$"`. Semaphore's own
+   `Get-LapsADPassword -Identity` call was unaffected (accepts the bare name).
+5. **The LAPS playbook was never actually committed** — written to disk
+   and referenced by a Semaphore template, but a `git add`/commit was
+   missed for `SAA/playbooks/admin_read_laps_password.yml` specifically.
+   Semaphore's task run failed with "the playbook ... could not be found"
+   against the real repo — caught immediately by testing, not by review.
+6. **Login page showed no SSO button / local-login 401 loop**: turned out
+   nothing had ever been saved via Settings at all (confirmed: `select
+   count(*) from app_settings` = 0) despite an earlier OIDC callback hit
+   in the logs — that hit was the immediate "SSO is disabled" bounce, not
+   a real attempt. Fixed by driving the break-glass login + Settings save
+   flow directly (via curl, using the real generated credentials) instead
+   of relying on manual copy-paste into the UI.
 
 ## v1 lessons already encoded here (carried over from itops2 + found live)
 - HTML checkboxes are absent from form data when unchecked — the Settings
