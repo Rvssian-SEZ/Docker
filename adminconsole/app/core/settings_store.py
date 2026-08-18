@@ -39,7 +39,10 @@ DEFAULTS: dict[str, tuple[str, str]] = {
     # JSON: {"authentik-group": "role_name"}. Highest-privilege mapped
     # group wins (admin > helpdesk_l2 > helpdesk_l1), same resolution order
     # as itops2's oidc.py.
-    "auth.oidc.group_role_map": ('{"adminconsole-admins": "admin"}', "str"),
+    "auth.oidc.group_role_map": (
+        '{"adminconsole-admins": "admin", "adminconsole-helpdesk-l2": "helpdesk_l2", "adminconsole-helpdesk-l1": "helpdesk_l1"}',
+        "str",
+    ),
     "auth.oidc.default_role": ("", "str"),  # role when no group matches; empty = deny
 
     # --- AD service account (LDAPS) ---
