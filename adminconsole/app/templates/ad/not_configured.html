@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-4"><i class="bi bi-person-gear me-2"></i>AD Accounts</h1>
+<div class="alert alert-warning">
+  AD is not configured yet. {% if user and user.can('settings.manage') %}<a href="/settings">Configure the AD service account in Settings</a>.{% else %}Ask an administrator to configure it in Settings.{% endif %}
+</div>
+{% endblock %}

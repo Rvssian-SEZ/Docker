@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="/static/css/app.css" rel="stylesheet">
+</head>
+<body>
+<div class="d-flex app-shell">
+  <nav class="sidebar d-flex flex-column flex-shrink-0 p-3">
+    <a href="/" class="d-flex align-items-center mb-3 text-decoration-none fs-5 fw-semibold text-body">
+      <i class="bi bi-shield-lock me-2"></i>{{ app_name }}
+    </a>
+    {% if user and user.is_breakglass %}
+    <div class="alert alert-danger py-1 px-2 small mb-3"><i class="bi bi-exclamation-triangle-fill me-1"></i>Break-glass session</div>
+    {% endif %}
+    <ul class="nav nav-pills flex-column mb-auto">
+      <li><a href="/" class="nav-link"><i class="bi bi-speedometer2 me-2"></i>Dashboard</a></li>
+      {% if user and user.can('ad.search') %}
+      <li><a href="/ad" class="nav-link"><i class="bi bi-person-gear me-2"></i>AD Accounts</a></li>
+      {% endif %}
+      {% if user and user.can('reports.view') %}
+      <li><a href="/reports" class="nav-link"><i class="bi bi-bar-chart me-2"></i>Reporting</a></li>
+      {% endif %}
+      {% if user and user.can('audit.view') %}
+      <li><a href="/audit" class="nav-link"><i class="bi bi-journal-text me-2"></i>Audit Log</a></li>
+      {% endif %}
+      {% if user and user.can('settings.manage') %}
+      <li><a href="/settings" class="nav-link"><i class="bi bi-gear me-2"></i>Settings</a></li>
+      {% endif %}
+    </ul>
+    {% if user %}
+    <div class="small text-secondary mb-2">
+      <i class="bi bi-person-circle me-1"></i>{{ user.display_name }}
+      <span class="badge text-bg-secondary ms-1">{{ user.role }}</span>
+      <form method="post" action="/logout" class="d-inline">
+        <button class="btn btn-link btn-sm p-0 ms-2 align-baseline">logout</button>
+      </form>
+    </div>
+    {% endif %}
+    <div class="sidebar-footer small text-secondary">v{{ app_version }}</div>
+  </nav>
+  <main class="flex-grow-1 p-4">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

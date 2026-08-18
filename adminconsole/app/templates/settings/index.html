@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-4"><i class="bi bi-gear me-2"></i>Settings</h1>
+<p class="text-secondary small">Secret fields are write-only — they show whether a value is set, never the value itself. Leave a secret field blank to keep the existing value.</p>
+
+<div class="accordion" id="settingsAccordion">
+
+  <div class="accordion-item">
+    <h2 class="accordion-header"><button class="accordion-button" data-bs-toggle="collapse" data-bs-target="#graph">Graph App Registration</button></h2>
+    <div id="graph" class="accordion-collapse collapse show" data-bs-parent="#settingsAccordion">
+      <div class="accordion-body">
+        <form method="post" action="/settings/graph">
+          <div class="mb-2"><label class="form-label">Tenant ID</label><input name="graph.tenant_id" class="form-control" value="{{ store.get('graph.tenant_id') }}"></div>
+          <div class="mb-2"><label class="form-label">Application (client) ID</label><input name="graph.client_id" class="form-control" value="{{ store.get('graph.client_id') }}"></div>
+          <div class="mb-2">
+            <label class="form-label">Client Secret {% if store.is_set('graph.client_secret') %}<span class="badge text-bg-success">set</span>{% else %}<span class="badge text-bg-secondary">not set</span>{% endif %}</label>
+            <input name="graph.client_secret" type="password" class="form-control" placeholder="Leave blank to keep existing">
+          </div>
+          <button class="btn btn-sm btn-outline-light">Save</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="accordion-item">
+    <h2 class="accordion-header"><button class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#authentik">Authentik SSO</button></h2>
+    <div id="authentik" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+      <div class="accordion-body">
+        <form method="post" action="/settings/authentik">
+          <div class="form-check mb-2"><input type="checkbox" class="form-check-input" name="auth.oidc.enabled" {% if store.get_bool('auth.oidc.enabled') %}checked{% endif %}><label class="form-check-label">Enabled</label></div>
+          <div class="mb-2"><label class="form-label">Issuer URL</label><input name="auth.oidc.issuer" class="form-control" value="{{ store.get('auth.oidc.issuer') }}" placeholder="https://auth.saa.sc/application/o/adminconsole/"></div>
+          <div class="mb-2"><label class="form-label">Client ID</label><input name="auth.oidc.client_id" class="form-control" value="{{ store.get('auth.oidc.client_id') }}"></div>
+          <div class="mb-2">
+            <label class="form-label">Client Secret {% if store.is_set('auth.oidc.client_secret') %}<span class="badge text-bg-success">set</span>{% else %}<span class="badge text-bg-secondary">not set</span>{% endif %}</label>
+            <input name="auth.oidc.client_secret" type="password" class="form-control" placeholder="Leave blank to keep existing">
+          </div>
+          <div class="mb-2"><label class="form-label">Sign-in button label</label><input name="auth.oidc.button_label" class="form-control" value="{{ store.get('auth.oidc.button_label') }}"></div>
+          <div class="mb-2"><label class="form-label">Group &rarr; role map (JSON)</label><input name="auth.oidc.group_role_map" class="form-control" value="{{ store.get('auth.oidc.group_role_map') }}"></div>
+          <div class="mb-2"><label class="form-label">Default role (blank = deny unmapped users)</label><input name="auth.oidc.default_role" class="form-control" value="{{ store.get('auth.oidc.default_role') }}"></div>
+          <button class="btn btn-sm btn-outline-light">Save</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="accordion-item">
+    <h2 class="accordion-header"><button class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#ad">AD Service Account (LDAPS)</button></h2>
+    <div id="ad" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+      <div class="accordion-body">
+        <form method="post" action="/settings/ad">
+          <div class="mb-2"><label class="form-label">LDAPS URL</label><input name="ad.ldaps_url" class="form-control" value="{{ store.get('ad.ldaps_url') }}" placeholder="ldaps://dc1.saa.sc:636"></div>
+          <div class="mb-2"><label class="form-label">Bind DN</label><input name="ad.bind_dn" class="form-control" value="{{ store.get('ad.bind_dn') }}" placeholder="CN=svc-adminconsole,OU=Service Accounts,DC=saa,DC=sc"></div>
+          <div class="mb-2">
+            <label class="form-label">Bind Password {% if store.is_set('ad.bind_password') %}<span class="badge text-bg-success">set</span>{% else %}<span class="badge text-bg-secondary">not set</span>{% endif %}</label>
+            <input name="ad.bind_password" type="password" class="form-control" placeholder="Leave blank to keep existing">
+          </div>
+          <div class="mb-2"><label class="form-label">Search base DN</label><input name="ad.base_dn" class="form-control" value="{{ store.get('ad.base_dn') }}" placeholder="DC=saa,DC=sc"></div>
+          <div class="mb-2"><label class="form-label">Scoped OUs (Helpdesk L1/L2 only, comma-separated DNs)</label><input name="ad.scoped_ous" class="form-control" value="{{ store.get('ad.scoped_ous') }}"></div>
+          <div class="mb-2"><label class="form-label">Excluded OUs (blocked for everyone except Admin/break-glass)</label><input name="ad.excluded_ous" class="form-control" value="{{ store.get('ad.excluded_ous') }}" placeholder="OU=Domain Admins,DC=saa,DC=sc"></div>
+          <button class="btn btn-sm btn-outline-light">Save</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="accordion-item">
+    <h2 class="accordion-header"><button class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#bg">Break-glass Alerting</button></h2>
+    <div id="bg" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+      <div class="accordion-body">
+        <form method="post" action="/settings/breakglass">
+          <div class="mb-2"><label class="form-label">Alert email</label><input name="breakglass.alert_email" class="form-control" value="{{ store.get('breakglass.alert_email') }}"></div>
+          <div class="mb-2"><label class="form-label">Alert webhook URL</label><input name="breakglass.alert_webhook_url" class="form-control" value="{{ store.get('breakglass.alert_webhook_url') }}"></div>
+          <div class="mb-2"><label class="form-label">IP allowlist (comma-separated CIDRs, blank = unrestricted)</label><input name="breakglass.ip_allowlist" class="form-control" value="{{ store.get('breakglass.ip_allowlist') }}"></div>
+          <button class="btn btn-sm btn-outline-light">Save</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="accordion-item">
+    <h2 class="accordion-header"><button class="accordion-button collapsed" data-bs-toggle="collapse" data-bs-target="#smtp">SMTP</button></h2>
+    <div id="smtp" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+      <div class="accordion-body">
+        <form method="post" action="/settings/smtp">
+          <div class="mb-2"><label class="form-label">Host</label><input name="smtp.host" class="form-control" value="{{ store.get('smtp.host') }}"></div>
+          <div class="mb-2"><label class="form-label">Port</label><input name="smtp.port" class="form-control" value="{{ store.get('smtp.port') }}"></div>
+          <div class="mb-2"><label class="form-label">From address</label><input name="smtp.from_address" class="form-control" value="{{ store.get('smtp.from_address') }}"></div>
+          <button class="btn btn-sm btn-outline-light">Save</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

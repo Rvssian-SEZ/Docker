@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-4">Dashboard</h1>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <h2 class="h5"><i class="bi bi-person-gear me-2"></i>AD Account Management</h2>
+        {% if ad_configured %}
+        <p class="text-success mb-2"><i class="bi bi-check-circle me-1"></i>AD service account configured.</p>
+        <a href="/ad" class="btn btn-sm btn-outline-light">Go to AD Accounts</a>
+        {% else %}
+        <p class="text-secondary mb-2">Not configured yet.</p>
+        {% if user and user.can('settings.manage') %}
+        <a href="/settings" class="btn btn-sm btn-outline-light">Configure in Settings</a>
+        {% endif %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <h2 class="h5"><i class="bi bi-bar-chart me-2"></i>M365 / Entra Reporting</h2>
+        {% if graph_configured %}
+        <p class="text-success mb-2"><i class="bi bi-check-circle me-1"></i>Graph app registration configured.</p>
+        {% else %}
+        <p class="text-secondary mb-2">Not configured yet.</p>
+        {% if user and user.can('settings.manage') %}
+        <a href="/settings" class="btn btn-sm btn-outline-light">Configure in Settings</a>
+        {% endif %}
+        {% endif %}
+        <p class="text-secondary small mt-2 mb-0">Reporting views (license overview, security posture, mailbox health, activity trends, service health, stale accounts) are Phase 2.</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

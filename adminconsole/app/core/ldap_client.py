@@ -1,0 +1,123 @@
+"""LDAPS client for AD account management — unlock, password reset,
+enable/disable, attribute edits, and LAPS (ms-Mcs-AdmPwd) read.
+
+STATUS: structurally complete, NOT yet live-verified against SAA.SC AD —
+flagged honestly rather than assumed working (same convention as itops2's
+LDAP/OAuth2 status notes). It needs the dsacls delegation prerequisites
+(spec: "AD Delegation Prerequisites") granted to the ad.bind_dn service
+account before any of these calls can succeed against a real DC, and should
+be piloted against one OU first (see spec's Open Decisions).
+
+Connects with ldap3, TLS via LDAPS (not StartTLS — AD refuses plaintext
+password operations regardless, but LDAPS is the simpler of the two to get
+right and matches "you already have SAA-CA/PKI for it" from the spec).
+Every function takes an already-open Connection (see bind()) rather than
+opening its own — callers (the AD router) are responsible for closing it,
+so one request's multiple operations (e.g. search then unlock) share a
+single bind instead of re-authenticating per call.
+"""
+
+import logging
+import ssl
+
+from ldap3 import ALL_ATTRIBUTES, MODIFY_REPLACE, SUBTREE, Connection, Server, Tls
+
+logger = logging.getLogger(__name__)
+
+# userAccountControl bit — see MS-ADTS 2.2.16. Flipping this bit is how
+# enable/disable actually works over LDAP (there is no separate "enabled"
+# attribute).
+UAC_ACCOUNTDISABLE = 0x0002
+
+
+class LdapError(Exception):
+    """User-presentable AD operation failure."""
+
+
+def bind(ldaps_url: str, bind_dn: str, bind_password: str) -> Connection:
+    tls = Tls(validate=ssl.CERT_REQUIRED)
+    server = Server(ldaps_url, use_ssl=True, tls=tls)
+    conn = Connection(server, user=bind_dn, password=bind_password, auto_bind=True)
+    return conn
+
+
+def find_user(conn: Connection, base_dn: str, sam_account_name: str) -> dict | None:
+    """Returns the entry's dn + attributes dict, or None if not found."""
+    conn.search(
+        search_base=base_dn,
+        search_filter=f"(sAMAccountName={_escape(sam_account_name)})",
+        search_scope=SUBTREE,
+        attributes=ALL_ATTRIBUTES,
+    )
+    if not conn.entries:
+        return None
+    entry = conn.entries[0]
+    return {"dn": entry.entry_dn, "attributes": entry.entry_attributes_as_dict}
+
+
+def unlock_account(conn: Connection, dn: str) -> None:
+    """Clears lockoutTime — the documented way to unlock an AD account
+    over LDAP (there is no dedicated "unlock" verb)."""
+    ok = conn.modify(dn, {"lockoutTime": [(MODIFY_REPLACE, [0])]})
+    if not ok:
+        raise LdapError(f"Unlock failed: {conn.result.get('description')}")
+
+
+def reset_password(conn: Connection, dn: str, new_password: str, *, force_change_at_logon: bool = True) -> None:
+    """AD requires this over an already-encrypted (LDAPS) connection; a
+    plaintext LDAP connection is rejected by AD itself for password ops,
+    independent of anything this app does."""
+    encoded = f'"{new_password}"'.encode("utf-16-le")
+    ok = conn.modify(dn, {"unicodePwd": [(MODIFY_REPLACE, [encoded])]})
+    if not ok:
+        raise LdapError(f"Password reset failed: {conn.result.get('description')}")
+    if force_change_at_logon:
+        # pwdLastSet=0 forces a change at next logon.
+        conn.modify(dn, {"pwdLastSet": [(MODIFY_REPLACE, [0])]})
+
+
+def set_enabled(conn: Connection, dn: str, current_uac: int, *, enabled: bool) -> None:
+    new_uac = current_uac & ~UAC_ACCOUNTDISABLE if enabled else current_uac | UAC_ACCOUNTDISABLE
+    ok = conn.modify(dn, {"userAccountControl": [(MODIFY_REPLACE, [new_uac])]})
+    if not ok:
+        raise LdapError(f"Enable/disable failed: {conn.result.get('description')}")
+
+
+# Attributes this app is allowed to touch via edit_attributes(). Deliberately
+# excludes group membership (member/memberOf) and anything AdminSDHolder-
+# protected — those stay a manual/ticketed process per the spec.
+EDITABLE_ATTRIBUTES = {"givenName", "sn", "displayName", "title", "department", "telephoneNumber", "mobile", "manager"}
+
+
+def edit_attributes(conn: Connection, dn: str, changes: dict[str, str]) -> None:
+    disallowed = set(changes) - EDITABLE_ATTRIBUTES
+    if disallowed:
+        raise LdapError(f"Not permitted to edit: {', '.join(sorted(disallowed))}")
+    ok = conn.modify(dn, {attr: [(MODIFY_REPLACE, [value])] for attr, value in changes.items()})
+    if not ok:
+        raise LdapError(f"Attribute edit failed: {conn.result.get('description')}")
+
+
+def read_laps_password(conn: Connection, computer_dn: str) -> str | None:
+    """ms-Mcs-AdmPwd is a confidential attribute — requires an explicit ACL
+    grant beyond generic read-attribute delegation (spec). Returns None if
+    the attribute is absent (no rotation yet, or the ACL grant is missing —
+    the router surfaces these as distinct states via a search vs. a bind
+    error, not conflated into one generic failure)."""
+    conn.search(search_base=computer_dn, search_filter="(objectClass=computer)", search_scope="BASE", attributes=["ms-Mcs-AdmPwd"])
+    if not conn.entries:
+        return None
+    value = conn.entries[0].entry_attributes_as_dict.get("ms-Mcs-AdmPwd")
+    return value[0] if value else None
+
+
+def _escape(value: str) -> str:
+    """Minimal RFC 4515 filter escaping for the one place we interpolate
+    user input into a filter string (sAMAccountName lookups)."""
+    return (
+        value.replace("\\", "\\5c")
+        .replace("*", "\\2a")
+        .replace("(", "\\28")
+        .replace(")", "\\29")
+        .replace("\x00", "\\00")
+    )

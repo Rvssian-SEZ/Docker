@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-4"><i class="bi bi-journal-text me-2"></i>Audit Log</h1>
+
+<form method="get" action="/audit" class="row g-2 mb-4">
+  <div class="col-auto">
+    <select name="actor" class="form-select form-select-sm">
+      <option value="">All actors</option>
+      {% for a in actors %}
+      <option value="{{ a }}" {% if filters.actor == a %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <select name="action" class="form-select form-select-sm">
+      <option value="">All actions</option>
+      {% for a in actions %}
+      <option value="{{ a }}" {% if filters.action == a %}selected{% endif %}>{{ a }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <input type="text" name="target_id" class="form-control form-control-sm" placeholder="Target (e.g. sAMAccountName)" value="{{ filters.target_id }}">
+  </div>
+  <div class="col-auto">
+    <input type="date" name="since" class="form-control form-control-sm" value="{{ filters.since }}">
+  </div>
+  <div class="col-auto">
+    <input type="date" name="until" class="form-control form-control-sm" value="{{ filters.until }}">
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-sm btn-outline-light">Filter</button>
+    <a href="/audit" class="btn btn-sm btn-link">Reset</a>
+  </div>
+</form>
+
+<div class="table-responsive">
+<table class="table table-sm table-striped" style="table-layout: fixed">
+  <colgroup>
+    <col style="width: 11rem">
+    <col style="width: 10rem">
+    <col style="width: 8rem">
+    <col style="width: 10rem">
+    <col style="width: 10rem">
+    <col>
+  </colgroup>
+  <thead>
+    <tr><th>When (UTC)</th><th>Actor</th><th>Role</th><th>Action</th><th>Target</th><th>Reason / Detail</th></tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr {% if r.actor_source == 'breakglass' %}class="table-danger"{% endif %}>
+      <td>{{ r.at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+      <td>{{ r.actor_username }} <span class="text-secondary small">({{ r.actor_source }})</span></td>
+      <td>{{ r.actor_role }}</td>
+      <td>{{ r.action }}</td>
+      <td>{{ r.target_type }}{% if r.target_id %}: {{ r.target_id }}{% endif %}</td>
+      <td class="small">{{ r.reason or '' }}{% if r.detail %}<div class="text-secondary">{{ r.detail }}</div>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="text-secondary text-center py-4">No matching audit rows.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="text-secondary small">Showing up to 200 most recent matches. Narrow with filters above for older activity.</p>
+{% endblock %}

@@ -1,0 +1,27 @@
+# SAA Admin Console — saa-docker (10.10.160.59)
+# Config lives at /opt/appdata/adminconsole/ per the repo's standard layout.
+# NOTE: port 8010 is a placeholder — confirm it's free on saa-docker before
+# first deploy (only Semaphore/3001 is confirmed in use on this host so far).
+services:
+  app:
+    build:
+      context: .
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+    image: ghcr.io/rvssian-sez/adminconsole:latest
+    container_name: adminconsole
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8010:8000"
+    volumes:
+      - /opt/appdata/adminconsole/data:/data
+      # Step-CA root, if this host's LDAPS/Authentik endpoints need it
+      # (httpx -> Authentik, ldap3 -> DC) — path referenced by CA_CERT_PATH.
+      - /opt/appdata/adminconsole/certs:/certs:ro
+    networks:
+      - adminconsole_net
+
+networks:
+  adminconsole_net:
+    name: adminconsole_net

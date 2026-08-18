@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h4 mb-3">LAPS password — {{ sam }}</h1>
+{% if password %}
+<div class="alert alert-info">
+  <div id="lapsValue" class="fs-4 font-monospace user-select-all">{{ password }}</div>
+  <div class="small text-secondary mt-2" id="lapsTimer">Hides in 30s — this reveal is logged.</div>
+</div>
+<script>
+  let secs = 30;
+  const el = document.getElementById('lapsValue');
+  const timer = document.getElementById('lapsTimer');
+  const hide = () => { el.textContent = '••••••••'; timer.textContent = 'Hidden. Reload the reveal action to view again (logged each time).'; };
+  const interval = setInterval(() => {
+    secs -= 1;
+    if (secs <= 0) { clearInterval(interval); hide(); }
+    else { timer.textContent = `Hides in ${secs}s — this reveal is logged.`; }
+  }, 1000);
+</script>
+{% else %}
+<div class="alert alert-warning">No LAPS password is available for this object — either it has never rotated, or the service account's ACL on ms-Mcs-AdmPwd is missing (see Settings → AD Delegation Prerequisites).</div>
+{% endif %}
+<a href="/ad" class="btn btn-sm btn-outline-light">Back to AD Accounts</a>
+{% endblock %}
