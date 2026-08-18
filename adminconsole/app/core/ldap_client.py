@@ -28,6 +28,8 @@ import ssl
 
 from ldap3 import ALL_ATTRIBUTES, MODIFY_REPLACE, SUBTREE, Connection, Server, Tls
 
+from app.core.config import get_settings
+
 logger = logging.getLogger(__name__)
 
 # userAccountControl bit — see MS-ADTS 2.2.16. Flipping this bit is how
@@ -41,7 +43,13 @@ class LdapError(Exception):
 
 
 def bind(ldaps_url: str, bind_dn: str, bind_password: str) -> Connection:
-    tls = Tls(validate=ssl.CERT_REQUIRED)
+    # DC LDAPS certs are issued by the internal SAA-CA, not a publicly
+    # trusted CA (unlike auth.saa.sc's wildcard cert, which httpx already
+    # trusts via the system store) — confirmed live: without ca_certs_file
+    # here, ldap3 raised CERTIFICATE_VERIFY_FAILED / unable to get local
+    # issuer certificate on the very first real bind attempt.
+    ca_cert_path = get_settings().ca_cert_path
+    tls = Tls(validate=ssl.CERT_REQUIRED, ca_certs_file=ca_cert_path)
     server = Server(ldaps_url, use_ssl=True, tls=tls)
     conn = Connection(server, user=bind_dn, password=bind_password, auto_bind=True)
     return conn
