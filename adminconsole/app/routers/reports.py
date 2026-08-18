@@ -16,7 +16,7 @@ from app.core import reports as reports_core
 from app.core.auth import CurrentUser, require, require_all
 from app.core.csv_export import csv_response
 from app.core.db import get_db
-from app.core.graph_client import GraphError, GraphPermissionError
+from app.core.graph_client import GraphError, GraphLicenseError, GraphPermissionError
 from app.core.settings_store import load_settings
 from app.templating import templates
 
@@ -30,9 +30,11 @@ async def _section(coro):
     try:
         return {"ok": True, "data": await coro}
     except GraphPermissionError as exc:
-        return {"ok": False, "missing_permission": True, "error": str(exc)}
+        return {"ok": False, "reason": "permission", "error": str(exc)}
+    except GraphLicenseError as exc:
+        return {"ok": False, "reason": "license", "error": str(exc)}
     except GraphError as exc:
-        return {"ok": False, "missing_permission": False, "error": str(exc)}
+        return {"ok": False, "reason": "error", "error": str(exc)}
 
 
 @router.get("/reports", response_class=HTMLResponse)
@@ -55,7 +57,15 @@ async def reports_page(
         "mfa_registration": await _section(reports_core.mfa_registration(store)),
         "stale_accounts": await _section(reports_core.stale_accounts(store)),
     }
-    return templates.TemplateResponse(request, "reports/index.html", {"user": user, "s": sections})
+    # Alex: omit sections this tenant's license tier blocks outright (Azure
+    # AD Premium) rather than showing a permanent error card for something
+    # no permission grant or app change can fix.
+    license_blocked = [k for k, v in sections.items() if not v["ok"] and v.get("reason") == "license"]
+    for k in license_blocked:
+        del sections[k]
+    return templates.TemplateResponse(
+        request, "reports/index.html", {"user": user, "s": sections, "license_blocked": license_blocked}
+    )
 
 
 async def _mailbox_rows(store):

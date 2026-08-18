@@ -69,10 +69,7 @@ async def service_health(store: SettingsStore) -> list[dict]:
 
 async def mailbox_health(store: SettingsStore) -> dict:
     async def fetch():
-        body = await graph_client.get(
-            store, "/reports/getMailboxUsageDetail(period='D7')", params={"$format": "application/json"}
-        )
-        rows = body.get("value", body if isinstance(body, list) else [])
+        rows = await graph_client.get_report_csv(store, "/reports/getMailboxUsageDetail(period='D7')")
         return {"columns": _columns(rows), "rows": rows}
 
     return await _cached("mailbox_health", fetch)
@@ -80,10 +77,7 @@ async def mailbox_health(store: SettingsStore) -> dict:
 
 async def activity_trends(store: SettingsStore) -> dict:
     async def fetch():
-        body = await graph_client.get(
-            store, "/reports/getEmailActivityCounts(period='D7')", params={"$format": "application/json"}
-        )
-        rows = body.get("value", body if isinstance(body, list) else [])
+        rows = await graph_client.get_report_csv(store, "/reports/getEmailActivityCounts(period='D7')")
         return {"columns": _columns(rows), "rows": rows}
 
     return await _cached("activity_trends", fetch)

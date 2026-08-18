@@ -41,6 +41,16 @@ class GraphPermissionError(GraphError):
     render this as a distinct "missing permission" state."""
 
 
+class GraphLicenseError(GraphError):
+    """The tenant itself lacks the M365/Entra license tier a call needs
+    (e.g. Azure AD Premium for signInActivity/userRegistrationDetails,
+    Premium P2 for Identity Protection/riskyUsers) — confirmed live via
+    Authentication_RequestFromNonPremiumTenantOrB2CTenant and a similar
+    "not licensed for this feature" 403. No permission grant fixes this;
+    it's a distinct state from GraphPermissionError so the UI doesn't
+    imply "go consent a scope" for something consent can't solve."""
+
+
 async def _get_token(store: SettingsStore) -> str:
     tenant_id = store.get("graph.tenant_id")
     client_id = store.get("graph.client_id")
@@ -99,6 +109,38 @@ async def get_all_pages(store: SettingsStore, path: str, *, params: dict | None 
     return items
 
 
+async def get_report_csv(store: SettingsStore, path: str) -> list[dict]:
+    """The classic Reports API "Detail"/"Counts" endpoints only return
+    CSV — confirmed live that `$format=application/json` on these
+    specific endpoints 400s with "JSON format is not supported" (unlike
+    some other Graph report endpoints where that param does work, so this
+    is deliberately a separate function rather than a flag on get()).
+    Follows the endpoint's 302 to the signed blob URL same as get()."""
+    token = await _get_token(store)
+    url = f"{GRAPH_BASE}{path}"
+    headers = {"Authorization": f"Bearer {token}"}
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+        resp = await client.get(url, headers=headers)
+    if resp.status_code == 403:
+        try:
+            body = resp.json().get("error", {})
+        except Exception:
+            body = {}
+        code, message = body.get("code", ""), body.get("message", "")
+        if code == "Authentication_MSGraphPermissionMissing":
+            raise GraphPermissionError(f"Missing Graph permission for {path.split('(')[0]}.")
+        if code == "Authentication_RequestFromNonPremiumTenantOrB2CTenant" or "not licensed for this feature" in message:
+            raise GraphLicenseError(f"Requires an Azure AD Premium license this tenant doesn't have ({message or code}).")
+        raise GraphError(f"Graph report request forbidden: {resp.text[:200]}")
+    if resp.status_code >= 400:
+        raise GraphError(f"Graph report request failed ({resp.status_code}): {resp.text[:200]}")
+    import csv
+    import io
+
+    reader = csv.DictReader(io.StringIO(resp.text))
+    return list(reader)
+
+
 async def _request(token: str, url: str, params: dict | None) -> dict:
     headers = {"Authorization": f"Bearer {token}"}
     # follow_redirects: the classic Reports API endpoints (getMailboxUsageDetail,
@@ -116,11 +158,15 @@ async def _request(token: str, url: str, params: dict | None) -> dict:
                 continue
             if resp.status_code == 403:
                 try:
-                    code = resp.json().get("error", {}).get("code", "")
+                    body = resp.json().get("error", {})
                 except Exception:
-                    code = ""
+                    body = {}
+                code = body.get("code", "")
+                message = body.get("message", "")
                 if code == "Authentication_MSGraphPermissionMissing":
                     raise GraphPermissionError(f"Missing Graph permission for {url.split('?')[0]}.")
+                if code == "Authentication_RequestFromNonPremiumTenantOrB2CTenant" or "not licensed for this feature" in message:
+                    raise GraphLicenseError(f"Requires an Azure AD Premium license this tenant doesn't have ({message or code}).")
                 raise GraphError(f"Graph request forbidden: {resp.text[:200]}")
             if resp.status_code >= 400:
                 raise GraphError(f"Graph request failed ({resp.status_code}): {resp.text[:200]}")

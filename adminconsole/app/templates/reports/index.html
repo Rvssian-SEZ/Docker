@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% macro section_error(s) %}
-  {% if s.missing_permission %}
+  {% if s.reason == 'permission' %}
   <div class="alert alert-warning py-2 small mb-0"><i class="bi bi-shield-exclamation me-1"></i>{{ s.error }} Grant the missing Graph permission and admin-consent it in Entra — this section activates automatically once it propagates (can take a few minutes to an hour).</div>
   {% else %}
   <div class="alert alert-danger py-2 small mb-0">{{ s.error }}</div>
@@ -13,6 +13,7 @@
 
 <div class="row g-3">
 
+  {% if 'licenses' in s %}
   <div class="col-md-6">
     <div class="card h-100">
       <div class="card-body">
@@ -33,7 +34,9 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
+  {% if 'service_health' in s %}
   <div class="col-md-6">
     <div class="card h-100">
       <div class="card-body">
@@ -51,7 +54,9 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
+  {% if 'mfa_registration' in s %}
   <div class="col-md-6">
     <div class="card h-100">
       <div class="card-body">
@@ -63,7 +68,9 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
+  {% if 'risky_users' in s %}
   <div class="col-md-6">
     <div class="card h-100">
       <div class="card-body">
@@ -84,7 +91,9 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
+  {% if 'guest_accounts' in s %}
   <div class="col-md-6">
     <div class="card h-100">
       <div class="card-body">
@@ -105,7 +114,9 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
+  {% if 'stale_accounts' in s %}
   <div class="col-md-6">
     <div class="card h-100">
       <div class="card-body">
@@ -126,7 +137,9 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
+  {% if 'mailbox_health' in s %}
   <div class="col-md-6">
     <div class="card h-100">
       <div class="card-body">
@@ -147,7 +160,9 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
+  {% if 'activity_trends' in s %}
   <div class="col-md-6">
     <div class="card h-100">
       <div class="card-body">
@@ -168,8 +183,12 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
 </div>
 
-<p class="text-secondary small mt-3">Cached for up to 5 minutes — a refresh won't always hit Graph live. Legacy-auth detection isn't built yet (see CLAUDE_CONTEXT.md).</p>
+<p class="text-secondary small mt-3">
+  Cached for up to 5 minutes — a refresh won't always hit Graph live. Legacy-auth detection isn't built yet (see CLAUDE_CONTEXT.md).
+  {% if license_blocked %}<br>Omitted (this tenant's license doesn't cover them): {{ license_blocked | join(', ') }}.{% endif %}
+</p>
 {% endblock %}
