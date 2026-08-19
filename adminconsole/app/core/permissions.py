@@ -3,11 +3,16 @@
 Adding a permission: add the key here (and to DEFAULTS); the Settings grid
 renders from PERMISSIONS automatically (Phase 2 — see CLAUDE_CONTEXT.md).
 
-Tiers and their intended scope come straight from the spec's suggested
-starting table:
+Tiers (Alex, 2026-08-19 — supersedes the spec's original suggested
+starting table for Helpdesk L2):
   Helpdesk L1 — unlock, reset password (standard-user OU only)
-  Helpdesk L2 — + enable/disable, non-privileged attribute edits
-  Admin       — + LAPS retrieval, group membership changes, settings, audit
+  Helpdesk L2 — everything Admin has EXCEPT settings.manage (the Settings
+      tab, incl. Graph/Authentik/AD/break-glass-alerting/Automation
+      credentials) — deliberately excludes ad.group_membership too, same
+      as Admin (that permission is reserved/unused in v1 regardless).
+  Admin       — everything except ad.group_membership (out of scope, see
+      spec) — includes settings.manage, audit.view, users.manage,
+      ad.laps_read, reports.export.
   Break-glass — everything, but it's not a role (see app/core/breakglass.py)
       and is never granted through this matrix.
 
@@ -49,13 +54,6 @@ DEFAULTS: dict[RoleName, list[str]] = {
         "ad.reset_password",
         "reports.view",
     ],
-    RoleName.helpdesk_l2: [
-        "ad.search",
-        "ad.unlock",
-        "ad.reset_password",
-        "ad.enable_disable",
-        "ad.edit_attributes",
-        "reports.view",
-    ],
+    RoleName.helpdesk_l2: [p for p in ALL_PERMISSIONS if p not in ("ad.group_membership", "settings.manage")],
     RoleName.admin: [p for p in ALL_PERMISSIONS if p != "ad.group_membership"],
 }
