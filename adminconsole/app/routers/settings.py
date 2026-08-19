@@ -146,7 +146,7 @@ _SECTION_KEYS = {
         "ad.excluded_ous",
     ],
     "breakglass": ["breakglass.alert_email", "breakglass.alert_webhook_url", "breakglass.ip_allowlist"],
-    "automation": ["semaphore.url", "semaphore.username", "semaphore.password", "semaphore.project_id", "semaphore.laps_template_id"],
+    "automation": ["semaphore.url", "semaphore.username", "semaphore.password", "semaphore.project_id", "semaphore.laps_template_id", "semaphore.unlock_template_id"],
     "smtp": ["smtp.host", "smtp.port", "smtp.from_address"],
     "sync": ["sync.frequency_minutes"],
 }

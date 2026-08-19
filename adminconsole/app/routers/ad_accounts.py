@@ -268,6 +268,37 @@ async def _perform(request: Request, db: AsyncSession, user: CurrentUser, sam: s
     except ScopeDenied as exc:
         return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": exc.message})
     except ldap_client.LdapError as exc:
+        if action == "unlock" and "insufficientAccessRights" in str(exc):
+            # AdminSDHolder-protected (adminCount=1) account — a standing
+            # per-object ACE grant here gets silently wiped by SDProp's own
+            # cycle (confirmed live 2026-08-19, see CLAUDE_CONTEXT.md
+            # "Protected Users unlock"), so this falls back to a Semaphore-
+            # run unlock via Ansible@SAA.SC instead of delegating anything
+            # new. Only unlock has this fallback — reset/enable-disable/
+            # attribute-edit on a protected account stay a manual process.
+            try:
+                await semaphore_client.trigger_protected_unlock(store, target_sam=sam)
+            except semaphore_client.SemaphoreError as fallback_exc:
+                await _log_and_alert(
+                    request, user, action="unlock_failed", target_id=sam, reason=reason,
+                    detail=f"LDAPS insufficientAccessRights (adminCount=1?); Semaphore fallback also failed: {fallback_exc}",
+                )
+                return templates.TemplateResponse(
+                    request, "ad/action_result.html",
+                    {"user": user, "ok": False, "message": f"Unlock failed via LDAPS (insufficient rights — likely AdminSDHolder-protected) and via the fallback: {fallback_exc}"},
+                )
+            await _log_and_alert(
+                request, user, action="unlock", target_id=sam, reason=reason,
+                detail="LDAPS insufficientAccessRights (adminCount=1 account) — used the Semaphore fallback",
+            )
+            if user.is_breakglass:
+                pending = getattr(request.state, "breakglass_alert_pending", None)
+                if pending:
+                    await alert(db, subject="SAA Admin Console: break-glass unlock", body=pending)
+            return templates.TemplateResponse(
+                request, "ad/action_result.html",
+                {"user": user, "ok": True, "message": f"Unlock succeeded for {sam} (via the AdminSDHolder-protected-account fallback)."},
+            )
         await _log_and_alert(request, user, action=f"{action}_failed", target_id=sam, reason=reason, detail=str(exc))
         return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": str(exc)})
     finally:

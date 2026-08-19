@@ -75,6 +75,11 @@ DEFAULTS: dict[str, tuple[str, str]] = {
     "semaphore.password": ("", "str"),  # encrypted
     "semaphore.project_id": ("2", "int"),
     "semaphore.laps_template_id": ("", "int"),
+    # Fallback unlock path for AdminSDHolder-protected (adminCount=1)
+    # accounts, where a direct dsacls ACE gets wiped by SDProp's own
+    # cycle - see app/routers/ad_accounts.py and CLAUDE_CONTEXT.md
+    # "Protected Users unlock". Uses Ansible@SAA.SC, not svc-adminconsole.
+    "semaphore.unlock_template_id": ("", "int"),
 
     # --- Reporting sync ---
     "sync.frequency_minutes": ("60", "int"),
