@@ -200,6 +200,42 @@ Alex explicitly rather than picked silently:
 - **Live-verified end-to-end**: unlocking `ms` (Mitch Spence) through the
   actual running app succeeded after the grant.
 
+### Update 2026-08-19: the direct-ACE fix above was NOT durable
+Confirmed live the next day: Mitch Spence's unlock failed again with the
+exact same `insufficientAccessRights`. Checked the object directly — the
+`svc-adminconsole` ACE granted the day before was **gone**
+(`whenChanged` showed a same-morning modification), and `dsacls` showed
+only the standard AdminSDHolder-derived ACL. Root cause: SDProp doesn't
+just protect against inheritance, it periodically **overwrites the
+entire DACL** on every `adminCount=1` object with a fresh copy of the
+AdminSDHolder template — any direct ACE added outside that template gets
+silently erased on SDProp's own cycle (roughly hourly by default). The
+"narrow, current-members-only" fix from the day before was never durable,
+just delayed the same failure.
+
+**Fixed properly this time**: rather than delegating anything new (which
+SDProp would just erase again) or modifying the AdminSDHolder template
+itself (the bigger-blast-radius option Alex had already declined), the
+unlock route now has a transparent fallback:
+`app/routers/ad_accounts.py`'s `_perform()` tries the normal LDAPS unlock
+first (fast path, `svc-adminconsole`, works for every non-protected
+account); if that specifically fails with `insufficientAccessRights`, it
+falls back to `app/core/semaphore_client.trigger_protected_unlock()`,
+which runs `SAA/playbooks/admin_unlock_protected_account.yml` via
+Semaphore using **`Ansible@SAA.SC`** (already has full rights on every
+object, including protected ones — it's what every other playbook in
+this project already runs as). Nothing new is delegated to
+`svc-adminconsole` at all, so there's nothing for SDProp to wipe. Only
+`unlock` has this fallback — reset/enable-disable/attribute-edit on a
+protected account are still a manual process.
+New setting: `semaphore.unlock_template_id` (Settings → Automation),
+separate template ID from the LAPS one (Semaphore template #26).
+**Live-verified**: unlocking `ms` again succeeded via the fallback
+(~17s — LDAPS fails fast, then the Semaphore round-trip), and the audit
+row explicitly records `"LDAPS insufficientAccessRights (adminCount=1
+account) — used the Semaphore fallback"` so it's visible after the fact
+which path handled it.
+
 ## Windows LAPS retrieval — hybrid LDAPS + Semaphore (2026-08-18)
 Confirmed live (`SAA/playbooks/admin_check_laps_variant.yml` in the
 Semaphore repo, read-only): this forest runs **Windows LAPS with password
