@@ -166,6 +166,40 @@ irreversible in practice. Before LAPS retrieval can work at all:
 Every other AD write path (unlock/reset/enable-disable/attribute-edit)
 is unaffected — only LAPS retrieval is blocked pending this decision.
 
+## Protected Users unlock — AdminSDHolder inheritance gap (2026-08-19)
+Alex reported being unable to act on Protected Users group members at
+all. Confirmed live (not assumed): 6 of the group's 9 current members
+(including Mitch Spence) have `adminCount=1`, which — via AdminSDHolder/
+SDProp — disables ACL inheritance on that specific object. The domain-root
+`dsacls ... /I:S` grant from account provisioning (above) relies entirely
+on inheritance, so it silently never reached these 6 accounts even though
+the grant itself is correctly in place for everyone else.
+Two fixes were possible, with very different blast radius — surfaced to
+Alex explicitly rather than picked silently:
+- Modify the AdminSDHolder template itself: dynamic (SDProp
+  auto-propagates to any future adminCount=1 object, hourly-ish), but
+  reaches *every* protected principal domain-wide — real Domain Admins,
+  Enterprise Admins, Schema Admins, krbtgt, etc. — not just Protected
+  Users, a materially bigger domain-wide security-control change.
+- **Chosen**: a direct (non-inherited), unlock-only ACE
+  (`WP;lockoutTime` — no reset/enable-disable/attribute-edit/LAPS) on
+  today's 6 adminCount=1 members specifically, discovered live each run
+  rather than hardcoded
+  (`SAA/playbooks/admin_grant_unlock_protected_users.yml` in the
+  Semaphore repo, run via a temporary template, now deleted — task
+  history in Semaphore #80-81). Narrow and fully reversible, at the cost
+  of not being dynamic: a **new** Protected Users member with
+  `adminCount=1` won't automatically get this and needs a playbook rerun.
+- **Bug found via live testing**: `dsacls` rejected the grant with "user
+  is specified as Inherited Object Type. /I:S must be present" when the
+  ACE included the `;user` object-type qualifier — that qualifier implies
+  an inheritable/propagating ACE, which doesn't apply to a direct grant on
+  a single leaf object. Fixed by dropping `;user` entirely for this
+  leaf-object case (kept for the domain-root inherited grant, where it's
+  correct).
+- **Live-verified end-to-end**: unlocking `ms` (Mitch Spence) through the
+  actual running app succeeded after the grant.
+
 ## Windows LAPS retrieval — hybrid LDAPS + Semaphore (2026-08-18)
 Confirmed live (`SAA/playbooks/admin_check_laps_variant.yml` in the
 Semaphore repo, read-only): this forest runs **Windows LAPS with password
