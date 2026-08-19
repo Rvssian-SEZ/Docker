@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-3"><i class="bi bi-bar-chart me-2"></i>Reporting</h1>
+<ul class="nav nav-tabs mb-4">
+  <li class="nav-item"><a class="nav-link" href="/reports">Overview</a></li>
+  <li class="nav-item"><a class="nav-link active" href="/reports/users">Users &amp; Licenses</a></li>
+</ul>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h2 class="h5 mb-0">All Users &amp; Assigned Licenses</h2>
+  {% if user.can('reports.export') and s.ok %}<a href="/reports/export/users_licenses" class="btn btn-sm btn-outline-light">CSV</a>{% endif %}
+</div>
+
+{% if not s.ok %}
+  {% if s.reason == 'permission' %}
+  <div class="alert alert-warning"><i class="bi bi-shield-exclamation me-1"></i>{{ s.error }}</div>
+  {% elif s.reason == 'license' %}
+  <div class="alert alert-secondary">{{ s.error }}</div>
+  {% else %}
+  <div class="alert alert-danger">{{ s.error }}</div>
+  {% endif %}
+{% else %}
+<div class="table-responsive">
+<table class="table table-sm table-striped">
+  <thead><tr><th>Name</th><th>UPN</th><th>Status</th><th>Licenses</th></tr></thead>
+  <tbody>
+  {% for r in s.data %}
+    <tr>
+      <td>{{ r.name }}</td>
+      <td>{{ r.upn }}</td>
+      <td><span class="badge {% if r.enabled %}text-bg-success{% else %}text-bg-secondary{% endif %}">{{ 'Enabled' if r.enabled else 'Disabled' }}</span></td>
+      <td>{% if r.licenses == 'None' %}<span class="text-secondary">None</span>{% else %}{{ r.licenses }}{% endif %}</td>
+    </tr>
+  {% else %}<tr><td colspan="4" class="text-secondary text-center">No users found.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="text-secondary small">{{ s.data | length }} users. Cached for up to 5 minutes.</p>
+{% endif %}
+{% endblock %}

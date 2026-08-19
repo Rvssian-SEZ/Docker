@@ -169,6 +169,39 @@ async def mfa_registration(store: SettingsStore) -> dict:
     return await _cached("mfa_registration", fetch)
 
 
+async def users_licenses(store: SettingsStore) -> list[dict]:
+    """All directory users with their assigned license SKUs (friendly
+    names via subscribedSkus' skuId -> skuPartNumber, not raw GUIDs).
+    Uses Directory.Read.All/User.Read.All only — no AuditLog/Premium
+    dependency, unlike stale_accounts/mfa_registration."""
+
+    async def fetch():
+        skus_body = await graph_client.get(store, "/subscribedSkus")
+        sku_names = {s["skuId"]: s.get("skuPartNumber", s["skuId"]) for s in skus_body.get("value", [])}
+
+        rows = await graph_client.get_all_pages(
+            store,
+            "/users",
+            params={"$select": "displayName,userPrincipalName,accountEnabled,assignedLicenses"},
+        )
+        out = []
+        for r in rows:
+            license_names = sorted(
+                sku_names.get(lic["skuId"], lic["skuId"]) for lic in r.get("assignedLicenses", [])
+            )
+            out.append(
+                {
+                    "name": r.get("displayName", ""),
+                    "upn": r.get("userPrincipalName", ""),
+                    "enabled": r.get("accountEnabled", True),
+                    "licenses": ", ".join(license_names) if license_names else "None",
+                }
+            )
+        return sorted(out, key=lambda r: r["name"] or "")
+
+    return await _cached("users_licenses", fetch)
+
+
 async def stale_accounts(store: SettingsStore) -> list[dict]:
     """Same permission caveat as mfa_registration — signInActivity needs
     AuditLog.Read.All."""

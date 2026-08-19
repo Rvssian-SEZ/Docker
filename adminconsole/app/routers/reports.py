@@ -83,7 +83,21 @@ _EXPORTERS = {
     "stale_accounts": (reports_core.stale_accounts, "stale_accounts.csv"),
     "mailbox_health": (_mailbox_rows, "mailbox_health.csv"),
     "activity_trends": (_activity_rows, "activity_trends.csv"),
+    "users_licenses": (reports_core.users_licenses, "users_licenses.csv"),
 }
+
+
+@router.get("/reports/users", response_class=HTMLResponse)
+async def users_licenses_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("reports.view")),
+):
+    store = await load_settings(db)
+    if not (store.get("graph.tenant_id") and store.get("graph.client_id")):
+        return templates.TemplateResponse(request, "reports/not_configured.html", {"user": user})
+    section = await _section(reports_core.users_licenses(store))
+    return templates.TemplateResponse(request, "reports/users.html", {"user": user, "s": section})
 
 
 @router.get("/reports/export/{key}")
