@@ -491,19 +491,29 @@ permission-scoped nav item.
   AD write here — reason/ticket-ref required, break-glass alerting fires
   on every create attempt, not just success.
 
-### Known gap before first real use: a delegation this app doesn't have yet
+### Delegation gap — closed 2026-08-24
 Every dsacls grant confirmed during the original `svc-adminconsole`
 provisioning (see "AD service account" above) is a **write-property**
 right on *existing* objects (reset password, lockoutTime,
-userAccountControl, the EDITABLE_ATTRIBUTES set). Creating a brand new
-object needs a **different** ACE entirely — a "Create User objects"
-(child-object creation) delegation on whichever OU(s) users should be
-created in. This was never part of the original delegation and almost
-certainly does not exist yet. Until it's granted, every real attempt
-through this feature will fail with `insufficientAccessRights` at the
-`ldap_client.create_user()` step, regardless of how correct the rest of
-this is — confirm/grant it (same `dsacls`-via-Semaphore mechanism as the
-rest of this project's AD delegation) before relying on this feature.
+userAccountControl, the EDITABLE_ATTRIBUTES set) — object creation needs a
+**different** ACE (Create Child), and a few attributes this feature writes
+weren't in the original write-property list either. Granted live via
+`SAA/playbooks/admin_grant_create_user_adminconsole.yml` (Semaphore repo),
+run through a temporary template (task history stays in Semaphore #174 for
+audit trail, template itself deleted after) — same domain-root `/I:S`
+pattern as the original provisioning grant:
+- `CC;user` (Create Child user objects — the actual creation right)
+- `WP;sAMAccountName;user`, `WP;userPrincipalName;user`, `WP;mail;user`,
+  `WP;company;user`, `WP;proxyAddresses;user` — attributes
+  `ldap_client.create_user()` writes that weren't covered by the original
+  grant (givenName/sn/displayName/title/department/telephoneNumber/mobile/
+  userAccountControl already were).
+**Confirmed live**: all 6 `dsacls` grants returned `rc=0`, play recap
+`failed=0`. The feature itself (the actual `POST /ad/create` flow through
+the running app) has **not yet been exercised end-to-end against a real
+account** — that's the next thing to verify, not assumed working from the
+delegation alone, same honesty convention as every other AD path in this
+file.
 
 ## Unrelated infra incident on the same host — Sophos WAN/WireGuard outage, resolved 2026-08-20
 Not about this app, but worth keeping here since it's the same host
