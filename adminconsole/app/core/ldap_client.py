@@ -73,6 +73,26 @@ def find_user(conn: Connection, base_dn: str, sam_account_name: str) -> dict | N
     return {"dn": entry.entry_dn, "attributes": entry.entry_attributes_as_dict}
 
 
+def _classify(object_classes: list[str]) -> str:
+    """"computer" / "contact" / "user" / "other" — search_accounts()'s
+    filter matches on name-like attributes (sn/givenName/displayName/cn)
+    that mail Contacts also have, so a plain "is it a computer, else
+    assume user" check was mislabeling Contacts as real user accounts
+    (found live, 2026-08-25) — they'd then show Unlock/Reset PW/Modify
+    buttons that don't apply to them at all. AD's schema: a computer's
+    objectClass chain includes "user" (computer IS-A user structurally),
+    so "computer" must be checked before "user"; a Contact's chain never
+    includes "user" at all (top/person/organizationalPerson/contact).
+    """
+    if "computer" in object_classes:
+        return "computer"
+    if "contact" in object_classes:
+        return "contact"
+    if "user" in object_classes:
+        return "user"
+    return "other"
+
+
 def search_accounts(conn: Connection, base_dn: str, query: str, *, limit: int = 50) -> list[dict]:
     """Name/username search across users AND computers — sAMAccountName,
     givenName, sn, displayName, cn, all OR'd together, substring-
@@ -120,7 +140,7 @@ def search_accounts(conn: Connection, base_dn: str, query: str, *, limit: int = 
                 "mobile": (attrs.get("mobile") or [""])[0],
                 "title": (attrs.get("title") or [""])[0],
                 "department": (attrs.get("department") or [""])[0],
-                "is_computer": "computer" in object_classes,
+                "kind": _classify(object_classes),
             }
         )
     return results

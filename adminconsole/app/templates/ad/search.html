@@ -21,13 +21,21 @@
       <td>{{ r.display_name or '—' }}</td>
       <td>{{ r.sam }}</td>
       <td>{{ r.mail or '—' }}</td>
-      <td><span class="badge {% if r.is_computer %}text-bg-info{% else %}text-bg-secondary{% endif %}">{{ 'Computer' if r.is_computer else 'User' }}</span></td>
+      <td>
+        <span class="badge
+          {% if r.kind == 'computer' %}text-bg-info
+          {% elif r.kind == 'user' %}text-bg-secondary
+          {% elif r.kind == 'contact' %}text-bg-dark
+          {% else %}text-bg-light text-dark{% endif %}">
+          {{ {'computer': 'Computer', 'user': 'User', 'contact': 'Contact'}.get(r.kind, 'Other') }}
+        </span>
+      </td>
       <td class="text-end">
-        {% if r.is_computer %}
+        {% if r.kind == 'computer' %}
           {% if user.can('ad.laps_read') %}
           <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#lapsModal{{ loop.index }}">LAPS Reveal</button>
           {% endif %}
-        {% else %}
+        {% elif r.kind == 'user' %}
           {% if user.can('ad.unlock') %}<button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#unlockModal{{ loop.index }}">Unlock</button>{% endif %}
           {% if user.can('ad.reset_password') %}<button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#resetModal{{ loop.index }}">Reset PW</button>{% endif %}
           {% if user.can('ad.edit_attributes') %}<button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#modifyModal{{ loop.index }}">Modify</button>{% endif %}
@@ -35,6 +43,8 @@
           <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#enableModal{{ loop.index }}">Enable</button>
           <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#disableModal{{ loop.index }}">Disable</button>
           {% endif %}
+        {% else %}
+          <span class="text-secondary small">No actions (not a user account)</span>
         {% endif %}
       </td>
     </tr>
@@ -44,7 +54,7 @@
 </div>
 
 {% for r in results %}
-{% if r.is_computer %}
+{% if r.kind == 'computer' %}
 <div class="modal fade" id="lapsModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
   <form method="post" action="/ad/{{ r.sam }}/laps">
     <div class="modal-header"><h5 class="modal-title">Reveal LAPS password for {{ r.sam }}</h5></div>
@@ -52,7 +62,7 @@
     <div class="modal-footer"><button class="btn btn-info">Reveal</button></div>
   </form>
 </div></div></div>
-{% else %}
+{% elif r.kind == 'user' %}
 <div class="modal fade" id="unlockModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
   <form method="post" action="/ad/{{ r.sam }}/unlock">
     <div class="modal-header"><h5 class="modal-title">Unlock {{ r.sam }}</h5></div>
