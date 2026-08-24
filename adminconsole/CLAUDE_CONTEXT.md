@@ -515,6 +515,28 @@ account** — that's the next thing to verify, not assumed working from the
 delegation alone, same honesty convention as every other AD path in this
 file.
 
+### Gotcha (hit immediately, 2026-08-24): a new permission needs a live-DB patch too
+`bootstrap()` (app/core/bootstrap.py) only seeds a role's default
+permission matrix **if that role currently has zero rows** — it never
+diffs an already-bootstrapped role against a code change to
+`permissions.py`'s `DEFAULTS`. Deploying the `ad.create_user` permission
+code change did NOT actually grant it to Admin/Helpdesk L2 on the live
+app — both roles already had rows from the original bootstrap, so the new
+permission was silently absent from the DB despite being live in code
+(same class of gap already known from the Helpdesk L2 matrix change
+earlier in this project — see "Locked-in decisions" history). Fixed by
+inserting the missing `role_permissions` rows directly:
+`INSERT INTO role_permissions (role_id, permission) VALUES (3,
+'ad.create_user'), (2, 'ad.create_user')` (role_id 3 = admin, 2 =
+helpdesk_l2 on this deploy — **check actual IDs live, don't assume**, see
+`SELECT id, name FROM roles`). No container restart needed — `auth.py`'s
+`get_current_user()` reloads permissions from the DB on every request.
+**Standing rule for next time**: adding any new permission to
+`permissions.py` needs this same manual live-DB patch on top of the code
+deploy, every time, for every role whose `DEFAULTS` you expect it to
+reach — the code change alone is not sufficient for an already-running
+instance.
+
 ## Unrelated infra incident on the same host — Sophos WAN/WireGuard outage, resolved 2026-08-20
 Not about this app, but worth keeping here since it's the same host
 (saa-docker) and touches the `wgdashboard` container that lives alongside
