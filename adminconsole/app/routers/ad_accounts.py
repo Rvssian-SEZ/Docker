@@ -147,7 +147,7 @@ async def ad_reset_password(
     sam: str,
     reason: str = Form(...),
     new_password: str = Form(...),
-    force_change: bool = Form(True),
+    force_change: bool = Form(False),
     db: AsyncSession = Depends(get_db),
     user: CurrentUser = Depends(require("ad.reset_password")),
 ):
