@@ -5,7 +5,8 @@ renders from PERMISSIONS automatically (Phase 2 — see CLAUDE_CONTEXT.md).
 
 Tiers (Alex, 2026-08-19 — supersedes the spec's original suggested
 starting table for Helpdesk L2):
-  Helpdesk L1 — unlock, reset password (standard-user OU only)
+  Helpdesk L1 — unlock, reset password (standard-user OU only). Does NOT
+      get ad.create_user (Alex, 2026-08-24 — account creation is L2+).
   Helpdesk L2 — everything Admin has EXCEPT settings.manage (the Settings
       tab, incl. Graph/Authentik/AD/break-glass-alerting/Automation
       credentials) — deliberately excludes ad.group_membership too, same
@@ -32,6 +33,7 @@ PERMISSIONS: dict[str, list[str]] = {
         "ad.enable_disable",
         "ad.edit_attributes",
         "ad.laps_read",
+        "ad.create_user",  # Admin + Helpdesk L2 only (Alex, 2026-08-24) — see DEFAULTS below
         "ad.group_membership",  # granted to no default role in v1 (out of scope, see spec) — reserved
     ],
     "Reporting": [

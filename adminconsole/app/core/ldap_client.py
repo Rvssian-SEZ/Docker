@@ -27,15 +27,19 @@ import logging
 import ssl
 
 from ldap3 import ALL_ATTRIBUTES, MODIFY_REPLACE, SUBTREE, Connection, Server, Tls
+from ldap3.utils.dn import parse_dn
 
 from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# userAccountControl bit — see MS-ADTS 2.2.16. Flipping this bit is how
-# enable/disable actually works over LDAP (there is no separate "enabled"
-# attribute).
+# userAccountControl bits — see MS-ADTS 2.2.16. Flipping ACCOUNTDISABLE is
+# how enable/disable actually works over LDAP (there is no separate
+# "enabled" attribute). NORMAL_ACCOUNT is the base flag every regular user
+# object needs; create_user() sets NORMAL_ACCOUNT|ACCOUNTDISABLE so a new
+# account is never left enabled without a password already set on it.
 UAC_ACCOUNTDISABLE = 0x0002
+UAC_NORMAL_ACCOUNT = 0x0200
 
 
 class LdapError(Exception):
@@ -137,6 +141,70 @@ def set_enabled(conn: Connection, dn: str, current_uac: int, *, enabled: bool) -
     ok = conn.modify(dn, {"userAccountControl": [(MODIFY_REPLACE, [new_uac])]})
     if not ok:
         raise LdapError(f"Enable/disable failed: {conn.result.get('description')}")
+
+
+def list_ous(conn: Connection, base_dn: str) -> list[dict]:
+    """Every organizationalUnit under base_dn — backs the Create User OU
+    picker, same tree an admin would browse in Active Directory Users and
+    Computers. `display` is a root->leaf breadcrumb built from the DN's
+    OU= components (parse_dn handles escaped commas inside an OU name
+    correctly, unlike a naive str.split(",")).
+    """
+    conn.search(
+        search_base=base_dn,
+        search_filter="(objectClass=organizationalUnit)",
+        search_scope=SUBTREE,
+        attributes=["ou"],
+    )
+    results = []
+    for entry in conn.entries:
+        dn = entry.entry_dn
+        ou_parts = [value for attr, value, _ in parse_dn(dn) if attr.upper() == "OU"]
+        results.append({"dn": dn, "display": " > ".join(reversed(ou_parts)) or dn})
+    results.sort(key=lambda r: r["display"].lower())
+    return results
+
+
+def create_user(conn: Connection, dn: str, attributes: dict[str, str | list[str]]) -> None:
+    """Creates a new AD user object, disabled — AD requires a valid
+    password before an account can meaningfully be enabled, so this never
+    creates an enabled, passwordless object. Caller (see
+    app/routers/ad_accounts.py's create-user route) must follow up with
+    reset_password() then set_enabled(enabled=True); if either of those
+    fails, the object is deliberately left behind disabled rather than
+    silently deleted, so nothing is lost and it's visible for follow-up.
+
+    NOT yet live-verified against SAA.SC AD (see module docstring) —
+    beyond the write-property delegation already confirmed for existing
+    objects, this additionally needs a **Create User objects** (child-
+    object creation) delegation on whichever OUs users will be created in,
+    which is a distinct ACE from anything granted during the original
+    svc-adminconsole provisioning. Confirm that grant exists before the
+    first real use.
+    """
+    object_class = ["top", "person", "organizationalPerson", "user"]
+    create_attrs: dict[str, str | int | list[str]] = {
+        "userAccountControl": UAC_NORMAL_ACCOUNT | UAC_ACCOUNTDISABLE,
+        **attributes,
+    }
+    ok = conn.add(dn, object_class=object_class, attributes=create_attrs)
+    if not ok:
+        raise LdapError(f"User creation failed: {conn.result.get('description')} — {conn.result.get('message')}")
+
+
+def escape_dn_value(value: str) -> str:
+    """Minimal RFC 4514 DN-value escaping for building a new user's RDN
+    (CN=...) from a free-text display name — same escape-what-matters
+    convention as _escape()/_escape_wildcard() above, not a full RFC 4514
+    parser."""
+    value = value.strip()
+    special = ',+"\\<>;='
+    escaped = "".join(f"\\{ch}" if ch in special else ch for ch in value)
+    if escaped.startswith("#") or escaped.startswith(" "):
+        escaped = "\\" + escaped
+    if escaped.endswith(" ") and not escaped.endswith("\\ "):
+        escaped = escaped[:-1] + "\\ "
+    return escaped
 
 
 # Attributes this app is allowed to touch via edit_attributes(). Deliberately

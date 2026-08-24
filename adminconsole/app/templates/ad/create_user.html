@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-4"><i class="bi bi-person-plus me-2"></i>Create User</h1>
+
+{% if error %}<div class="alert alert-warning">{{ error }}</div>{% endif %}
+
+<form method="post" action="/ad/create" class="row g-3" style="max-width: 48rem" id="createUserForm">
+  <div class="col-md-6">
+    <label class="form-label">First name</label>
+    <input type="text" name="first_name" id="firstName" class="form-control" required>
+  </div>
+  <div class="col-md-6">
+    <label class="form-label">Last name</label>
+    <input type="text" name="last_name" id="lastName" class="form-control" required>
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">Logon name (sAMAccountName)</label>
+    <input type="text" name="logon_name" id="logonName" class="form-control" required autocomplete="off">
+    <div id="logonStatus" class="form-text"></div>
+    <div id="logonSuggestions" class="form-text"></div>
+  </div>
+  <div class="col-md-6">
+    <label class="form-label">OU</label>
+    <select name="ou_dn" class="form-select" required>
+      <option value="" disabled selected>Select an OU…</option>
+      {% for ou in ous %}
+      <option value="{{ ou.dn }}">{{ ou.display }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">Telephone</label>
+    <input type="text" name="telephone" class="form-control">
+  </div>
+  <div class="col-md-6">
+    <label class="form-label">Mobile</label>
+    <input type="text" name="mobile" class="form-control">
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">Job title</label>
+    <input type="text" name="job_title" class="form-control">
+  </div>
+  <div class="col-md-6">
+    <label class="form-label">Department</label>
+    <input type="text" name="department" class="form-control">
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">Company</label>
+    <input type="text" name="company" class="form-control">
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">Password</label>
+    <div class="input-group">
+      <input type="text" name="password" id="password" class="form-control font-monospace" value="{{ suggested_password }}" required>
+      <button type="button" id="regenPassword" class="btn btn-outline-light"><i class="bi bi-arrow-clockwise"></i></button>
+    </div>
+    <div class="form-text">Shown in plaintext to hand directly to the new user — never stored or logged as-is.</div>
+  </div>
+
+  <div class="col-12">
+    <div class="form-check">
+      <input type="checkbox" class="form-check-input" name="force_change" value="true" checked id="forceChange">
+      <label class="form-check-label" for="forceChange">Require password change at next logon</label>
+    </div>
+  </div>
+
+  <div class="col-12">
+    <label class="form-label">Reason / ticket ref</label>
+    <input type="text" name="reason" class="form-control" required>
+  </div>
+
+  <div class="col-12">
+    <button class="btn btn-primary"><i class="bi bi-person-plus me-1"></i>Create User</button>
+  </div>
+</form>
+
+<script>
+(function () {
+  const firstName = document.getElementById("firstName");
+  const lastName = document.getElementById("lastName");
+  const logonName = document.getElementById("logonName");
+  const logonStatus = document.getElementById("logonStatus");
+  const logonSuggestions = document.getElementById("logonSuggestions");
+  const password = document.getElementById("password");
+  const regenBtn = document.getElementById("regenPassword");
+
+  let logonEditedManually = false;
+  let debounceTimer = null;
+
+  logonName.addEventListener("input", () => { logonEditedManually = true; scheduleCheck(); });
+
+  function scheduleCheck() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(checkLogonName, 350);
+  }
+
+  function checkLogonName() {
+    const name = logonName.value.trim();
+    if (!name) { logonStatus.textContent = ""; return; }
+    fetch("/ad/create/check-logon-name?name=" + encodeURIComponent(name))
+      .then(r => r.json())
+      .then(data => {
+        if (data.exists === true) {
+          logonStatus.innerHTML = '<span class="text-danger"><i class="bi bi-x-circle-fill me-1"></i>Already exists</span>';
+        } else if (data.exists === false) {
+          logonStatus.innerHTML = '<span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>Available</span>';
+        } else {
+          logonStatus.textContent = "";
+        }
+      })
+      .catch(() => { logonStatus.textContent = ""; });
+  }
+
+  function refreshSuggestions() {
+    const first = firstName.value.trim();
+    const last = lastName.value.trim();
+    if (!first || !last) { logonSuggestions.innerHTML = ""; return; }
+    fetch("/ad/create/suggest-logon-name?first=" + encodeURIComponent(first) + "&last=" + encodeURIComponent(last))
+      .then(r => r.json())
+      .then(data => {
+        const candidates = data.candidates || [];
+        if (!candidates.length) { logonSuggestions.innerHTML = ""; return; }
+        if (!logonEditedManually) {
+          const firstFree = candidates.find(c => !c.exists);
+          logonName.value = firstFree ? firstFree.logon : candidates[0].logon;
+          checkLogonName();
+        }
+        logonSuggestions.innerHTML = "Suggestions: " + candidates.map(c =>
+          `<span class="${c.exists ? 'text-danger' : 'text-success'} me-2">${c.logon}${c.exists ? ' (taken)' : ''}</span>`
+        ).join("");
+      })
+      .catch(() => { logonSuggestions.innerHTML = ""; });
+  }
+
+  firstName.addEventListener("blur", refreshSuggestions);
+  lastName.addEventListener("blur", refreshSuggestions);
+
+  regenBtn.addEventListener("click", () => {
+    fetch("/ad/create/new-password")
+      .then(r => r.json())
+      .then(data => { password.value = data.password; });
+  });
+})();
+</script>
+{% endblock %}

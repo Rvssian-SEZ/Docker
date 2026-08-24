@@ -431,3 +431,147 @@ ssh root@10.10.160.59 "cd /opt/docker-repo/adminconsole && docker compose up -d 
   work that session went through its REST API instead). Confirm SSH
   access to saa-docker separately before relying on the scp-based deploy
   procedure above.
+
+## Create User (2026-08-24) — built, NOT yet live-verified against SAA.SC AD
+New feature: Admin + Helpdesk L2 only (`ad.create_user` permission —
+deliberately excluded from Helpdesk L1's fixed DEFAULTS list in
+app/core/permissions.py; flows into Helpdesk L2/Admin automatically since
+both derive from `ALL_PERMISSIONS` minus a smaller exclusion list). New nav
+item "Create User" in the sidebar, gated the same way as every other
+permission-scoped nav item.
+
+- **Form fields**: first/last name, logon name (sAMAccountName),
+  telephone, mobile, job title, department, company, an OU picker, and a
+  suggested password. `POST /ad/create` in app/routers/ad_accounts.py.
+- **OU picker**: `ldap_client.list_ous()` enumerates every
+  `organizationalUnit` under `ad.base_dn` (same tree an admin would browse
+  in ADUC) and renders a root->leaf breadcrumb built via `ldap3`'s
+  `parse_dn` (handles an OU name containing an escaped comma correctly,
+  unlike a naive `str.split(",")`). No separate "which OU container"
+  setting was added — it reuses the AD Settings section's existing
+  `ad.base_dn` as the enumeration root.
+- **Logon name suggestion**: `app/core/user_provisioning.py`
+  (`suggest_logon_names`) — pure, no AD dependency. Alexander Sedgwick ->
+  `asedgwick`, then `alsedgwick`, then `alesedgwick`, growing the
+  first-name prefix by one letter each time this org's standing
+  convention (Alex, 2026-08-24) for the next candidate once the short form
+  is taken. `GET /ad/create/suggest-logon-name` checks each candidate
+  against AD live and the form auto-fills the first free one; a manual
+  edit to the logon-name field stops the auto-fill (tracked client-side)
+  without disabling the live "already exists" check
+  (`GET /ad/create/check-logon-name`), which keeps working either way.
+- **Password suggestion**: `user_provisioning.generate_password()` —
+  `Word.Word.NN`, exactly 12 characters (two distinct 4-letter words from
+  a small curated list + a random 2-digit number, e.g. `Blue.Frog.73`),
+  CSPRNG-backed (`random.SystemRandom`, same security bar as this app's
+  existing `secrets` usage elsewhere). Shown in plaintext in a text (not
+  password-type) input per the spec, with a regenerate button
+  (`GET /ad/create/new-password`). **Never written to the audit log** —
+  same never-log-the-secret convention as `ad.reset_password`'s
+  `new_password`.
+- **proxyAddresses**: every created user gets exactly two —
+  `SMTP:{logon}@saa.sc` (primary, uppercase) and
+  `smtp:{logon}@scaasey.mail.onmicrosoft.com` (secondary, lowercase) — plus
+  `mail` and `userPrincipalName` both set to `{logon}@saa.sc` to match the
+  primary proxy address, per Alex's spec.
+- **Creation sequence** (`ldap_client.create_user()` +
+  `reset_password()` + `set_enabled()`): the object is created **disabled**
+  (`userAccountControl = NORMAL_ACCOUNT|ACCOUNTDISABLE`) first, then the
+  suggested/entered password is set, then it's enabled — never an enabled
+  object with no valid password. If the password-set or enable step fails
+  after the object already exists, it's deliberately **left behind
+  disabled** (not silently deleted) with an audit row recording exactly
+  that, so a partial failure is visible for manual follow-up rather than
+  either invisible or falsely reported as a clean success.
+- **OU scoping**: reuses `_check_scope()` exactly as every other AD write
+  in this router does, checked against the target `ou_dn` — meaningful
+  here specifically for Helpdesk L2 (the only non-admin role with this
+  permission); Admin/break-glass are unscoped as usual.
+- **Rate-limited** (10/10min per user) and **audited** like every other
+  AD write here — reason/ticket-ref required, break-glass alerting fires
+  on every create attempt, not just success.
+
+### Known gap before first real use: a delegation this app doesn't have yet
+Every dsacls grant confirmed during the original `svc-adminconsole`
+provisioning (see "AD service account" above) is a **write-property**
+right on *existing* objects (reset password, lockoutTime,
+userAccountControl, the EDITABLE_ATTRIBUTES set). Creating a brand new
+object needs a **different** ACE entirely — a "Create User objects"
+(child-object creation) delegation on whichever OU(s) users should be
+created in. This was never part of the original delegation and almost
+certainly does not exist yet. Until it's granted, every real attempt
+through this feature will fail with `insufficientAccessRights` at the
+`ldap_client.create_user()` step, regardless of how correct the rest of
+this is — confirm/grant it (same `dsacls`-via-Semaphore mechanism as the
+rest of this project's AD delegation) before relying on this feature.
+
+## Unrelated infra incident on the same host — Sophos WAN/WireGuard outage, resolved 2026-08-20
+Not about this app, but worth keeping here since it's the same host
+(saa-docker) and touches the `wgdashboard` container that lives alongside
+`adminconsole` on it. A Sophos XGS2100 firewall rule change (narrowing
+`WireGuard_VPN_CWS`'s services, reordering) coincided with saa-docker
+losing all external reachability (SSH/HTTPS/Semaphore/wgdashboard).
+
+**Root cause, found after a long multi-layer investigation**: the NAT
+rule's `WireGuard Port` service object had **Source port hardcoded to
+51821**, same as the destination port. Real WireGuard clients always
+connect from a random ephemeral source port, never from 51821 itself — so
+no genuine client packet could ever match that service definition,
+regardless of anything else being correctly configured. Fixed by widening
+the source port to a full ephemeral range (1–65000). Final working state:
+WireGuard stayed on Sophos's default port 51821 end-to-end (Sophos NAT/
+firewall rule, FortiGate listener, and `wgdashboard`'s `wg1` interface all
+on 51821).
+
+**False leads investigated and ruled out along the way** (kept in case
+this resurfaces or a similar issue hits a different port):
+- Sophos's **Local ACL** layer evaluates *before* NAT/firewall rules for
+  any traffic addressed to the firewall's own WAN interface IP, and drops
+  silently with no firewall-rule log entry at all (`log_component=
+  Local_ACLs`, `fw_rule_id=N/A`) — this is why the outage looked like
+  "traffic isn't even reaching the firewall" when it actually was.
+  Confirmed live via Sophos's `drop-packet-capture` diagnostic tool.
+- Local ACL only actively polices a small fixed set of Sophos-recognized
+  service ports (HTTPS/SSH/IPsec/SSL VPN/RED/etc., configurable per zone
+  under Administration → Device access → Local Service ACL). SFOS has
+  native WireGuard VPN support and appears to reserve port 51821 for it
+  even though it's not exposed as a named checkbox in the Local Service
+  ACL Exception Rule UI (that picker only offers a fixed built-in list —
+  no custom/arbitrary port entry at all).
+  - Tried port 4500 (maps to the built-in IPsec exception) — worked past
+    Local ACL cleanly, since IPsec remote access was confirmed genuinely
+    disabled on this box (no daemon to conflict with).
+  - Tried port 8443 (Sophos's own SSL VPN default) — dead end: with SSL
+    VPN's service enabled, Sophos's own SSL VPN daemon silently consumes
+    the packet itself before Local ACL/NAT/firewall rules ever see it;
+    with it disabled, Local ACL blocks the port outright. Either way it
+    can't be used to tunnel unrelated traffic through to the FortiGate.
+  - An arbitrary non-standard port (e.g. the FortiGate's own SSL VPN on
+    10443) sails through Local ACL untouched, since it isn't one of
+    Sophos's recognized service ports — proved this by comparing against
+    `FG_SSL_VPN_CWS`, a working rule with 6M+ hits.
+- Firewall rules for these WAN→FortiGate DNAT flows must reference the
+  **original pre-NAT public IP** (`41.86.46.27`) as the Destination
+  network, not the translated/post-NAT FortiGate IP (`192.168.199.2`) —
+  true even though the NAT rule and firewall rule are unlinked (no
+  "Firewall rule ID" tag pairing them). Confirmed by matching the exact
+  structure of `FG_SSL_VPN_CWS` (works) against `WireGuard_VPN_CWS`
+  (didn't, until this was fixed) — same NAT pattern, only difference was
+  this field.
+- `wgdashboard`'s `wg_autostart` setting does **not** actually bring
+  WireGuard interfaces up automatically on container start/recreate —
+  confirmed repeatedly across several container recreates during this
+  incident. `wg-quick up wg1` has to be run manually every time the
+  container restarts (same pre-existing behavior already affecting `wg0`,
+  noted earlier in this session as a separate open item). Worth fixing
+  properly (e.g. a startup healthcheck/cron that brings interfaces up)
+  rather than continuing to do this by hand after every restart.
+- `wgdashboard`'s compose stack is Portainer-managed at
+  `/portainer/Files/AppData/Config/portainer/compose/23/docker-compose.yml`
+  on saa-docker (root SSH) — port changes require editing that file and
+  `docker compose -p wgdashboard up -d` (Docker can't hot-add a published
+  port to a running container). The `public_ip` env var there (→
+  `remote_endpoint` in wgdashboard's ini) had been left pointing at the
+  docker host's LAN IP instead of the Sophos WAN IP (`41.86.46.27`) —
+  fixed in passing since it would have made every exported peer config
+  wrong regardless of the port issue.

@@ -19,11 +19,11 @@ not just at login.
 import asyncio
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from ldap3 import Connection
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import ldap_client, laps_pending, semaphore_client
+from app.core import ldap_client, laps_pending, semaphore_client, user_provisioning
 from app.core.alerting import alert
 from app.core.audit import write_audit
 from app.core.auth import CurrentUser, require
@@ -248,6 +248,188 @@ async def ad_laps_reveal(
         request,
         "ad/laps_result.html",
         {"user": user, "sam": sam, "password": result["password"]},
+    )
+
+
+@router.get("/ad/create", response_class=HTMLResponse)
+async def ad_create_user_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("ad.create_user")),
+):
+    store = await load_settings(db)
+    if not (store.get("ad.ldaps_url") and store.get("ad.bind_dn") and store.get("ad.base_dn")):
+        return templates.TemplateResponse(request, "ad/not_configured.html", {"user": user}, status_code=200)
+    try:
+        conn = _open_conn(store)
+    except AdNotConfigured:
+        return templates.TemplateResponse(request, "ad/not_configured.html", {"user": user}, status_code=200)
+    try:
+        ous = ldap_client.list_ous(conn, store.get("ad.base_dn"))
+    finally:
+        conn.unbind()
+    return templates.TemplateResponse(
+        request,
+        "ad/create_user.html",
+        {"user": user, "ous": ous, "suggested_password": user_provisioning.generate_password(), "error": None},
+    )
+
+
+@router.get("/ad/create/suggest-logon-name")
+async def ad_suggest_logon_name(
+    first: str,
+    last: str,
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("ad.create_user")),
+):
+    """Live suggestion list for the Create User form's logon-name field —
+    each candidate checked against AD so the UI can show which is free
+    without the admin having to submit the form to find out."""
+    candidates = user_provisioning.suggest_logon_names(first, last)
+    store = await load_settings(db)
+    try:
+        conn = _open_conn(store)
+    except AdNotConfigured:
+        return JSONResponse({"candidates": []})
+    try:
+        results = [{"logon": c, "exists": ldap_client.find_user(conn, store.get("ad.base_dn"), c) is not None} for c in candidates]
+    finally:
+        conn.unbind()
+    return JSONResponse({"candidates": results})
+
+
+@router.get("/ad/create/check-logon-name")
+async def ad_check_logon_name(
+    name: str,
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("ad.create_user")),
+):
+    """Backs the live "does this logon name already exist" indicator when
+    an admin types/edits the field directly instead of using a suggestion."""
+    name = name.strip()
+    if not name:
+        return JSONResponse({"exists": None})
+    store = await load_settings(db)
+    try:
+        conn = _open_conn(store)
+    except AdNotConfigured:
+        return JSONResponse({"exists": None})
+    try:
+        exists = ldap_client.find_user(conn, store.get("ad.base_dn"), name) is not None
+    finally:
+        conn.unbind()
+    return JSONResponse({"exists": exists})
+
+
+@router.get("/ad/create/new-password")
+async def ad_new_suggested_password(user: CurrentUser = Depends(require("ad.create_user"))):
+    return JSONResponse({"password": user_provisioning.generate_password()})
+
+
+@router.post("/ad/create")
+async def ad_create_user(
+    request: Request,
+    reason: str = Form(...),
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    logon_name: str = Form(...),
+    password: str = Form(...),
+    ou_dn: str = Form(...),
+    telephone: str = Form(""),
+    mobile: str = Form(""),
+    job_title: str = Form(""),
+    department: str = Form(""),
+    company: str = Form(""),
+    force_change: bool = Form(True),
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("ad.create_user")),
+):
+    if not reason.strip():
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "A reason/ticket-ref is required."})
+    if not rate_check(f"create_user:{user.username}", max_calls=10, window_seconds=600):
+        raise HTTPException(status_code=429, detail="Too many account creations — try again shortly.")
+
+    logon = logon_name.strip().lower()
+    if not logon or not logon.isalnum():
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "Logon name must be non-empty, letters/numbers only."})
+
+    store = await load_settings(db)
+    try:
+        conn = _open_conn(store)
+    except AdNotConfigured:
+        return templates.TemplateResponse(request, "ad/not_configured.html", {"user": user}, status_code=200)
+
+    display_name = f"{first_name.strip()} {last_name.strip()}".strip()
+    upn = f"{logon}@saa.sc"
+    dn = f"CN={ldap_client.escape_dn_value(display_name)},{ou_dn}"
+    try:
+        _check_scope(store, ou_dn, user)
+
+        if ldap_client.find_user(conn, store.get("ad.base_dn"), logon) is not None:
+            return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"Logon name '{logon}' already exists — choose another."})
+
+        attrs: dict[str, str | list[str]] = {
+            "sAMAccountName": logon,
+            "userPrincipalName": upn,
+            "givenName": first_name.strip(),
+            "sn": last_name.strip(),
+            "displayName": display_name,
+            "cn": display_name,
+            "mail": upn,
+            # Primary (uppercase SMTP) + secondary (lowercase smtp) proxy
+            # addresses, per Alex's 2026-08-24 spec for this feature.
+            "proxyAddresses": [f"SMTP:{upn}", f"smtp:{logon}@scaasey.mail.onmicrosoft.com"],
+        }
+        if telephone.strip():
+            attrs["telephoneNumber"] = telephone.strip()
+        if mobile.strip():
+            attrs["mobile"] = mobile.strip()
+        if job_title.strip():
+            attrs["title"] = job_title.strip()
+        if department.strip():
+            attrs["department"] = department.strip()
+        if company.strip():
+            attrs["company"] = company.strip()
+
+        ldap_client.create_user(conn, dn, attrs)
+        try:
+            ldap_client.reset_password(conn, dn, password, force_change_at_logon=force_change)
+            ldap_client.set_enabled(conn, dn, ldap_client.UAC_NORMAL_ACCOUNT | ldap_client.UAC_ACCOUNTDISABLE, enabled=True)
+        except ldap_client.LdapError as exc:
+            # Object exists but couldn't get a valid password/enabled state —
+            # leave it disabled rather than pretend this succeeded or
+            # silently delete it; the audit row below records the failure
+            # so the half-created object isn't invisible.
+            await _log_and_alert(
+                request, user, action="create_user_failed", target_id=logon, reason=reason,
+                detail=f"Object created at {dn} but password/enable step failed: {exc}",
+            )
+            return templates.TemplateResponse(
+                request, "ad/action_result.html",
+                {"user": user, "ok": False, "message": f"User object was created but could not be activated: {exc}. Left disabled for follow-up ({dn})."},
+            )
+    except ScopeDenied as exc:
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": exc.message})
+    except ldap_client.LdapError as exc:
+        await _log_and_alert(request, user, action="create_user_failed", target_id=logon, reason=reason, detail=str(exc))
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": str(exc)})
+    finally:
+        conn.unbind()
+
+    # Never include the plaintext password in the audit detail — same
+    # never-log-the-secret convention as reset_password.
+    await _log_and_alert(
+        request, user, action="create_user", target_id=logon, reason=reason,
+        detail=f"Created {dn}; UPN={upn}; department={department.strip() or '—'}; title={job_title.strip() or '—'}",
+    )
+    if user.is_breakglass:
+        pending = getattr(request.state, "breakglass_alert_pending", None)
+        if pending:
+            await alert(db, subject="SAA Admin Console: break-glass create_user", body=pending)
+
+    return templates.TemplateResponse(
+        request, "ad/action_result.html",
+        {"user": user, "ok": True, "message": f"Account created: {logon} ({display_name}) in {ou_dn}."},
     )
 
 
