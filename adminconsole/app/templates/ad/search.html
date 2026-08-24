@@ -30,6 +30,7 @@
         {% else %}
           {% if user.can('ad.unlock') %}<button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#unlockModal{{ loop.index }}">Unlock</button>{% endif %}
           {% if user.can('ad.reset_password') %}<button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#resetModal{{ loop.index }}">Reset PW</button>{% endif %}
+          {% if user.can('ad.edit_attributes') %}<button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#modifyModal{{ loop.index }}">Modify</button>{% endif %}
           {% if user.can('ad.enable_disable') %}
           <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#enableModal{{ loop.index }}">Enable</button>
           <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#disableModal{{ loop.index }}">Disable</button>
@@ -64,11 +65,31 @@
   <form method="post" action="/ad/{{ r.sam }}/reset-password">
     <div class="modal-header"><h5 class="modal-title">Reset password for {{ r.sam }}</h5></div>
     <div class="modal-body">
-      <div class="mb-2"><label class="form-label">New password</label><input name="new_password" type="password" class="form-control" required></div>
+      <div class="mb-2">
+        <label class="form-label">New password</label>
+        <div class="input-group">
+          <input name="new_password" type="text" class="form-control font-monospace new-password-field" value="{{ generate_password() }}" required>
+          <button type="button" class="btn btn-outline-light regen-password-btn"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+      </div>
       <div class="form-check mb-2"><input type="checkbox" class="form-check-input" name="force_change" value="true" checked><label class="form-check-label">Require change at next logon</label></div>
       <label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required>
     </div>
     <div class="modal-footer"><button class="btn btn-warning">Reset Password</button></div>
+  </form>
+</div></div></div>
+
+<div class="modal fade" id="modifyModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/ad/{{ r.sam }}/modify">
+    <div class="modal-header"><h5 class="modal-title">Modify {{ r.sam }}</h5></div>
+    <div class="modal-body">
+      <div class="mb-2"><label class="form-label">Telephone</label><input name="telephone" class="form-control" value="{{ r.telephone }}"></div>
+      <div class="mb-2"><label class="form-label">Mobile</label><input name="mobile" class="form-control" value="{{ r.mobile }}"></div>
+      <div class="mb-2"><label class="form-label">Job title</label><input name="job_title" class="form-control" value="{{ r.title }}"></div>
+      <div class="mb-2"><label class="form-label">Department</label><input name="department" class="form-control" value="{{ r.department }}"></div>
+      <label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required>
+    </div>
+    <div class="modal-footer"><button class="btn btn-info">Save Changes</button></div>
   </form>
 </div></div></div>
 
@@ -89,5 +110,15 @@
 </div></div></div>
 {% endif %}
 {% endfor %}
+
+<script>
+document.querySelectorAll(".regen-password-btn").forEach(function (btn) {
+  btn.addEventListener("click", function () {
+    fetch("/ad/new-password")
+      .then(r => r.json())
+      .then(data => { btn.previousElementSibling.value = data.password; });
+  });
+});
+</script>
 {% endif %}
 {% endblock %}

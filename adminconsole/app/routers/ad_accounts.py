@@ -164,6 +164,46 @@ async def ad_reset_password(
     )
 
 
+@router.post("/ad/{sam}/modify")
+async def ad_modify_attributes(
+    request: Request,
+    sam: str,
+    reason: str = Form(...),
+    telephone: str = Form(""),
+    mobile: str = Form(""),
+    job_title: str = Form(""),
+    department: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("ad.edit_attributes")),
+):
+    """Blank fields are left untouched, not cleared — same "only send what
+    changed" convention as Create User's optional fields. Clearing an
+    attribute outright isn't supported here (LDAP needs a DELETE-style
+    modify for that, not a REPLACE with an empty value) — out of scope for
+    what was actually asked for."""
+    changes: dict[str, str] = {}
+    if telephone.strip():
+        changes["telephoneNumber"] = telephone.strip()
+    if mobile.strip():
+        changes["mobile"] = mobile.strip()
+    if job_title.strip():
+        changes["title"] = job_title.strip()
+    if department.strip():
+        changes["department"] = department.strip()
+    if not changes:
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "No changes submitted."})
+    return await _perform(request, db, user, sam, reason, action="modify", op=lambda conn, dn, attrs: ldap_client.edit_attributes(conn, dn, changes))
+
+
+@router.get("/ad/new-password")
+async def ad_new_password_suggestion(user: CurrentUser = Depends(require("ad.reset_password"))):
+    """Shared with the Reset Password modal's regenerate button — gated on
+    ad.reset_password (not ad.create_user) since that's the permission
+    that actually controls who sees that button. Create User's own
+    regenerate button uses its own /ad/create/new-password endpoint."""
+    return JSONResponse({"password": user_provisioning.generate_password()})
+
+
 @router.post("/ad/{sam}/enable")
 async def ad_enable(
     request: Request, sam: str, reason: str = Form(...), db: AsyncSession = Depends(get_db),

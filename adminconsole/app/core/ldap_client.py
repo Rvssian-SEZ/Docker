@@ -96,7 +96,14 @@ def search_accounts(conn: Connection, base_dn: str, query: str, *, limit: int = 
         search_base=base_dn,
         search_filter=filt,
         search_scope=SUBTREE,
-        attributes=["sAMAccountName", "displayName", "mail", "objectClass"],
+        attributes=[
+            "sAMAccountName", "displayName", "mail", "objectClass",
+            # Pre-fills the Modify modal (telephone/mobile/title/department) —
+            # fetched here rather than on-demand so that modal can be plain
+            # server-rendered, same convention as every other action modal
+            # on this page.
+            "telephoneNumber", "mobile", "title", "department",
+        ],
         size_limit=limit,
     )
     results = []
@@ -109,6 +116,10 @@ def search_accounts(conn: Connection, base_dn: str, query: str, *, limit: int = 
                 "sam": (attrs.get("sAMAccountName") or [""])[0],
                 "display_name": (attrs.get("displayName") or [""])[0],
                 "mail": (attrs.get("mail") or [""])[0],
+                "telephone": (attrs.get("telephoneNumber") or [""])[0],
+                "mobile": (attrs.get("mobile") or [""])[0],
+                "title": (attrs.get("title") or [""])[0],
+                "department": (attrs.get("department") or [""])[0],
                 "is_computer": "computer" in object_classes,
             }
         )
