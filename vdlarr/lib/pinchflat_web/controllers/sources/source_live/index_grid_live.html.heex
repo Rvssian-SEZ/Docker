@@ -1,0 +1,80 @@
+<div class="flex flex-col">
+  <div class="flex items-center gap-3 mb-4 px-1">
+    <span class="text-sm text-bodydark2">Sort by</span>
+    <form phx-change="sort_update" id="source-sort-form">
+      <select
+        name="sort_key"
+        class="rounded-sm border border-stroke bg-transparent px-2 py-1 text-sm text-black dark:border-strokedark dark:bg-boxdark dark:text-white"
+      >
+        <option value="custom_name" selected={@sort_key == :custom_name}>Name</option>
+        <option value="pending_count" selected={@sort_key == :pending_count}>Pending</option>
+        <option value="downloaded_count" selected={@sort_key == :downloaded_count}>Downloaded</option>
+        <option value="media_size_bytes" selected={@sort_key == :media_size_bytes}>Size</option>
+        <option value="media_profile_name" selected={@sort_key == :media_profile_name}>Media Profile</option>
+        <option value="enabled" selected={@sort_key == :enabled}>Enabled?</option>
+      </select>
+    </form>
+    <button
+      type="button"
+      id="sort-direction-toggle"
+      phx-click="sort_update"
+      phx-value-sort_key={@sort_key}
+      class="rounded-sm border border-stroke p-1 dark:border-strokedark"
+      title="Toggle sort direction"
+    >
+      <.icon name={if @sort_direction == :asc, do: "hero-chevron-up", else: "hero-chevron-down"} class="w-4 h-4" />
+    </button>
+  </div>
+
+  <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+    <div
+      :for={source <- @sources}
+      class="relative rounded-sm overflow-hidden border border-stroke bg-white shadow-default dark:border-strokedark dark:bg-boxdark group"
+      data-testid="source-grid-item"
+    >
+      <.link href={~p"/sources/#{source.id}"} class="block relative aspect-[2/3] w-full bg-meta-4">
+        <img
+          :if={source.resolved_poster_filepath}
+          src={~p"/sources/#{source.id}/poster"}
+          class="w-full h-full object-cover"
+        />
+        <div :if={!source.resolved_poster_filepath} class="w-full h-full flex items-center justify-center">
+          <.icon name="hero-photo" class="w-12 h-12 text-bodydark2" />
+        </div>
+        <div :if={!source.enabled} class="absolute inset-0 bg-black/50"></div>
+      </.link>
+
+      <div class="absolute top-1 left-1">
+        <.live_component
+          module={PinchflatWeb.Sources.SourceLive.SourceEnableToggle}
+          source={source}
+          id={"source_#{source.id}_enabled"}
+        />
+      </div>
+
+      <div class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <.icon_link href={~p"/sources/#{source.id}/edit"} icon="hero-pencil-square" class="bg-black/60 rounded p-1" />
+      </div>
+
+      <div class="p-2">
+        <div class="truncate font-medium">
+          <.subtle_link href={~p"/sources/#{source.id}"}>
+            {source.custom_name}
+          </.subtle_link>
+        </div>
+        <div class="flex justify-between text-xs text-bodydark2 mt-1">
+          <.subtle_link href={~p"/sources/#{source.id}/#tab-pending"}>
+            <.localized_number number={source.pending_count} /> pending
+          </.subtle_link>
+          <.subtle_link href={~p"/sources/#{source.id}/#tab-downloaded"}>
+            <.localized_number number={source.downloaded_count} /> downloaded
+          </.subtle_link>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section class="flex justify-center my-5">
+    <.live_pagination_controls page_number={@page} total_pages={@total_pages} />
+  </section>
+</div>

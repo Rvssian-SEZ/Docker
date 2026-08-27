@@ -1,0 +1,249 @@
+defmodule Pinchflat.SlowIndexing.MediaCollectionIndexingWorkerTest do
+  use Pinchflat.DataCase
+
+  import Pinchflat.MediaFixtures
+  import Pinchflat.SourcesFixtures
+
+  alias Pinchflat.Tasks
+  alias Pinchflat.Settings
+  alias Pinchflat.Downloading.MediaDownloadWorker
+  alias Pinchflat.SlowIndexing.MediaCollectionIndexingWorker
+
+  describe "kickoff_with_task/3" do
+    setup do
+      source = source_fixture(index_frequency_minutes: 10)
+
+      {:ok, %{source: source}}
+    end
+
+    test "starts the worker", %{source: source} do
+      assert [] = all_enqueued(worker: MediaCollectionIndexingWorker)
+      assert {:ok, _} = MediaCollectionIndexingWorker.kickoff_with_task(source)
+      assert [_] = all_enqueued(worker: MediaCollectionIndexingWorker)
+    end
+
+    test "attaches a task", %{source: source} do
+      assert {:ok, task} = MediaCollectionIndexingWorker.kickoff_with_task(source)
+      assert task.source_id == source.id
+    end
+
+    test "can be called with additional job arguments", %{source: source} do
+      job_args = %{"force" => true}
+
+      assert {:ok, _} = MediaCollectionIndexingWorker.kickoff_with_task(source, job_args)
+
+      assert_enqueued(worker: MediaCollectionIndexingWorker, args: %{"id" => source.id, "force" => true})
+    end
+
+    test "can be called with additional job options", %{source: source} do
+      job_opts = [max_attempts: 5]
+
+      assert {:ok, _} = MediaCollectionIndexingWorker.kickoff_with_task(source, %{}, job_opts)
+
+      [job] = all_enqueued(worker: MediaCollectionIndexingWorker, args: %{"id" => source.id})
+      assert job.max_attempts == 5
+    end
+  end
+
+  describe "perform/1" do
+    setup do
+      stub(YtDlpRunnerMock, :run, fn _url, :get_media_attributes_for_collection, _opts, _ot, _addl_opts -> {:ok, ""} end)
+
+      stub(AppriseRunnerMock, :run, fn _, _ -> {:ok, ""} end)
+
+      :ok
+    end
+
+    test "indexes the source if it should be indexed" do
+      expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes_for_collection, _opts, _ot, _addl_opts ->
+        {:ok, ""}
+      end)
+
+      source = source_fixture(index_frequency_minutes: 10)
+
+      perform_job(MediaCollectionIndexingWorker, %{id: source.id})
+    end
+
+    test "indexes the source no matter what if the source has never been indexed before" do
+      expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes_for_collection, _opts, _ot, _addl_opts ->
+        {:ok, ""}
+      end)
+
+      source = source_fixture(index_frequency_minutes: 0, last_indexed_at: nil)
+
+      perform_job(MediaCollectionIndexingWorker, %{id: source.id})
+    end
+
+    test "indexes the source no matter what if the 'force' arg is passed" do
+      expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes_for_collection, _opts, _ot, _addl_opts ->
+        {:ok, ""}
+      end)
+
+      source = source_fixture(index_frequency_minutes: 0, last_indexed_at: DateTime.utc_now())
+
+      perform_job(MediaCollectionIndexingWorker, %{id: source.id, force: true})
+    end
+
+    test "doesn't use a download archive if the index has been forced" do
+      expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes_for_collection, opts, _ot, _addl_opts ->
+        refute :break_on_existing in opts
+        refute Keyword.has_key?(opts, :download_archive)
+
+        {:ok, ""}
+      end)
+
+      source =
+        source_fixture(collection_type: :channel, index_frequency_minutes: 0, last_indexed_at: DateTime.utc_now())
+
+      perform_job(MediaCollectionIndexingWorker, %{id: source.id, force: true})
+    end
+
+    test "does not do any indexing if the source has been indexed and shouldn't be rescheduled" do
+      expect(YtDlpRunnerMock, :run, 0, fn _url, :get_media_attributes_for_collection, _opts, _ot, _addl_opts ->
+        {:ok, ""}
+      end)
+
+      source = source_fixture(index_frequency_minutes: -1, last_indexed_at: DateTime.utc_now())
+
+      perform_job(MediaCollectionIndexingWorker, %{id: source.id})
+    end
+
+    test "does not reschedule if the source shouldn't be indexed" do
+      stub(YtDlpRunnerMock, :run, fn _url, :get_media_attributes_for_collection, _opts, _ot, _addl_opts -> {:ok, ""} end)
+
+      source = source_fixture(index_frequency_minutes: -1)
+      perform_job(MediaCollectionIndexingWorker, %{id: source.id})
+
+      refute_enqueued(worker: MediaCollectionIndexingWorker, args: %{"id" => source.id})
+    end
+
+    test "kicks off a download job for each pending media item" do
+      expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes_for_collection, _opts, _ot, _addl_opts ->
+        {:ok, source_attributes_return_fixture()}
+      end)
+
+      source = source_fixture(index_frequency_minutes: 10)
+      perform_job(MediaCollectionIndexingWorker, %{id: source.id})
+
+      assert length(all_enqueued(worker: MediaDownloadWorker)) == 3
+    end
+
+    test "starts a job for any pending media item even if it's from another run" do
+      expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes_for_collection, _opts, _ot, _addl_opts ->
+        {:ok, source_attributes_return_fixture()}
+      end)
+
+      source = source_fixture(index_frequency_minutes: 10)
+      media_item_fixture(%{source_id: source.id, media_filepath: nil})
+      perform_job(MediaCollectionIndexingWorker, %{id: source.id})
+
+      assert length(all_enqueued(worker: MediaDownloadWorker)) == 4
+    end
+
+    test "does not kick off a job for media items that could not be saved" do
+      expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes_for_collection, _opts, _ot, _addl_opts ->
+        {:ok, source_attributes_return_fixture()}
+      end)
+
+      source = source_fixture(index_frequency_minutes: 10)
+      media_item_fixture(%{source_id: source.id, media_filepath: nil, media_id: "video1"})
+      perform_job(MediaCollectionIndexingWorker, %{id: source.id})
+
+      # Only 3 jobs should be enqueued, since the first video is a duplicate
+      assert length(all_enqueued(worker: MediaDownloadWorker))
+    end
+
+    test "reschedules the job based on the index frequency" do
+      source = source_fixture(index_frequency_minutes: 10)
+      perform_job(MediaCollectionIndexingWorker, %{id: source.id})
+
+      assert_enqueued(
+        worker: MediaCollectionIndexingWorker,
+        args: %{"id" => source.id},
+        scheduled_at: now_plus(source.index_frequency_minutes, :minutes)
+      )
+    end
+
+    test "reschedules based on the cron schedule when one is set, ignoring the index frequency" do
+      source = source_fixture(index_frequency_minutes: 999_999, index_cron_schedule: "0 3 * * *")
+      perform_job(MediaCollectionIndexingWorker, %{id: source.id})
+
+      [job] = all_enqueued(worker: MediaCollectionIndexingWorker, args: %{"id" => source.id})
+
+      assert job.scheduled_at.hour == 3
+      assert job.scheduled_at.minute == 0
+    end
+
+    test "reschedules a never-before-indexed cron-scheduled source instead of running once" do
+      expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes_for_collection, _opts, _ot, _addl_opts ->
+        {:ok, ""}
+      end)
+
+      source = source_fixture(index_frequency_minutes: 0, index_cron_schedule: "0 3 * * *", last_indexed_at: nil)
+      perform_job(MediaCollectionIndexingWorker, %{id: source.id})
+
+      assert_enqueued(worker: MediaCollectionIndexingWorker, args: %{"id" => source.id})
+    end
+
+    test "creates a task for the rescheduled job" do
+      source = source_fixture(index_frequency_minutes: 10)
+
+      task_count_fetcher = fn ->
+        Enum.count(Tasks.list_tasks_for(source, "MediaCollectionIndexingWorker"))
+      end
+
+      assert_changed([from: 0, to: 1], task_count_fetcher, fn ->
+        perform_job(MediaCollectionIndexingWorker, %{id: source.id})
+      end)
+    end
+
+    test "creates the basic media_item records" do
+      expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes_for_collection, _opts, _ot, _addl_opts ->
+        {:ok, source_attributes_return_fixture()}
+      end)
+
+      source = source_fixture(index_frequency_minutes: 10)
+
+      media_item_fetcher = fn ->
+        source
+        |> Repo.preload(:media_items)
+        |> Map.get(:media_items)
+        |> Enum.map(fn media_item -> media_item.media_id end)
+      end
+
+      assert_changed([from: [], to: ["video1", "video2", "video3"]], media_item_fetcher, fn ->
+        perform_job(MediaCollectionIndexingWorker, %{id: source.id})
+      end)
+    end
+
+    test "does not blow up if the record doesn't exist" do
+      assert :ok = perform_job(MediaCollectionIndexingWorker, %{id: 0})
+    end
+  end
+
+  describe "perform/1 when testing apprise notifications" do
+    setup do
+      Settings.set(apprise_server: "server_1")
+
+      :ok
+    end
+
+    test "sends a notification if new media was found" do
+      source = source_fixture()
+
+      expect(YtDlpRunnerMock, :run, fn _url, :get_media_attributes_for_collection, _opts, _ot, _addl_opts ->
+        {:ok, source_attributes_return_fixture()}
+      end)
+
+      expect(AppriseRunnerMock, :run, fn servers, opts ->
+        assert "server_1" = servers
+        assert is_binary(Keyword.get(opts, :title))
+        assert is_binary(Keyword.get(opts, :body))
+
+        {:ok, ""}
+      end)
+
+      perform_job(MediaCollectionIndexingWorker, %{id: source.id})
+    end
+  end
+end

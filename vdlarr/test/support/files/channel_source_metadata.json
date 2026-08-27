@@ -1,0 +1,202 @@
+{
+  "id": "PinchflatTestChannel",
+  "channel": "PinchflatTestChannel",
+  "channel_id": "UCEABC123",
+  "title": "PinchflatTestChannel",
+  "availability": null,
+  "channel_follower_count": 35000,
+  "description": "This is a test file for Pinchflat",
+  "tags": ["test", "development"],
+  "thumbnails": [
+    {
+      "url": "https://google.ca",
+      "height": 88,
+      "width": 320,
+      "preference": -10,
+      "id": "0",
+      "resolution": "320x88",
+      "filepath": "/app/test/support/files/channel_photos/a.0.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "height": 180,
+      "width": 320,
+      "preference": -10,
+      "id": "1",
+      "resolution": "320x180",
+      "filepath": "/app/test/support/files/channel_photos/a.1.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "height": 175,
+      "width": 640,
+      "preference": -10,
+      "id": "2",
+      "resolution": "640x175",
+      "filepath": "/app/test/support/files/channel_photos/a.2.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "height": 480,
+      "width": 854,
+      "preference": -10,
+      "id": "3",
+      "resolution": "854x480",
+      "filepath": "/app/test/support/files/channel_photos/a.3.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "height": 263,
+      "width": 960,
+      "preference": -10,
+      "id": "4",
+      "resolution": "960x263",
+      "filepath": "/app/test/support/files/channel_photos/a.4.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "height": 175,
+      "width": 1060,
+      "preference": -10,
+      "id": "5",
+      "resolution": "1060x175",
+      "filepath": "/app/test/support/files/channel_photos/a.5.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "height": 188,
+      "width": 1138,
+      "preference": -10,
+      "id": "6",
+      "resolution": "1138x188",
+      "filepath": "/app/test/support/files/channel_photos/a.6.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "height": 351,
+      "width": 1280,
+      "preference": -10,
+      "id": "7",
+      "resolution": "1280x351",
+      "filepath": "/app/test/support/files/channel_photos/a.7.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "height": 720,
+      "width": 1280,
+      "preference": -10,
+      "id": "8",
+      "resolution": "1280x720",
+      "filepath": "/app/test/support/files/channel_photos/a.8.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "height": 395,
+      "width": 1440,
+      "preference": -10,
+      "id": "9",
+      "resolution": "1440x395",
+      "filepath": "/app/test/support/files/channel_photos/a.9.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "height": 283,
+      "width": 1707,
+      "preference": -10,
+      "id": "10",
+      "resolution": "1707x283",
+      "filepath": "/app/test/support/files/channel_photos/a.10.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "height": 1080,
+      "width": 1920,
+      "preference": -10,
+      "id": "11",
+      "resolution": "1920x1080",
+      "filepath": "/app/test/support/files/channel_photos/a.11.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "height": 351,
+      "width": 2120,
+      "preference": -10,
+      "id": "12",
+      "resolution": "2120x351",
+      "filepath": "/app/test/support/files/channel_photos/a.12.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "height": 1192,
+      "width": 2120,
+      "preference": -10,
+      "id": "13",
+      "resolution": "2120x1192",
+      "filepath": "/app/test/support/files/channel_photos/a.13.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "height": 377,
+      "width": 2276,
+      "preference": -10,
+      "id": "14",
+      "resolution": "2276x377",
+      "filepath": "/app/test/support/files/channel_photos/a.14.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "height": 424,
+      "width": 2560,
+      "preference": -10,
+      "id": "15",
+      "resolution": "2560x424",
+      "filepath": "/app/test/support/files/channel_photos/a.15.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "id": "banner_uncropped",
+      "preference": -5,
+      "filepath": "/app/test/support/files/channel_photos/a.banner_uncropped.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "height": 900,
+      "width": 900,
+      "id": "17",
+      "resolution": "900x900",
+      "filepath": "/app/test/support/files/channel_photos/a.17.jpg"
+    },
+    {
+      "url": "https://google.ca",
+      "id": "avatar_uncropped",
+      "preference": 1,
+      "filepath": "/app/test/support/files/channel_photos/a.avatar_uncropped.jpg"
+    }
+  ],
+  "uploader_id": "@PinchflatTestChannel",
+  "uploader_url": "https://www.youtube.com/@PinchflatTestChannel",
+  "modified_date": null,
+  "view_count": null,
+  "playlist_count": 2,
+  "uploader": "PinchflatTestChannel",
+  "channel_url": "https://www.youtube.com/channel/UCEABC123",
+  "_type": "playlist",
+  "entries": [],
+  "webpage_url": "https://www.youtube.com/c/PinchflatTestChannel",
+  "original_url": "https://www.youtube.com/c/PinchflatTestChannel",
+  "webpage_url_basename": "PinchflatTestChannel",
+  "webpage_url_domain": "youtube.com",
+  "extractor": "youtube:tab",
+  "extractor_key": "YoutubeTab",
+  "release_year": null,
+  "requested_entries": [],
+  "epoch": 1710800380,
+  "filename": "/app/test/support/files/channel_photos/a.NA",
+  "formats_table": null,
+  "subtitles_table": null,
+  "automatic_captions_table": null,
+  "duration_string": null,
+  "autonumber": 0,
+  "video_autonumber": 0,
+  "resolution": null
+}

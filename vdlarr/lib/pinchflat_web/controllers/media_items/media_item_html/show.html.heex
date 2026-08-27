@@ -1,0 +1,96 @@
+<div class="mb-6 flex gap-3 flex-row items-center justify-between">
+  <div class="flex gap-3 items-center min-w-0">
+    <.link href={~p"/sources/#{@media_item.source_id}"}>
+      <.icon name="hero-arrow-left" class="w-10 h-10 hover:dark:text-white" />
+    </.link>
+    <h2 class="text-title-md2 font-bold text-black dark:text-white ml-4 truncate">
+      {@media_item.title}
+    </h2>
+  </div>
+
+  <nav>
+    <.link href={~p"/sources/#{@media_item.source_id}/media/#{@media_item}/edit"}>
+      <.button color="bg-primary" rounding="rounded-lg">
+        <.icon name="hero-pencil-square" class="mr-2" /> Edit
+      </.button>
+    </.link>
+  </nav>
+</div>
+<div class="rounded-sm border py-5 pt-6 shadow-default border-strokedark bg-boxdark px-7.5">
+  <div class="max-w-full">
+    <.tabbed_layout>
+      <:tab_append>
+        <.actions_dropdown media_item={@media_item} />
+      </:tab_append>
+
+      <:tab title="Media" id="media">
+        <div class="flex flex-col gap-10 text-white">
+          <section :if={@media_item.last_error} class="mt-6">
+            <div class="flex items-center gap-1 mb-2">
+              <.icon name="hero-exclamation-circle-solid" class="text-red-500" />
+              <h3 class="font-bold text-xl">Last Error</h3>
+            </div>
+            <span>{@media_item.last_error}</span>
+          </section>
+
+          <%= if media_file_exists?(@media_item) do %>
+            <section class="grid grid-cols-1 xl:gap-6 mt-6">
+              <div>
+                <.media_preview media_item={@media_item} />
+              </div>
+              <aside class="mt-4">
+                <h2 class="text-xl mb-2">{@media_item.title}</h2>
+                <div>Uploaded: {DateTime.to_date(@media_item.uploaded_at)}</div>
+                <div>
+                  <span :if={URI.parse(@media_item.original_url).scheme =~ "http"}>
+                    <.subtle_link href={@media_item.original_url} target="_blank">Open Original</.subtle_link>
+                    <span class="mx-2">or</span>
+                  </span>
+                  <span>
+                    <.subtle_link
+                      href={~p"/media/#{@media_item.uuid}/stream?v=#{DateTime.to_unix(@media_item.updated_at)}"}
+                      target="_blank"
+                    >
+                      Open Local Stream
+                    </.subtle_link>
+                  </span>
+                </div>
+                <div :if={@media_item.description} class="mt-4 text-bodydark">
+                  <.render_description text={@media_item.description} />
+                </div>
+              </aside>
+            </section>
+          <% end %>
+
+          <section>
+            <h3 class="font-bold text-xl mb-2">Raw Attributes</h3>
+            <section>
+              <strong>Source:</strong>
+              <.subtle_link href={~p"/sources/#{@media_item.source_id}"}>
+                {@media_item.source.custom_name}
+              </.subtle_link>
+              <.list_items_from_map map={Map.from_struct(@media_item)} />
+            </section>
+          </section>
+        </div>
+      </:tab>
+      <:tab title="Tasks" id="tasks">
+        <%= if match?([_|_], @media_item.tasks) do %>
+          <.table rows={@media_item.tasks} table_class="text-white">
+            <:col :let={task} label="Worker">
+              {task.job.worker}
+            </:col>
+            <:col :let={task} label="State">
+              {task.job.state}
+            </:col>
+            <:col :let={task} label="Scheduled At">
+              <.datetime_in_zone datetime={task.job.scheduled_at} />
+            </:col>
+          </.table>
+        <% else %>
+          <p class="text-black dark:text-white">Nothing Here!</p>
+        <% end %>
+      </:tab>
+    </.tabbed_layout>
+  </div>
+</div>

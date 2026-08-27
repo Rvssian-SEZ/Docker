@@ -1,0 +1,20 @@
+<div class="flex min-h-screen items-center justify-center px-4">
+  <div class="w-full max-w-md">
+    <div class="mb-8 flex justify-center">
+      <img src={~p"/images/logo-2024-03-20.png"} alt="VDLarr" class="w-auto" />
+    </div>
+
+    <.flash_group flash={@flash} />
+
+    <div class="rounded-sm border border-stroke bg-white px-5 py-8 shadow-default dark:border-strokedark dark:bg-boxdark sm:px-7.5">
+      <form method="post" action={~p"/login"}>
+        <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
+
+        <.input type="text" name="username" value="" label="Username" required x-init="$el.focus()" />
+        <.input type="password" name="password" value="" label="Password" required />
+
+        <.button class="mt-6 w-full" rounding="rounded-lg">Log In</.button>
+      </form>
+    </div>
+  </div>
+</div>
