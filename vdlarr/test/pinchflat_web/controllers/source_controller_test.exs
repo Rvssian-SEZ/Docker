@@ -6,6 +6,7 @@ defmodule PinchflatWeb.SourceControllerTest do
   import Pinchflat.ProfilesFixtures
 
   alias Pinchflat.Repo
+  alias Pinchflat.Sources.Source
   alias Pinchflat.Media.FileSyncingWorker
   alias Pinchflat.Sources.SourceDeletionWorker
   alias Pinchflat.Downloading.MediaDownloadWorker
@@ -36,6 +37,14 @@ defmodule PinchflatWeb.SourceControllerTest do
     test "returns 200", %{conn: conn} do
       conn = get(conn, ~p"/sources")
       assert html_response(conn, 200) =~ "Sources"
+    end
+  end
+
+  describe "hidden_index" do
+    # Hidden-vs-visible filtering behaviour is covered in `index_grid_live_test.exs`
+    test "returns 200", %{conn: conn} do
+      conn = get(conn, ~p"/sources/hidden")
+      assert html_response(conn, 200) =~ "Hidden Sources"
     end
   end
 
@@ -85,6 +94,79 @@ defmodule PinchflatWeb.SourceControllerTest do
 
       assert conn.status == 404
     end
+  end
+
+  describe "upload_poster" do
+    test "accepts a valid image and sets custom_poster_filepath", %{conn: conn} do
+      source = source_fixture()
+      upload = %Plug.Upload{path: thumbnail_filepath_fixture(), filename: "poster.jpg", content_type: "image/jpeg"}
+
+      conn = post(conn, ~p"/sources/#{source.id}/poster", %{"poster" => upload})
+
+      assert redirected_to(conn) == ~p"/sources/#{source.id}/edit"
+      updated_source = Repo.get!(Source, source.id)
+      assert updated_source.custom_poster_filepath
+      assert File.exists?(updated_source.custom_poster_filepath)
+    end
+
+    test "a custom poster takes priority over an existing metadata poster once uploaded", %{conn: conn} do
+      source = source_with_metadata_attachments()
+      upload = %Plug.Upload{path: thumbnail_filepath_fixture(), filename: "poster.jpg", content_type: "image/jpeg"}
+
+      post(conn, ~p"/sources/#{source.id}/poster", %{"poster" => upload})
+
+      conn = get(build_conn(), ~p"/sources/#{source.id}/poster")
+      updated_source = Repo.get!(Source, source.id)
+      assert conn.status == 200
+      assert conn.resp_body == File.read!(updated_source.custom_poster_filepath)
+    end
+
+    test "rejects a non-image content type", %{conn: conn} do
+      source = source_fixture()
+      upload = %Plug.Upload{path: thumbnail_filepath_fixture(), filename: "poster.txt", content_type: "text/plain"}
+
+      conn = post(conn, ~p"/sources/#{source.id}/poster", %{"poster" => upload})
+
+      assert redirected_to(conn) == ~p"/sources/#{source.id}/edit"
+      refute Repo.get!(Source, source.id).custom_poster_filepath
+    end
+  end
+
+  describe "remove_custom_poster" do
+    test "clears the field and deletes the file", %{conn: conn} do
+      custom_poster_path = copy_of_thumbnail_fixture()
+      source = source_fixture(custom_poster_filepath: custom_poster_path)
+
+      conn = delete(conn, ~p"/sources/#{source.id}/poster")
+
+      assert redirected_to(conn) == ~p"/sources/#{source.id}/edit"
+      refute Repo.get!(Source, source.id).custom_poster_filepath
+      refute File.exists?(custom_poster_path)
+    end
+
+    test "falls back to the metadata poster after removal", %{conn: conn} do
+      source = source_with_metadata_attachments(%{custom_poster_filepath: copy_of_thumbnail_fixture()})
+
+      delete(conn, ~p"/sources/#{source.id}/poster")
+
+      conn = get(build_conn(), ~p"/sources/#{source.id}/poster")
+      assert conn.status == 200
+      assert conn.resp_body == File.read!(source.metadata.poster_filepath)
+    end
+
+    test "does nothing when there's no custom poster to remove", %{conn: conn} do
+      source = source_fixture()
+
+      conn = delete(conn, ~p"/sources/#{source.id}/poster")
+
+      assert redirected_to(conn) == ~p"/sources/#{source.id}/edit"
+    end
+  end
+
+  defp copy_of_thumbnail_fixture do
+    destination = Path.join(System.tmp_dir!(), "poster_test_#{:rand.uniform(1_000_000)}.jpg")
+    File.cp!(thumbnail_filepath_fixture(), destination)
+    destination
   end
 
   describe "new source" do

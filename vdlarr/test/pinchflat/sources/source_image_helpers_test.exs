@@ -13,6 +13,19 @@ defmodule Pinchflat.Sources.SourceImageHelpersTest do
       assert SourceImageHelpers.poster_filepath(source) == nil
     end
 
+    test "prefers a manually-uploaded custom poster over everything else" do
+      source = source_with_metadata_attachments(%{custom_poster_filepath: thumbnail_filepath_fixture()})
+
+      assert source.custom_poster_filepath != source.metadata.poster_filepath
+      assert SourceImageHelpers.poster_filepath(source) == source.custom_poster_filepath
+    end
+
+    test "falls back to the auto-downloaded chain when the custom poster file is missing" do
+      source = source_with_metadata_attachments(%{custom_poster_filepath: "/tmp/does-not-exist.jpg"})
+
+      assert SourceImageHelpers.poster_filepath(source) == source.metadata.poster_filepath
+    end
+
     test "prefers the source's own library poster_filepath" do
       source = source_with_metadata_attachments(%{poster_filepath: thumbnail_filepath_fixture()})
 

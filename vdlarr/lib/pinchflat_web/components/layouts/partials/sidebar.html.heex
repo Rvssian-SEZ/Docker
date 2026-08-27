@@ -9,7 +9,7 @@
   <section>
     <div class="flex items-center justify-between gap-2 px-6 py-4">
       <a href={~p"/"} class="flex items-center">
-        <img src={~p"/images/logo-2024-03-20.png"} alt="VDLarr" class="w-auto" />
+        <img src={~p"/images/logo-2026-08-27.svg"} alt="VDLarr" class="w-auto" />
       </a>
 
       <button class="block mt-3 lg:hidden" @click.stop="sidebarVisible = !sidebarVisible">
@@ -33,6 +33,12 @@
         <div class="flex flex-col justify-between">
           <ul class="mb-6 flex flex-col gap-1.5">
             <.sidebar_item icon="hero-tv" text="Sources" href={~p"/sources"} />
+            <.sidebar_item
+              :if={Settings.get!(:show_hidden_sources_menu)}
+              icon="hero-eye-slash"
+              text="Hidden Sources"
+              href={~p"/sources/hidden"}
+            />
             <.sidebar_item icon="hero-adjustments-vertical" text="Media Profiles" href={~p"/media_profiles"} />
             <.sidebar_item icon="hero-queue-list" text="Activity" href={~p"/activity"} />
           </ul>

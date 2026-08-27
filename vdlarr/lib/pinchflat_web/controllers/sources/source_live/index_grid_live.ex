@@ -12,14 +12,16 @@ defmodule PinchflatWeb.Sources.SourceLive.IndexGridLive do
 
   def mount(_params, session, socket) do
     limit = session["results_per_page"]
+    show_hidden = session["show_hidden"] || false
 
     initial_params =
       Map.merge(
         %{
+          show_hidden: show_hidden,
           sort_key: session["initial_sort_key"],
           sort_direction: session["initial_sort_direction"]
         },
-        get_pagination_attributes(sources_query(), 1, limit)
+        get_pagination_attributes(sources_query(show_hidden), 1, limit)
       )
 
     socket
@@ -32,7 +34,7 @@ defmodule PinchflatWeb.Sources.SourceLive.IndexGridLive do
     new_page = update_page_number(assigns.page, direction, assigns.total_pages)
 
     socket
-    |> assign(get_pagination_attributes(sources_query(), new_page, assigns.limit))
+    |> assign(get_pagination_attributes(sources_query(assigns.show_hidden), new_page, assigns.limit))
     |> set_sources()
     |> then(&{:noreply, &1})
   end
@@ -60,7 +62,7 @@ defmodule PinchflatWeb.Sources.SourceLive.IndexGridLive do
 
   defp set_sources(%{assigns: assigns} = socket) do
     sources =
-      sources_query()
+      sources_query(assigns.show_hidden)
       |> order_by(^[{assigns.sort_direction, sort_attr(assigns.sort_key)}, asc: :id])
       |> limit(^assigns.limit)
       |> offset(^assigns.offset)
@@ -75,14 +77,19 @@ defmodule PinchflatWeb.Sources.SourceLive.IndexGridLive do
   # struct) so the grid doesn't N+1 a separate query per row.
   defp put_poster_filepath(source) do
     poster_filepath =
-      [source.poster_filepath, source.metadata_poster_filepath, source.metadata_fanart_filepath]
+      [
+        source.custom_poster_filepath,
+        source.poster_filepath,
+        source.metadata_poster_filepath,
+        source.metadata_fanart_filepath
+      ]
       |> Enum.reject(&is_nil/1)
       |> Enum.find(&File.exists?/1)
 
     Map.put(source, :resolved_poster_filepath, poster_filepath)
   end
 
-  defp sources_query do
+  defp sources_query(show_hidden) do
     downloaded_subquery =
       from(
         m in MediaItem,
@@ -110,7 +117,9 @@ defmodule PinchflatWeb.Sources.SourceLive.IndexGridLive do
       left_join: p in subquery(pending_subquery),
       on: p.source_id == s.id,
       on: d.source_id == s.id,
-      where: is_nil(s.marked_for_deletion_at) and is_nil(mp.marked_for_deletion_at),
+      where:
+        is_nil(s.marked_for_deletion_at) and is_nil(mp.marked_for_deletion_at) and
+          s.hidden == ^show_hidden,
       preload: [media_profile: mp],
       select: map(s, ^Source.__schema__(:fields)),
       select_merge: %{

@@ -9,14 +9,14 @@ defmodule Pinchflat.Sources.SourceImageHelpers do
   @doc """
   Returns the filepath of the best available poster image for a source.
 
-  Sources can have two independent copies of their poster: one copied into the
-  user's media library (`source.poster_filepath`, only present when the source's
-  media profile has `download_source_images` enabled), and one in the app's
-  internal metadata directory (`source.metadata.poster_filepath`, populated
-  unconditionally during indexing). Prefers the library copy since it's what
-  external tools like Jellyfin/Plex will also show, then falls back to the
-  metadata copy, then its fanart as a last resort, so most sources show a
-  real image rather than a placeholder even before opting into
+  Checks, in order: a manually-uploaded custom poster (`source.custom_poster_filepath`
+  - set only via SourceController.upload_poster/2, never touched by the auto-indexing
+  pipeline, so it always wins and survives re-indexing), then the source's own
+  library-copy poster (`source.poster_filepath`, only present when the source's
+  media profile has `download_source_images` enabled), then the app's internal
+  metadata directory copy (`source.metadata.poster_filepath`, populated
+  unconditionally during indexing), then its fanart as a last resort - so most
+  sources show a real image rather than a placeholder even before opting into
   `download_source_images`.
 
   Returns: filepath | nil
@@ -26,6 +26,7 @@ defmodule Pinchflat.Sources.SourceImageHelpers do
     source_metadata = source_with_preloads.metadata || %SourceMetadata{}
 
     [
+      source_with_preloads.custom_poster_filepath,
       source_with_preloads.poster_filepath,
       source_metadata.poster_filepath,
       source_metadata.fanart_filepath

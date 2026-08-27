@@ -70,9 +70,12 @@ defmodule PinchflatWeb.Router do
     get "/sources/new_video", Sources.SourceController, :new_video
     post "/sources/new_video", Sources.SourceController, :create_video
     get "/sources/folders", Sources.SourceFolderController, :index
+    get "/sources/hidden", Sources.SourceController, :hidden_index
 
     resources "/sources", Sources.SourceController do
       get "/poster", Sources.SourceController, :poster
+      post "/poster", Sources.SourceController, :upload_poster
+      delete "/poster", Sources.SourceController, :remove_custom_poster
       post "/force_download_pending", Sources.SourceController, :force_download_pending
       post "/force_download_failed", Sources.SourceController, :force_download_failed
       post "/force_redownload", Sources.SourceController, :force_redownload

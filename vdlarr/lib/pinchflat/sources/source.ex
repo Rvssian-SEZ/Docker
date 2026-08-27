@@ -16,6 +16,7 @@ defmodule Pinchflat.Sources.Source do
 
   @allowed_fields ~w(
     enabled
+    hidden
     collection_name
     collection_id
     collection_type
@@ -23,6 +24,7 @@ defmodule Pinchflat.Sources.Source do
     description
     nfo_filepath
     poster_filepath
+    custom_poster_filepath
     fanart_filepath
     banner_filepath
     series_directory
@@ -65,6 +67,10 @@ defmodule Pinchflat.Sources.Source do
 
   schema "sources" do
     field :enabled, :boolean, default: true
+    # Purely a UI-visibility concept - hides this source from the main Sources grid in
+    # favor of the Hidden Sources page. Does not affect downloading/indexing at all
+    # (unlike `enabled`/`download_media`).
+    field :hidden, :boolean, default: false
     # This is _not_ used as the primary key or internally in the database
     # relations. This is only used to prevent an enumeration attack on the streaming
     # and RSS feed endpoints since those _must_ be public (ie: no basic auth)
@@ -96,6 +102,10 @@ defmodule Pinchflat.Sources.Source do
     field :series_directory, :string
     field :nfo_filepath, :string
     field :poster_filepath, :string
+    # Set only via a manual upload (see SourceController.upload_poster/2) - unlike
+    # poster_filepath, never written by the auto-indexing pipeline, so it survives
+    # a metadata refresh/re-index and is always preferred. See SourceImageHelpers.
+    field :custom_poster_filepath, :string
     field :fanart_filepath, :string
     field :banner_filepath, :string
 
@@ -139,7 +149,7 @@ defmodule Pinchflat.Sources.Source do
 
   @doc false
   def filepath_attributes do
-    ~w(nfo_filepath fanart_filepath poster_filepath banner_filepath)a
+    ~w(nfo_filepath fanart_filepath poster_filepath custom_poster_filepath banner_filepath)a
   end
 
   @doc false

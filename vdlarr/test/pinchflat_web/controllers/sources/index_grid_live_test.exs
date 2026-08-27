@@ -4,6 +4,7 @@ defmodule PinchflatWeb.Sources.SourceLive.IndexGridLiveTest do
   import Phoenix.LiveViewTest
   import Pinchflat.SourcesFixtures
   import Pinchflat.ProfilesFixtures
+  import Pinchflat.MediaFixtures
 
   alias Pinchflat.Sources.Source
   alias PinchflatWeb.Sources.SourceLive.IndexGridLive
@@ -49,6 +50,38 @@ defmodule PinchflatWeb.Sources.SourceLive.IndexGridLiveTest do
       {:ok, view, _html} = live_isolated(conn, IndexGridLive, session: create_session())
 
       assert render_element(view, "[data-testid='source-grid-item']:first-child") =~ ~s(src="/sources/#{source.id}/poster")
+    end
+
+    test "shows the poster image for a source with only a custom (manually-uploaded) poster", %{conn: conn} do
+      source = source_fixture(custom_poster_filepath: thumbnail_filepath_fixture())
+
+      {:ok, view, _html} = live_isolated(conn, IndexGridLive, session: create_session())
+
+      assert render_element(view, "[data-testid='source-grid-item']:first-child") =~ ~s(src="/sources/#{source.id}/poster")
+      refute render_element(view, "[data-testid='source-grid-item']:first-child") =~ "hero-photo"
+    end
+  end
+
+  describe "hidden sources filtering" do
+    test "the main (show_hidden: false) session omits hidden sources", %{conn: conn} do
+      visible = source_fixture(custom_name: "Visible Source", hidden: false)
+      hidden = source_fixture(custom_name: "Hidden Source", hidden: true)
+
+      {:ok, _view, html} = live_isolated(conn, IndexGridLive, session: create_session())
+
+      assert html =~ visible.custom_name
+      refute html =~ hidden.custom_name
+    end
+
+    test "the show_hidden: true session shows only hidden sources", %{conn: conn} do
+      visible = source_fixture(custom_name: "Visible Source", hidden: false)
+      hidden = source_fixture(custom_name: "Hidden Source", hidden: true)
+
+      session = Map.put(create_session(), "show_hidden", true)
+      {:ok, _view, html} = live_isolated(conn, IndexGridLive, session: session)
+
+      assert html =~ hidden.custom_name
+      refute html =~ visible.custom_name
     end
   end
 

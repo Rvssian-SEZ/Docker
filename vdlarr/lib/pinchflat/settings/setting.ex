@@ -16,6 +16,7 @@ defmodule Pinchflat.Settings.Setting do
     :extractor_sleep_interval_seconds,
     :download_throughput_limit,
     :restrict_filenames,
+    :show_hidden_sources_menu,
     :timezone,
     :jellyfin_url,
     :jellyfin_api_key,
@@ -39,6 +40,7 @@ defmodule Pinchflat.Settings.Setting do
     # This is a string because it accepts values like "100K" or "4.2M"
     field :download_throughput_limit, :string
     field :restrict_filenames, :boolean, default: false
+    field :show_hidden_sources_menu, :boolean, default: true
     # Nullable on purpose - nil means "not yet seeded from the TZ/TIMEZONE env var".
     # See Pinchflat.Boot.PreJobStartupTasks
     field :timezone, :string

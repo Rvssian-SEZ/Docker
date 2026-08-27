@@ -14,9 +14,23 @@ defmodule PinchflatWeb.Sources.SourceController do
   alias Pinchflat.Downloading.DownloadingHelpers
   alias Pinchflat.SlowIndexing.SlowIndexingHelpers
   alias Pinchflat.Metadata.SourceMetadataStorageWorker
+  alias Pinchflat.Metadata.MetadataFileHelpers
+  alias Pinchflat.Utils.FilesystemUtils
+
+  # Validated by content-type, not file extension, since that's client-supplied
+  # and not trustworthy. Deliberately small and image-only - see upload_poster/2.
+  @allowed_poster_content_types %{
+    "image/jpeg" => ".jpg",
+    "image/png" => ".png",
+    "image/webp" => ".webp"
+  }
 
   def index(conn, _params) do
     render(conn, :index)
+  end
+
+  def hidden_index(conn, _params) do
+    render(conn, :hidden_index)
   end
 
   @doc """
@@ -35,6 +49,57 @@ defmodule PinchflatWeb.Sources.SourceController do
         |> put_resp_content_type(MIME.from_path(filepath))
         |> send_file(200, filepath)
     end
+  end
+
+  @doc """
+  Saves a manually-uploaded poster image for a source, taking priority over any
+  auto-downloaded poster (see `SourceImageHelpers.poster_filepath/1`) - unlike
+  those, this is never touched by the auto-indexing pipeline, so it survives a
+  metadata refresh/re-index.
+  """
+  def upload_poster(conn, %{"source_id" => id, "poster" => %Plug.Upload{} = upload}) do
+    source = Sources.get_source!(id)
+
+    case Map.fetch(@allowed_poster_content_types, upload.content_type) do
+      {:ok, ext} ->
+        filepath = Path.join(MetadataFileHelpers.metadata_directory_for(source), "custom_poster#{ext}")
+        FilesystemUtils.cp_p!(upload.path, filepath)
+        {:ok, _} = Sources.update_source(source, %{custom_poster_filepath: filepath})
+
+        conn
+        |> put_flash(:info, "Poster updated.")
+        |> redirect(to: ~p"/sources/#{source}/edit")
+
+      :error ->
+        conn
+        |> put_flash(:error, "Please upload a JPEG, PNG, or WebP image.")
+        |> redirect(to: ~p"/sources/#{source}/edit")
+    end
+  end
+
+  def upload_poster(conn, %{"source_id" => id}) do
+    source = Sources.get_source!(id)
+
+    conn
+    |> put_flash(:error, "No file was selected.")
+    |> redirect(to: ~p"/sources/#{source}/edit")
+  end
+
+  @doc """
+  Removes a manually-uploaded poster, falling back to whatever auto-downloaded
+  image (if any) `SourceImageHelpers.poster_filepath/1` resolves to next.
+  """
+  def remove_custom_poster(conn, %{"source_id" => id}) do
+    source = Sources.get_source!(id)
+
+    if source.custom_poster_filepath do
+      File.rm(source.custom_poster_filepath)
+      {:ok, _} = Sources.update_source(source, %{custom_poster_filepath: nil})
+    end
+
+    conn
+    |> put_flash(:info, "Custom poster removed.")
+    |> redirect(to: ~p"/sources/#{source}/edit")
   end
 
   def new(conn, params) do

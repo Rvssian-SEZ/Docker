@@ -29,6 +29,7 @@
   <div class="max-w-full overflow-x-auto">
     {live_render(@conn, PinchflatWeb.Sources.SourceLive.IndexGridLive,
       session: %{
+        "show_hidden" => false,
         "initial_sort_key" => :custom_name,
         "initial_sort_direction" => :asc,
         "results_per_page" => 30
