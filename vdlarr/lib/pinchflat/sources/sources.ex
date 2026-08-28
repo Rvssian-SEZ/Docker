@@ -126,6 +126,38 @@ defmodule Pinchflat.Sources do
     end
   end
 
+  # Managed internally - either by SourceMetadataStorageWorker's auto-indexing pipeline,
+  # or by SourceController's own poster upload/removal actions (both of which call
+  # create_source/2 and update_source/3 directly with their own trusted attrs maps, not
+  # through the *_from_params/2 wrappers below). Must never be settable from untrusted
+  # params: `GET /sources/:id/poster` serves whatever file `poster_filepath`/
+  # `custom_poster_filepath` points to, and removing a custom poster calls `File.rm/1` on
+  # it, so an attacker-controlled path in either would be an arbitrary file read/delete.
+  @internal_only_fields ~w(nfo_filepath poster_filepath custom_poster_filepath fanart_filepath banner_filepath series_directory)
+
+  @doc """
+  Like create_source/2, but strips fields that are managed internally (see
+  @internal_only_fields) before casting. Use this - never create_source/2 directly -
+  for any params that originate from a web request (a controller action or a LiveView
+  event), since those aren't limited to whatever fields the corresponding form renders.
+
+  Returns {:ok, %Source{}} | {:error, %Ecto.Changeset{}}
+  """
+  def create_source_from_params(params, opts \\ []) do
+    create_source(Map.drop(params, @internal_only_fields), opts)
+  end
+
+  @doc """
+  Like update_source/3, but strips fields that are managed internally (see
+  @internal_only_fields) before casting. Use this - never update_source/3 directly -
+  for any params that originate from a web request. See create_source_from_params/2.
+
+  Returns {:ok, %Source{}} | {:error, %Ecto.Changeset{}}
+  """
+  def update_source_from_params(%Source{} = source, params, opts \\ []) do
+    update_source(source, Map.drop(params, @internal_only_fields), opts)
+  end
+
   @doc """
   Deletes a source, its media items, and its associated tasks (of any state).
   Can optionally delete the source's media files.

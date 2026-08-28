@@ -131,7 +131,7 @@ defmodule PinchflatWeb.Sources.SourceController do
   end
 
   def create(conn, %{"source" => source_params}) do
-    case Sources.create_source(source_params) do
+    case Sources.create_source_from_params(source_params) do
       {:ok, source} ->
         conn
         |> put_flash(:info, "Source created successfully.")
@@ -201,7 +201,7 @@ defmodule PinchflatWeb.Sources.SourceController do
   def update(conn, %{"id" => id, "source" => source_params}) do
     source = Sources.get_source!(id)
 
-    case Sources.update_source(source, source_params) do
+    case Sources.update_source_from_params(source, source_params) do
       {:ok, source} ->
         conn
         |> put_flash(:info, "Source updated successfully.")

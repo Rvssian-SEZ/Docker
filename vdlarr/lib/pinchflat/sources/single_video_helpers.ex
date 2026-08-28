@@ -14,12 +14,12 @@ defmodule Pinchflat.Sources.SingleVideoHelpers do
   Creates a `:video`-type Source for a single video URL. Fetches the video's
   metadata up front (to populate the source's name/collection details, same
   as channel/playlist sources do today), then defers to the normal indexing
-  worker (kicked off automatically by `Sources.create_source/2`) to create the
-  MediaItem and enqueue its download.
+  worker (kicked off automatically by `Sources.create_source_from_params/2`) to
+  create the MediaItem and enqueue its download.
 
   `attrs` follows the same string-keyed convention as a normal Phoenix form
-  submission (ie: what `SourceController.create/2` already passes straight
-  through to `Sources.create_source/2`) and can include any normally-allowed
+  submission (ie: what `SourceController.create_video/2` receives directly from
+  the request) and can include any normally-allowed
   Source field (e.g. `"custom_name"`, `"download_media"`, `"cookie_behaviour"`,
   `"media_profile_id"`) - `original_url`, `collection_type`, `collection_id`,
   `collection_name`, and `index_frequency_minutes` are always set by this
@@ -45,7 +45,7 @@ defmodule Pinchflat.Sources.SingleVideoHelpers do
             "index_frequency_minutes" => -1
           })
 
-        Sources.create_source(source_attrs)
+        Sources.create_source_from_params(source_attrs)
 
       err ->
         err

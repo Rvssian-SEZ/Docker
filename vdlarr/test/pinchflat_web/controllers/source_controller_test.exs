@@ -202,6 +202,27 @@ defmodule PinchflatWeb.SourceControllerTest do
       assert html_response(conn, 200) =~ "New Source"
     end
 
+    test "cannot set internal-only filepath fields via params (arbitrary file read/delete guard)", %{
+      conn: conn,
+      create_attrs: create_attrs
+    } do
+      expect(YtDlpRunnerMock, :run, 1, &runner_function_mock/5)
+
+      malicious_attrs =
+        Map.merge(create_attrs, %{
+          poster_filepath: "/etc/passwd",
+          custom_poster_filepath: "/etc/passwd",
+          nfo_filepath: "/etc/passwd"
+        })
+
+      conn = post(conn, ~p"/sources", source: malicious_attrs)
+
+      assert %{id: id} = redirected_params(conn)
+      source = Repo.get!(Source, id)
+      refute source.poster_filepath
+      refute source.custom_poster_filepath
+      refute source.nfo_filepath
+    end
   end
 
   describe "edit source" do
@@ -233,6 +254,34 @@ defmodule PinchflatWeb.SourceControllerTest do
     } do
       conn = put(conn, ~p"/sources/#{source}", source: invalid_attrs)
       assert html_response(conn, 200) =~ "Editing \"#{source.custom_name}\""
+    end
+
+    test "cannot set internal-only filepath fields via params (arbitrary file read/delete guard)", %{
+      conn: conn,
+      source: source,
+      update_attrs: update_attrs
+    } do
+      expect(YtDlpRunnerMock, :run, 1, &runner_function_mock/5)
+
+      malicious_attrs =
+        Map.merge(update_attrs, %{
+          poster_filepath: "/etc/passwd",
+          custom_poster_filepath: "/etc/passwd",
+          fanart_filepath: "/etc/passwd",
+          banner_filepath: "/etc/passwd",
+          nfo_filepath: "/etc/passwd",
+          series_directory: "/etc"
+        })
+
+      put(conn, ~p"/sources/#{source}", source: malicious_attrs)
+
+      updated_source = Repo.get!(Source, source.id)
+      refute updated_source.poster_filepath
+      refute updated_source.custom_poster_filepath
+      refute updated_source.fanart_filepath
+      refute updated_source.banner_filepath
+      refute updated_source.nfo_filepath
+      refute updated_source.series_directory
     end
   end
 

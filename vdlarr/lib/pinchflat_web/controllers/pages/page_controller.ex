@@ -11,6 +11,10 @@ defmodule PinchflatWeb.Pages.PageController do
     render_home_page(conn)
   end
 
+  def wanted(conn, _params) do
+    render(conn, :wanted)
+  end
+
   def activity(conn, _params) do
     render(conn, :activity)
   end

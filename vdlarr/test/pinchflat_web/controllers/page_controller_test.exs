@@ -39,4 +39,11 @@ defmodule PinchflatWeb.PageControllerTest do
       assert html_response(conn, 200) =~ "Activity"
     end
   end
+
+  describe "GET /wanted" do
+    test "displays the wanted page", %{conn: conn} do
+      conn = get(conn, ~p"/wanted")
+      assert html_response(conn, 200) =~ "Wanted"
+    end
+  end
 end

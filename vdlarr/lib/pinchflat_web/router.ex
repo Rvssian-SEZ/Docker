@@ -54,6 +54,7 @@ defmodule PinchflatWeb.Router do
     pipe_through [:browser, :authenticated]
 
     get "/", Pages.PageController, :home
+    get "/wanted", Pages.PageController, :wanted
     get "/activity", Pages.PageController, :activity
 
     resources "/media_profiles", MediaProfiles.MediaProfileController

@@ -69,13 +69,15 @@ defmodule Pinchflat.Pages.HistoryTableLive do
               {media_item.source.custom_name}
             </.subtle_link>
           </:col>
-          <:col :let={media_item} :if={@media_state == "failed"} label="" class="flex justify-end">
+          <:col :let={media_item} :if={@media_state in ["failed", "pending"]} label="" class="flex justify-end">
             <.link
               href={~p"/sources/#{media_item.source_id}/media/#{media_item.id}/force_download"}
               method="post"
-              data-confirm="Retry this download?"
+              data-confirm={
+                if @media_state == "failed", do: "Retry this download?", else: "Force download this video now?"
+              }
             >
-              Retry
+              {if @media_state == "failed", do: "Retry", else: "Force Download"}
             </.link>
           </:col>
         </.table>

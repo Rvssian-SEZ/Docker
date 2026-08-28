@@ -26,9 +26,8 @@ defmodule PinchflatWeb.Sources.SourceLive.SourceEnableToggle do
   end
 
   def handle_event("update", %{"source" => source_params}, %{assigns: assigns} = socket) do
-    assigns.source_id
-    |> Sources.get_source!()
-    |> Sources.update_source(source_params)
+    source = Sources.get_source!(assigns.source_id)
+    Sources.update_source_from_params(source, source_params)
 
     {:noreply, socket}
   end
