@@ -1,14 +1,15 @@
 import Config
 
-config :pinchflat,
+config :vdlarr,
   media_directory: Path.join([File.cwd!(), "tmp", "media"]),
   metadata_directory: Path.join([File.cwd!(), "tmp", "metadata"]),
   extras_directory: Path.join([File.cwd!(), "tmp", "extras"]),
-  tmpfile_directory: Path.join([File.cwd!(), "tmp", "tmpfiles"])
+  tmpfile_directory: Path.join([File.cwd!(), "tmp", "tmpfiles"]),
+  yt_dlp_plugin_directory: Path.join([File.cwd!(), "tmp", "yt-dlp-plugins"])
 
 # Configure your database
-config :pinchflat, Pinchflat.Repo,
-  database: Path.expand("../priv/repo/pinchflat_dev.db", Path.dirname(__ENV__.file)),
+config :vdlarr, Vdlarr.Repo,
+  database: Path.expand("../priv/repo/vdlarr_dev.db", Path.dirname(__ENV__.file)),
   show_sensitive_data_on_connection_error: true,
   pool_size: 5
 
@@ -18,7 +19,7 @@ config :pinchflat, Pinchflat.Repo,
 # The watchers configuration can be used to run external
 # watchers to your application. For example, we can use it
 # to bundle .js and .css sources.
-config :pinchflat, PinchflatWeb.Endpoint,
+config :vdlarr, VdlarrWeb.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
   http: [port: 4008],
@@ -54,17 +55,17 @@ config :pinchflat, PinchflatWeb.Endpoint,
 # different ports.
 
 # Watch static and templates for browser reloading.
-config :pinchflat, PinchflatWeb.Endpoint,
+config :vdlarr, VdlarrWeb.Endpoint,
   live_reload: [
     patterns: [
       ~r"priv/static/.*(js|css|png|jpeg|jpg|gif|svg)$",
       ~r"priv/gettext/.*(po)$",
-      ~r"lib/pinchflat_web/(controllers|live|components)/.*(ex|heex)$"
+      ~r"lib/vdlarr_web/(controllers|live|components)/.*(ex|heex)$"
     ]
   ]
 
 # Enable dev routes for dashboard and mailbox
-config :pinchflat, dev_routes: true
+config :vdlarr, dev_routes: true
 
 # Do not include metadata nor timestamps in development logs
 config :logger, :default_formatter, format: "[$level] $message\n"
@@ -82,4 +83,4 @@ config :phoenix_live_view, :debug_heex_annotations, true
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
 
-config :pinchflat, Pinchflat.PromEx, disabled: false
+config :vdlarr, Vdlarr.PromEx, disabled: false

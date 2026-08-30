@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddPlaylistIndexToMediaItems do
+defmodule Vdlarr.Repo.Migrations.AddPlaylistIndexToMediaItems do
   use Ecto.Migration
 
   def change do

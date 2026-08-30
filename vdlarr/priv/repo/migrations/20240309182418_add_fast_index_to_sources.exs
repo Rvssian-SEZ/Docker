@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddFastIndexToSources do
+defmodule Vdlarr.Repo.Migrations.AddFastIndexToSources do
   use Ecto.Migration
 
   def change do

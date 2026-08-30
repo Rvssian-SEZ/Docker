@@ -1,9 +1,9 @@
-defmodule Pinchflat.MixProject do
+defmodule Vdlarr.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :pinchflat,
+      app: :vdlarr,
       version: build_version(),
       elixir: "~> 1.17",
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -17,10 +17,10 @@ defmodule Pinchflat.MixProject do
       ],
       test_coverage: [
         ignore_modules: [
-          Pinchflat.HTTP.HTTPClient,
-          PinchflatWeb.Layouts,
-          Pinchflat.DataCase,
-          Pinchflat.Release,
+          Vdlarr.HTTP.HTTPClient,
+          VdlarrWeb.Layouts,
+          Vdlarr.DataCase,
+          Vdlarr.Release,
           ~r/Fixtures/,
           ~r/HTML$/
         ]
@@ -33,7 +33,7 @@ defmodule Pinchflat.MixProject do
   # Type `mix help compile.app` for more information.
   def application do
     [
-      mod: {Pinchflat.Application, []},
+      mod: {Vdlarr.Application, []},
       extra_applications: [:logger, :runtime_tools, :inets, :os_mon]
     ]
   end
@@ -42,12 +42,11 @@ defmodule Pinchflat.MixProject do
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
 
-  # Upstream Pinchflat versions releases by date - this fork keeps that convention,
-  # but derives it from the actual build date instead of a hand-maintained string,
-  # so the version shown in the UI always reflects when this image was built.
+  # Upstream Vdlarr versions releases by build date. VDLarr has diverged enough
+  # (rebrand, its own feature set, its own GHCR image) to warrant its own semantic
+  # versioning instead, starting at its first tagged release.
   defp build_version do
-    date = Date.utc_today()
-    "#{date.year}.#{date.month}.#{date.day}"
+    "1.0.0"
   end
 
   # Specifies your project dependencies.

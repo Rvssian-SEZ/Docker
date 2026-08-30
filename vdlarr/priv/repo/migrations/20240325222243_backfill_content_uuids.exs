@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.BackfillContentUuids do
+defmodule Vdlarr.Repo.Migrations.BackfillContentUuids do
   use Ecto.Migration
 
   def up do

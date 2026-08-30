@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.RemoveUniqueIndexFromSources do
+defmodule Vdlarr.Repo.Migrations.RemoveUniqueIndexFromSources do
   use Ecto.Migration
 
   def change do

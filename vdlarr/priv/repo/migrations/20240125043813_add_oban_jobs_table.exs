@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddObanJobsTable do
+defmodule Vdlarr.Repo.Migrations.AddObanJobsTable do
   use Ecto.Migration
 
   def up do

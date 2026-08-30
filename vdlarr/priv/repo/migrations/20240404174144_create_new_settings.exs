@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.CreateNewSettings do
+defmodule Vdlarr.Repo.Migrations.CreateNewSettings do
   use Ecto.Migration
 
   def up do

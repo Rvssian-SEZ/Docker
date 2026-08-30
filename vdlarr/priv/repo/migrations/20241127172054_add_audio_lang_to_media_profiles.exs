@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddAudioLangToMediaProfiles do
+defmodule Vdlarr.Repo.Migrations.AddAudioLangToMediaProfiles do
   use Ecto.Migration
 
   def change do

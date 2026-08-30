@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.RenameUploadDateToUploadedAt do
+defmodule Vdlarr.Repo.Migrations.RenameUploadDateToUploadedAt do
   use Ecto.Migration
 
   def up do

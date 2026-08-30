@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddUploadedAtToMediaItems do
+defmodule Vdlarr.Repo.Migrations.AddUploadedAtToMediaItems do
   use Ecto.Migration
 
   def change do

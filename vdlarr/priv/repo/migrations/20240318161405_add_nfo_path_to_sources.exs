@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddNfoPathToSources do
+defmodule Vdlarr.Repo.Migrations.AddNfoPathToSources do
   use Ecto.Migration
 
   def change do

@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddUseCookiesToSources do
+defmodule Vdlarr.Repo.Migrations.AddUseCookiesToSources do
   use Ecto.Migration
 
   def change do

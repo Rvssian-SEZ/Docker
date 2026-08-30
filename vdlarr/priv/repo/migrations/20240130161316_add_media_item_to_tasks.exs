@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddMediaItemToTasks do
+defmodule Vdlarr.Repo.Migrations.AddMediaItemToTasks do
   use Ecto.Migration
 
   def change do

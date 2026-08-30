@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddRouteTokenToSettings do
+defmodule Vdlarr.Repo.Migrations.AddRouteTokenToSettings do
   use Ecto.Migration
 
   def change do

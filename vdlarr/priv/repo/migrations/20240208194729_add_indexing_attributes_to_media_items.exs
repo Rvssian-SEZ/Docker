@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddIndexingAttributesToMediaItems do
+defmodule Vdlarr.Repo.Migrations.AddIndexingAttributesToMediaItems do
   use Ecto.Migration
 
   def change do

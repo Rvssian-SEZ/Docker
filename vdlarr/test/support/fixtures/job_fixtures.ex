@@ -1,4 +1,4 @@
-defmodule Pinchflat.JobFixtures do
+defmodule Vdlarr.JobFixtures do
   @moduledoc false
 
   defmodule TestJobWorker do

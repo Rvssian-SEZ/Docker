@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddLastErrorToMediaItem do
+defmodule Vdlarr.Repo.Migrations.AddLastErrorToMediaItem do
   use Ecto.Migration
 
   def change do

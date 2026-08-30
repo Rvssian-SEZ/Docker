@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.RenameFriendlyNameToCustomName do
+defmodule Vdlarr.Repo.Migrations.RenameFriendlyNameToCustomName do
   use Ecto.Migration
 
   def change do

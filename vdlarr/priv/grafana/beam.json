@@ -18,7 +18,7 @@
         "limit": 100,
         "name": "PromEx service start",
         "showIn": 0,
-        "tags": ["prom_ex", "pinchflat", "start"],
+        "tags": ["prom_ex", "vdlarr", "start"],
         "type": "tags"
       },
       {
@@ -29,7 +29,7 @@
         "limit": 100,
         "name": "PromEx service stop",
         "showIn": 0,
-        "tags": ["prom_ex", "pinchflat", "stop"],
+        "tags": ["prom_ex", "vdlarr", "stop"],
         "type": "tags"
       }
     ]
@@ -123,7 +123,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_beam_stats_uptime_milliseconds_count{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_stats_uptime_milliseconds_count{job=\"$job\", instance=\"$instance\"}",
           "instant": true,
           "interval": "",
           "legendFormat": "",
@@ -207,7 +207,7 @@
                     "text": "SMP Support",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_smp_support_info"
+                    "value": "vdlarr_prom_ex_beam_system_smp_support_info"
                   },
                   {
                     "from": "",
@@ -215,7 +215,7 @@
                     "text": "Thread Support",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_thread_support_info"
+                    "value": "vdlarr_prom_ex_beam_system_thread_support_info"
                   },
                   {
                     "from": "",
@@ -223,7 +223,7 @@
                     "text": "Time Correction Support",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_time_correction_support_info"
+                    "value": "vdlarr_prom_ex_beam_system_time_correction_support_info"
                   },
                   {
                     "from": "",
@@ -231,7 +231,7 @@
                     "text": "JIT Support",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_jit_support_info"
+                    "value": "vdlarr_prom_ex_beam_system_jit_support_info"
                   }
                 ]
               },
@@ -258,7 +258,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "{__name__=~\"pinchflat_prom_ex_beam_system_thread_support_info|pinchflat_prom_ex_beam_system_jit_support_info|pinchflat_prom_ex_beam_system_smp_support_info|pinchflat_prom_ex_beam_system_time_correction_support_info\", job=\"$job\", instance=\"$instance\"}",
+          "expr": "{__name__=~\"vdlarr_prom_ex_beam_system_thread_support_info|vdlarr_prom_ex_beam_system_jit_support_info|vdlarr_prom_ex_beam_system_smp_support_info|vdlarr_prom_ex_beam_system_time_correction_support_info\", job=\"$job\", instance=\"$instance\"}",
           "format": "table",
           "instant": true,
           "interval": "",
@@ -335,7 +335,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_beam_system_version_info{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_system_version_info{job=\"$job\", instance=\"$instance\"}",
           "instant": true,
           "interval": "",
           "legendFormat": "",
@@ -397,7 +397,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_beam_stats_process_count{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_stats_process_count{job=\"$job\", instance=\"$instance\"}",
           "instant": false,
           "interval": "",
           "legendFormat": "",
@@ -473,7 +473,7 @@
                     "text": "Dirty CPU Schedulers",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_dirty_cpu_schedulers_info"
+                    "value": "vdlarr_prom_ex_beam_system_dirty_cpu_schedulers_info"
                   },
                   {
                     "from": "",
@@ -481,7 +481,7 @@
                     "text": "Dirty CPU Schedulers Online",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_dirty_cpu_schedulers_online_info"
+                    "value": "vdlarr_prom_ex_beam_system_dirty_cpu_schedulers_online_info"
                   },
                   {
                     "from": "",
@@ -489,7 +489,7 @@
                     "text": "Dirty IO Schedulers",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_dirty_io_schedulers_info"
+                    "value": "vdlarr_prom_ex_beam_system_dirty_io_schedulers_info"
                   },
                   {
                     "from": "",
@@ -497,7 +497,7 @@
                     "text": "System Schedulers",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_schedulers_info"
+                    "value": "vdlarr_prom_ex_beam_system_schedulers_info"
                   },
                   {
                     "from": "",
@@ -505,7 +505,7 @@
                     "text": "System Schedulers Online",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_schedulers_online_info"
+                    "value": "vdlarr_prom_ex_beam_system_schedulers_online_info"
                   },
                   {
                     "from": "",
@@ -513,7 +513,7 @@
                     "text": "Word Size in Bytes",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_word_size_bytes_info"
+                    "value": "vdlarr_prom_ex_beam_system_word_size_bytes_info"
                   },
                   {
                     "from": "",
@@ -521,7 +521,7 @@
                     "text": "Logical Processors",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_logical_processors_info"
+                    "value": "vdlarr_prom_ex_beam_system_logical_processors_info"
                   },
                   {
                     "from": "",
@@ -529,7 +529,7 @@
                     "text": "Logical Processors Available",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_logical_processors_available_info"
+                    "value": "vdlarr_prom_ex_beam_system_logical_processors_available_info"
                   },
                   {
                     "from": "",
@@ -537,7 +537,7 @@
                     "text": "Logical Processors Online",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_logical_processors_online_info"
+                    "value": "vdlarr_prom_ex_beam_system_logical_processors_online_info"
                   }
                 ]
               }
@@ -559,7 +559,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "{__name__=~\"pinchflat_prom_ex_beam_system_dirty_cpu_schedulers_info|pinchflat_prom_ex_beam_system_dirty_cpu_schedulers_online_info|pinchflat_prom_ex_beam_system_dirty_io_schedulers_info|pinchflat_prom_ex_beam_system_schedulers_info|pinchflat_prom_ex_beam_system_schedulers_online_info|pinchflat_prom_ex_beam_system_word_size_bytes_info|pinchflat_prom_ex_beam_system_logical_processors_info|pinchflat_prom_ex_beam_system_logical_processors_available_info|pinchflat_prom_ex_beam_system_logical_processors_online_info\", job=\"$job\", instance=\"$instance\"}",
+          "expr": "{__name__=~\"vdlarr_prom_ex_beam_system_dirty_cpu_schedulers_info|vdlarr_prom_ex_beam_system_dirty_cpu_schedulers_online_info|vdlarr_prom_ex_beam_system_dirty_io_schedulers_info|vdlarr_prom_ex_beam_system_schedulers_info|vdlarr_prom_ex_beam_system_schedulers_online_info|vdlarr_prom_ex_beam_system_word_size_bytes_info|vdlarr_prom_ex_beam_system_logical_processors_info|vdlarr_prom_ex_beam_system_logical_processors_available_info|vdlarr_prom_ex_beam_system_logical_processors_online_info\", job=\"$job\", instance=\"$instance\"}",
           "format": "table",
           "instant": true,
           "interval": "",
@@ -645,7 +645,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_beam_stats_port_count{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_stats_port_count{job=\"$job\", instance=\"$instance\"}",
           "instant": false,
           "interval": "",
           "legendFormat": "",
@@ -707,7 +707,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_beam_stats_ets_count{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_stats_ets_count{job=\"$job\", instance=\"$instance\"}",
           "instant": false,
           "interval": "",
           "legendFormat": "",
@@ -770,7 +770,7 @@
                     "text": "Atom Limit",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_atom_limit_info"
+                    "value": "vdlarr_prom_ex_beam_system_atom_limit_info"
                   },
                   {
                     "from": "",
@@ -778,7 +778,7 @@
                     "text": "ETS Table Limit",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_ets_limit_info"
+                    "value": "vdlarr_prom_ex_beam_system_ets_limit_info"
                   },
                   {
                     "from": "",
@@ -786,7 +786,7 @@
                     "text": "Port Limit",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_port_limit_info"
+                    "value": "vdlarr_prom_ex_beam_system_port_limit_info"
                   },
                   {
                     "from": "",
@@ -794,7 +794,7 @@
                     "text": "Process Limit",
                     "to": "",
                     "type": 1,
-                    "value": "pinchflat_prom_ex_beam_system_process_limit_info"
+                    "value": "vdlarr_prom_ex_beam_system_process_limit_info"
                   },
                   {
                     "from": "",
@@ -824,7 +824,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "{__name__=~\"pinchflat_prom_ex_beam_system_ets_limit_info|pinchflat_prom_ex_beam_system_port_limit_info|pinchflat_prom_ex_beam_system_process_limit_info|pinchflat_prom_ex_beam_system_atom_limit_info\", job=\"$job\", instance=\"$instance\"}",
+          "expr": "{__name__=~\"vdlarr_prom_ex_beam_system_ets_limit_info|vdlarr_prom_ex_beam_system_port_limit_info|vdlarr_prom_ex_beam_system_process_limit_info|vdlarr_prom_ex_beam_system_atom_limit_info\", job=\"$job\", instance=\"$instance\"}",
           "format": "table",
           "instant": true,
           "interval": "",
@@ -910,7 +910,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_beam_memory_allocated_bytes{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_memory_allocated_bytes{job=\"$job\", instance=\"$instance\"}",
           "instant": false,
           "interval": "",
           "legendFormat": "",
@@ -972,7 +972,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_beam_stats_atom_count{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_stats_atom_count{job=\"$job\", instance=\"$instance\"}",
           "instant": false,
           "interval": "",
           "legendFormat": "",
@@ -1063,43 +1063,43 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_beam_memory_allocated_bytes{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_memory_allocated_bytes{job=\"$job\", instance=\"$instance\"}",
           "interval": "",
           "legendFormat": "Total Usage",
           "refId": "A"
         },
         {
-          "expr": "pinchflat_prom_ex_beam_memory_atom_total_bytes{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_memory_atom_total_bytes{job=\"$job\", instance=\"$instance\"}",
           "interval": "",
           "legendFormat": "Atoms",
           "refId": "B"
         },
         {
-          "expr": "pinchflat_prom_ex_beam_memory_binary_total_bytes{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_memory_binary_total_bytes{job=\"$job\", instance=\"$instance\"}",
           "interval": "",
           "legendFormat": "Binaries",
           "refId": "C"
         },
         {
-          "expr": "pinchflat_prom_ex_beam_memory_code_total_bytes{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_memory_code_total_bytes{job=\"$job\", instance=\"$instance\"}",
           "interval": "",
           "legendFormat": "Code",
           "refId": "D"
         },
         {
-          "expr": "pinchflat_prom_ex_beam_memory_ets_total_bytes{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_memory_ets_total_bytes{job=\"$job\", instance=\"$instance\"}",
           "interval": "",
           "legendFormat": "ETS",
           "refId": "E"
         },
         {
-          "expr": "pinchflat_prom_ex_beam_memory_processes_total_bytes{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_memory_processes_total_bytes{job=\"$job\", instance=\"$instance\"}",
           "interval": "",
           "legendFormat": "Processes",
           "refId": "F"
         },
         {
-          "expr": "pinchflat_prom_ex_beam_memory_persistent_term_total_bytes{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_memory_persistent_term_total_bytes{job=\"$job\", instance=\"$instance\"}",
           "interval": "",
           "legendFormat": "Persistent Term",
           "refId": "G"
@@ -1221,13 +1221,13 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "irate(pinchflat_prom_ex_beam_stats_gc_count{job=\"$job\", instance=\"$instance\"}[$interval])",
+          "expr": "irate(vdlarr_prom_ex_beam_stats_gc_count{job=\"$job\", instance=\"$instance\"}[$interval])",
           "interval": "",
           "legendFormat": "Garbage Collections",
           "refId": "A"
         },
         {
-          "expr": "irate(pinchflat_prom_ex_beam_stats_gc_reclaimed_bytes{job=\"$job\", instance=\"$instance\"}[$interval])",
+          "expr": "irate(vdlarr_prom_ex_beam_stats_gc_reclaimed_bytes{job=\"$job\", instance=\"$instance\"}[$interval])",
           "instant": false,
           "interval": "",
           "legendFormat": "Bytes Reclaimed",
@@ -1341,13 +1341,13 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_beam_stats_active_task_count{job=\"$job\", instance=\"$instance\", type=\"normal\"}",
+          "expr": "vdlarr_prom_ex_beam_stats_active_task_count{job=\"$job\", instance=\"$instance\", type=\"normal\"}",
           "interval": "",
           "legendFormat": "Normal Tasks",
           "refId": "A"
         },
         {
-          "expr": "0 - pinchflat_prom_ex_beam_stats_run_queue_count{job=\"$job\", instance=\"$instance\", type=\"normal\"}",
+          "expr": "0 - vdlarr_prom_ex_beam_stats_run_queue_count{job=\"$job\", instance=\"$instance\", type=\"normal\"}",
           "instant": false,
           "interval": "",
           "legendFormat": "Normal Run Queue",
@@ -1461,13 +1461,13 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_beam_stats_active_task_count{job=\"$job\", instance=\"$instance\", type=\"dirty\"}",
+          "expr": "vdlarr_prom_ex_beam_stats_active_task_count{job=\"$job\", instance=\"$instance\", type=\"dirty\"}",
           "interval": "",
           "legendFormat": "Dirty Tasks",
           "refId": "C"
         },
         {
-          "expr": "0 - pinchflat_prom_ex_beam_stats_run_queue_count{job=\"$job\", instance=\"$instance\", type=\"dirty\"}",
+          "expr": "0 - vdlarr_prom_ex_beam_stats_run_queue_count{job=\"$job\", instance=\"$instance\", type=\"dirty\"}",
           "instant": false,
           "interval": "",
           "legendFormat": "Dirty Run Queue",
@@ -1590,13 +1590,13 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "irate(pinchflat_prom_ex_beam_stats_reduction_count{job=\"$job\", instance=\"$instance\"}[$interval]) / 1000000",
+          "expr": "irate(vdlarr_prom_ex_beam_stats_reduction_count{job=\"$job\", instance=\"$instance\"}[$interval]) / 1000000",
           "interval": "",
           "legendFormat": "Reductions",
           "refId": "A"
         },
         {
-          "expr": "irate(pinchflat_prom_ex_beam_stats_context_switch_count{job=\"$job\", instance=\"$instance\"}[$interval])",
+          "expr": "irate(vdlarr_prom_ex_beam_stats_context_switch_count{job=\"$job\", instance=\"$instance\"}[$interval])",
           "instant": false,
           "interval": "",
           "legendFormat": "Context Switches",
@@ -1708,7 +1708,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_beam_stats_process_count{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_stats_process_count{job=\"$job\", instance=\"$instance\"}",
           "interval": "",
           "legendFormat": "Active Processes",
           "refId": "A"
@@ -1820,7 +1820,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_beam_stats_atom_count{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_stats_atom_count{job=\"$job\", instance=\"$instance\"}",
           "interval": "",
           "legendFormat": "Active ports",
           "refId": "A"
@@ -1933,13 +1933,13 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "0 - irate(pinchflat_prom_ex_beam_stats_port_io_byte_count{job=\"$job\", instance=\"$instance\", type=\"input\"}[$interval])",
+          "expr": "0 - irate(vdlarr_prom_ex_beam_stats_port_io_byte_count{job=\"$job\", instance=\"$instance\", type=\"input\"}[$interval])",
           "interval": "",
           "legendFormat": "Data Received",
           "refId": "A"
         },
         {
-          "expr": "irate(pinchflat_prom_ex_beam_stats_port_io_byte_count{job=\"$job\", instance=\"$instance\", type=\"output\"}[$interval])",
+          "expr": "irate(vdlarr_prom_ex_beam_stats_port_io_byte_count{job=\"$job\", instance=\"$instance\", type=\"output\"}[$interval])",
           "interval": "",
           "legendFormat": "Data Sent",
           "refId": "B"
@@ -2050,7 +2050,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_beam_stats_ets_count{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_stats_ets_count{job=\"$job\", instance=\"$instance\"}",
           "interval": "",
           "legendFormat": "Active ETS Tables",
           "refId": "A"
@@ -2161,7 +2161,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_beam_stats_port_count{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_beam_stats_port_count{job=\"$job\", instance=\"$instance\"}",
           "interval": "",
           "legendFormat": "Active Ports",
           "refId": "A"
@@ -2212,20 +2212,20 @@
   "refresh": "5s",
   "schemaVersion": 26,
   "style": "dark",
-  "tags": ["PromEx", "BEAM", "pinchflat"],
+  "tags": ["PromEx", "BEAM", "vdlarr"],
   "templating": {
     "list": [
       {
         "allValue": null,
         "datasource": "prometheus",
-        "definition": "label_values(pinchflat_prom_ex_prom_ex_status_info, job)",
+        "definition": "label_values(vdlarr_prom_ex_prom_ex_status_info, job)",
         "hide": 0,
         "includeAll": false,
         "label": "Prometheus Job",
         "multi": false,
         "name": "job",
         "options": [],
-        "query": "label_values(pinchflat_prom_ex_prom_ex_status_info, job)",
+        "query": "label_values(vdlarr_prom_ex_prom_ex_status_info, job)",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -2239,14 +2239,14 @@
       {
         "allValue": null,
         "datasource": "prometheus",
-        "definition": "label_values(pinchflat_prom_ex_prom_ex_status_info, instance)",
+        "definition": "label_values(vdlarr_prom_ex_prom_ex_status_info, instance)",
         "hide": 0,
         "includeAll": false,
         "label": "Application Instance",
         "multi": false,
         "name": "instance",
         "options": [],
-        "query": "label_values(pinchflat_prom_ex_prom_ex_status_info{job=\"$job\"}, instance)",
+        "query": "label_values(vdlarr_prom_ex_prom_ex_status_info{job=\"$job\"}, instance)",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -2322,7 +2322,7 @@
     "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"]
   },
   "timezone": "",
-  "title": "Pinchflat - PromEx Beam Dashboard",
+  "title": "Vdlarr - PromEx Beam Dashboard",
   "uid": "14B578642B07F5DEA133D4DE6A6AAD0A",
   "version": 1
 }

@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddPreferredResolutionToMediaProfiles do
+defmodule Vdlarr.Repo.Migrations.AddPreferredResolutionToMediaProfiles do
   use Ecto.Migration
 
   def change do

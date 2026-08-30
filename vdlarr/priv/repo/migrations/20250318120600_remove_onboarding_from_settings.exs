@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.RemoveOnboardingFromSettings do
+defmodule Vdlarr.Repo.Migrations.RemoveOnboardingFromSettings do
   use Ecto.Migration
 
   def change do

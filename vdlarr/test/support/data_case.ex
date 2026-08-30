@@ -1,4 +1,4 @@
-defmodule Pinchflat.DataCase do
+defmodule Vdlarr.DataCase do
   @moduledoc """
   This module defines the setup for tests requiring
   access to the application's data layer.
@@ -10,16 +10,16 @@ defmodule Pinchflat.DataCase do
   we enable the SQL sandbox, so changes done to the database
   are reverted at the end of every test. If you are using
   PostgreSQL, you can even run database tests asynchronously
-  by setting `use Pinchflat.DataCase, async: true`, although
+  by setting `use Vdlarr.DataCase, async: true`, although
   this option is not recommended for other databases.
   """
 
   use ExUnit.CaseTemplate
-  alias Pinchflat.TestingHelperMethods
+  alias Vdlarr.TestingHelperMethods
 
   using do
     quote do
-      alias Pinchflat.Repo
+      alias Vdlarr.Repo
 
       use Oban.Testing, repo: Repo
 
@@ -27,8 +27,8 @@ defmodule Pinchflat.DataCase do
       import Ecto
       import Ecto.Changeset
       import Ecto.Query
-      import Pinchflat.DataCase
-      import Pinchflat.TestingHelperMethods
+      import Vdlarr.DataCase
+      import Vdlarr.TestingHelperMethods
 
       setup :verify_on_exit!
     end
@@ -36,7 +36,7 @@ defmodule Pinchflat.DataCase do
 
   setup tags do
     TestingHelperMethods.create_platform_directories()
-    Pinchflat.DataCase.setup_sandbox(tags)
+    Vdlarr.DataCase.setup_sandbox(tags)
 
     :ok
   end
@@ -45,7 +45,7 @@ defmodule Pinchflat.DataCase do
   Sets up the sandbox based on the test tags.
   """
   def setup_sandbox(tags) do
-    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Pinchflat.Repo, shared: not tags[:async])
+    pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Vdlarr.Repo, shared: not tags[:async])
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
   end
 

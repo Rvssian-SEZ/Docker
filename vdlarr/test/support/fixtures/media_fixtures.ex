@@ -1,11 +1,11 @@
-defmodule Pinchflat.MediaFixtures do
+defmodule Vdlarr.MediaFixtures do
   @moduledoc """
   This module defines test helpers for creating
-  entities via the `Pinchflat.Media` context.
+  entities via the `Vdlarr.Media` context.
   """
 
-  alias Pinchflat.SourcesFixtures
-  alias Pinchflat.Utils.FilesystemUtils
+  alias Vdlarr.SourcesFixtures
+  alias Vdlarr.Utils.FilesystemUtils
 
   @doc """
   Generate a media_item.
@@ -25,7 +25,7 @@ defmodule Pinchflat.MediaFixtures do
         source_id: SourcesFixtures.source_fixture().id,
         uploaded_at: DateTime.utc_now()
       })
-      |> Pinchflat.Media.create_media_item()
+      |> Vdlarr.Media.create_media_item()
 
     media_item
   end
@@ -37,8 +37,8 @@ defmodule Pinchflat.MediaFixtures do
     merged_attrs =
       Map.merge(attrs, %{
         metadata: %{
-          metadata_filepath: Application.get_env(:pinchflat, :metadata_directory) <> "/metadata.json.gz",
-          thumbnail_filepath: Application.get_env(:pinchflat, :metadata_directory) <> "/thumbnail.jpg"
+          metadata_filepath: Application.get_env(:vdlarr, :metadata_directory) <> "/metadata.json.gz",
+          thumbnail_filepath: Application.get_env(:vdlarr, :metadata_directory) <> "/thumbnail.jpg"
         }
       })
 
@@ -47,7 +47,7 @@ defmodule Pinchflat.MediaFixtures do
 
   def media_item_with_metadata_attachments(attrs \\ %{}) do
     metadata_dir =
-      Path.join(Application.get_env(:pinchflat, :metadata_directory), "#{:rand.uniform(1_000_000)}")
+      Path.join(Application.get_env(:vdlarr, :metadata_directory), "#{:rand.uniform(1_000_000)}")
 
     json_gz_filepath = Path.join(metadata_dir, "metadata.json.gz")
     thumbnail_filepath = Path.join(metadata_dir, "thumbnail.jpg")
@@ -69,7 +69,7 @@ defmodule Pinchflat.MediaFixtures do
   def media_item_with_attachments(attrs \\ %{}) do
     base_dir =
       Path.join([
-        Application.get_env(:pinchflat, :media_directory),
+        Application.get_env(:vdlarr, :media_directory),
         "#{:rand.uniform(1_000_000)}"
       ])
 

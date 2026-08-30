@@ -7,12 +7,16 @@ const fs = require('fs')
 const path = require('path')
 
 module.exports = {
-  content: ['./js/**/*.js', '../lib/pinchflat_web.ex', '../lib/pinchflat_web/**/*.*ex'],
+  content: ['./js/**/*.js', '../lib/vdlarr_web.ex', '../lib/vdlarr_web/**/*.*ex'],
   darkMode: 'class',
   theme: {
     fontFamily: {
+      ...defaultTheme.fontFamily,
       satoshi: ['Satoshi', 'sans-serif'],
-      ...defaultTheme.fontFamily
+      // VDLarr's own typography (see the "Dashboard Redesign Pilot" work) - sans is the
+      // sitewide body font going forward, display is for headings/branding only.
+      sans: ['Inter', ...defaultTheme.fontFamily.sans],
+      display: ['Sora', ...defaultTheme.fontFamily.sans]
     },
     screens: {
       '2xsm': '375px',
@@ -24,6 +28,17 @@ module.exports = {
       colors: {
         current: 'currentColor',
         transparent: 'transparent',
+        // VDLarr's new design direction (see "Dashboard Redesign Pilot") - additive
+        // alongside the tokens below, which the rest of the app still uses until their
+        // own passes land.
+        midnight: {
+          950: '#0a0b11',
+          900: '#0f1117',
+          850: '#131622',
+          800: '#171a28',
+          700: '#1e2233',
+          600: '#2a2f45'
+        },
         white: '#FFFFFF',
         black: '#1C2434',
         'black-2': '#010101',

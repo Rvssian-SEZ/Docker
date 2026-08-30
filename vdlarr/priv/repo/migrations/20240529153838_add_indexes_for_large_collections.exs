@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddIndexesForLargeCollections do
+defmodule Vdlarr.Repo.Migrations.AddIndexesForLargeCollections do
   use Ecto.Migration
 
   def change do

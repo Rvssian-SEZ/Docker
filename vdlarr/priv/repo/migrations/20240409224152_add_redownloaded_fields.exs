@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddRedownloadedFields do
+defmodule Vdlarr.Repo.Migrations.AddRedownloadedFields do
   use Ecto.Migration
 
   def change do

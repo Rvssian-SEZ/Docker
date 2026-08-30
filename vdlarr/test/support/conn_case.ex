@@ -1,4 +1,4 @@
-defmodule PinchflatWeb.ConnCase do
+defmodule VdlarrWeb.ConnCase do
   @moduledoc """
   This module defines the test case to be used by
   tests that require setting up a connection.
@@ -11,21 +11,21 @@ defmodule PinchflatWeb.ConnCase do
   we enable the SQL sandbox, so changes done to the database
   are reverted at the end of every test. If you are using
   PostgreSQL, you can even run database tests asynchronously
-  by setting `use PinchflatWeb.ConnCase, async: true`, although
+  by setting `use VdlarrWeb.ConnCase, async: true`, although
   this option is not recommended for other databases.
   """
 
   use ExUnit.CaseTemplate
 
-  alias Pinchflat.TestingHelperMethods
+  alias Vdlarr.TestingHelperMethods
 
   using do
     quote do
       # The default endpoint for testing
-      @endpoint PinchflatWeb.Endpoint
-      alias Pinchflat.Repo
+      @endpoint VdlarrWeb.Endpoint
+      alias Vdlarr.Repo
 
-      use PinchflatWeb, :verified_routes
+      use VdlarrWeb, :verified_routes
       use Oban.Testing, repo: Repo
 
       # Import conveniences for testing with connections
@@ -33,8 +33,8 @@ defmodule PinchflatWeb.ConnCase do
       import Mox
       import Plug.Conn
       import Phoenix.ConnTest
-      import PinchflatWeb.ConnCase
-      import Pinchflat.TestingHelperMethods
+      import VdlarrWeb.ConnCase
+      import Vdlarr.TestingHelperMethods
 
       setup :verify_on_exit!
     end
@@ -42,7 +42,7 @@ defmodule PinchflatWeb.ConnCase do
 
   setup tags do
     TestingHelperMethods.create_platform_directories()
-    Pinchflat.DataCase.setup_sandbox(tags)
+    Vdlarr.DataCase.setup_sandbox(tags)
 
     conn = Phoenix.ConnTest.build_conn()
     session_conn = Plug.Test.init_test_session(conn, %{})

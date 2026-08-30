@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddMarkedForDeletionAtToSources do
+defmodule Vdlarr.Repo.Migrations.AddMarkedForDeletionAtToSources do
   use Ecto.Migration
 
   def change do

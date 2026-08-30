@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddYoutubeApiKeySetting do
+defmodule Vdlarr.Repo.Migrations.AddYoutubeApiKeySetting do
   use Ecto.Migration
 
   def change do

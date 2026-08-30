@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddAppriseVersionToSettings do
+defmodule Vdlarr.Repo.Migrations.AddAppriseVersionToSettings do
   use Ecto.Migration
 
   def change do

@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddShortFormToMediaItems do
+defmodule Vdlarr.Repo.Migrations.AddShortFormToMediaItems do
   use Ecto.Migration
 
   def change do

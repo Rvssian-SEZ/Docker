@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddHiddenSourcesSupport do
+defmodule Vdlarr.Repo.Migrations.AddHiddenSourcesSupport do
   use Ecto.Migration
 
   def change do

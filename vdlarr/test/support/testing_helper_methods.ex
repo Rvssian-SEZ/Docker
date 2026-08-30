@@ -1,4 +1,4 @@
-defmodule Pinchflat.TestingHelperMethods do
+defmodule Vdlarr.TestingHelperMethods do
   @moduledoc false
 
   use ExUnit.CaseTemplate
@@ -56,9 +56,9 @@ defmodule Pinchflat.TestingHelperMethods do
   end
 
   def create_platform_directories do
-    File.mkdir_p!(Application.get_env(:pinchflat, :media_directory))
-    File.mkdir_p!(Application.get_env(:pinchflat, :metadata_directory))
-    File.mkdir_p!(Application.get_env(:pinchflat, :extras_directory))
-    File.mkdir_p!(Application.get_env(:pinchflat, :tmpfile_directory))
+    File.mkdir_p!(Application.get_env(:vdlarr, :media_directory))
+    File.mkdir_p!(Application.get_env(:vdlarr, :metadata_directory))
+    File.mkdir_p!(Application.get_env(:vdlarr, :extras_directory))
+    File.mkdir_p!(Application.get_env(:vdlarr, :tmpfile_directory))
   end
 end

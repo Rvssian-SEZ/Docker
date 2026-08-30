@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddLifecycleColumnsToSourcesAndMedia do
+defmodule Vdlarr.Repo.Migrations.AddLifecycleColumnsToSourcesAndMedia do
   use Ecto.Migration
 
   def change do

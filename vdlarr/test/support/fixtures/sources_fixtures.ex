@@ -1,14 +1,14 @@
-defmodule Pinchflat.SourcesFixtures do
+defmodule Vdlarr.SourcesFixtures do
   @moduledoc """
   This module defines test helpers for creating
-  entities via the `Pinchflat.Sources` context.
+  entities via the `Vdlarr.Sources` context.
   """
 
-  alias Pinchflat.Repo
-  alias Pinchflat.MediaFixtures
-  alias Pinchflat.Sources.Source
-  alias Pinchflat.ProfilesFixtures
-  alias Pinchflat.Utils.FilesystemUtils
+  alias Vdlarr.Repo
+  alias Vdlarr.MediaFixtures
+  alias Vdlarr.Sources.Source
+  alias Vdlarr.ProfilesFixtures
+  alias Vdlarr.Utils.FilesystemUtils
 
   @doc """
   Generate a source.
@@ -45,7 +45,7 @@ defmodule Pinchflat.SourcesFixtures do
     merged_attrs =
       Map.merge(attrs, %{
         metadata: %{
-          metadata_filepath: Application.get_env(:pinchflat, :metadata_directory) <> "/metadata.json.gz"
+          metadata_filepath: Application.get_env(:vdlarr, :metadata_directory) <> "/metadata.json.gz"
         }
       })
 
@@ -54,7 +54,7 @@ defmodule Pinchflat.SourcesFixtures do
 
   def source_with_metadata_attachments(attrs \\ %{}) do
     metadata_dir =
-      Path.join(Application.get_env(:pinchflat, :metadata_directory), "#{:rand.uniform(1_000_000)}")
+      Path.join(Application.get_env(:vdlarr, :metadata_directory), "#{:rand.uniform(1_000_000)}")
 
     json_gz_filepath = Path.join(metadata_dir, "metadata.json.gz")
     poster_filepath = Path.join(metadata_dir, "poster.jpg")
@@ -122,7 +122,7 @@ defmodule Pinchflat.SourcesFixtures do
       channel: "Channel Name",
       playlist_id: channel_id,
       playlist_title: "Channel Name",
-      filename: Path.join([Application.get_env(:pinchflat, :media_directory), "foo", "bar.mp4"])
+      filename: Path.join([Application.get_env(:vdlarr, :media_directory), "foo", "bar.mp4"])
     }
     |> Map.merge(attrs)
     |> Phoenix.json_library().encode!()

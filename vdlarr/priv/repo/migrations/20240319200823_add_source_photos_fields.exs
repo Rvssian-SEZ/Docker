@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddSourcePhotosFields do
+defmodule Vdlarr.Repo.Migrations.AddSourcePhotosFields do
   use Ecto.Migration
 
   def change do

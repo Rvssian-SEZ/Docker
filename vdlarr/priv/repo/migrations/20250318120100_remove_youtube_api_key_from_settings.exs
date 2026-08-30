@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.RemoveYoutubeApiKeyFromSettings do
+defmodule Vdlarr.Repo.Migrations.RemoveYoutubeApiKeyFromSettings do
   use Ecto.Migration
 
   def change do

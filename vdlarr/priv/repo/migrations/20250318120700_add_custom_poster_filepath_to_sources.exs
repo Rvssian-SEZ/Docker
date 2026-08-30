@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddCustomPosterFilepathToSources do
+defmodule Vdlarr.Repo.Migrations.AddCustomPosterFilepathToSources do
   use Ecto.Migration
 
   def change do

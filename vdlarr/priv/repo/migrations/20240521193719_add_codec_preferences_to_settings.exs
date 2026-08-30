@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddCodecPreferencesToSettings do
+defmodule Vdlarr.Repo.Migrations.AddCodecPreferencesToSettings do
   use Ecto.Migration
 
   def change do

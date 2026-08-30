@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddDateIndexesToMediaItems do
+defmodule Vdlarr.Repo.Migrations.AddDateIndexesToMediaItems do
   use Ecto.Migration
 
   def change do

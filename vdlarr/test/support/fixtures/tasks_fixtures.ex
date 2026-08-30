@@ -1,11 +1,11 @@
-defmodule Pinchflat.TasksFixtures do
+defmodule Vdlarr.TasksFixtures do
   @moduledoc """
   This module defines test helpers for creating
-  entities via the `Pinchflat.Tasks` context.
+  entities via the `Vdlarr.Tasks` context.
   """
 
-  alias Pinchflat.JobFixtures
-  alias Pinchflat.SourcesFixtures
+  alias Vdlarr.JobFixtures
+  alias Vdlarr.SourcesFixtures
 
   @doc """
   Generate a task.
@@ -17,7 +17,7 @@ defmodule Pinchflat.TasksFixtures do
         source_id: SourcesFixtures.source_fixture().id,
         job_id: JobFixtures.job_fixture().id
       })
-      |> Pinchflat.Tasks.create_task()
+      |> Vdlarr.Tasks.create_task()
 
     task
   end

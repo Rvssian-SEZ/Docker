@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddPreventDownloadToMediaItems do
+defmodule Vdlarr.Repo.Migrations.AddPreventDownloadToMediaItems do
   use Ecto.Migration
 
   def change do

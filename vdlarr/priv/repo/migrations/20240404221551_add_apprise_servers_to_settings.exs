@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddAppriseServersToSettings do
+defmodule Vdlarr.Repo.Migrations.AddAppriseServersToSettings do
   use Ecto.Migration
 
   def change do

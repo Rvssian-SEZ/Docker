@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.CreateTasks do
+defmodule Vdlarr.Repo.Migrations.CreateTasks do
   use Ecto.Migration
 
   def change do

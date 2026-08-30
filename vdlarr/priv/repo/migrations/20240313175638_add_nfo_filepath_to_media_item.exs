@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddNfoFilepathToMediaItem do
+defmodule Vdlarr.Repo.Migrations.AddNfoFilepathToMediaItem do
   use Ecto.Migration
 
   def change do

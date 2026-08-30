@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddDurationLimitsToSources do
+defmodule Vdlarr.Repo.Migrations.AddDurationLimitsToSources do
   use Ecto.Migration
 
   def change do

@@ -7,21 +7,24 @@
 # General application configuration
 import Config
 
-config :pinchflat,
-  ecto_repos: [Pinchflat.Repo],
+config :vdlarr,
+  ecto_repos: [Vdlarr.Repo],
   generators: [timestamp_type: :utc_datetime],
   env: config_env(),
   # Specifying backend data here makes mocking and local testing SUPER easy
   yt_dlp_executable: System.find_executable("yt-dlp"),
   apprise_executable: System.find_executable("apprise"),
-  yt_dlp_runner: Pinchflat.YtDlp.CommandRunner,
-  apprise_runner: Pinchflat.Lifecycle.Notifications.CommandRunner,
-  http_client: Pinchflat.HTTP.HTTPClient,
+  yt_dlp_runner: Vdlarr.YtDlp.CommandRunner,
+  apprise_runner: Vdlarr.Lifecycle.Notifications.CommandRunner,
+  http_client: Vdlarr.HTTP.HTTPClient,
   media_directory: "/downloads",
   # The user may or may not store metadata for their needs, but the app will always store its copy
   metadata_directory: "/config/metadata",
   extras_directory: "/config/extras",
-  tmpfile_directory: Path.join([System.tmp_dir!(), "pinchflat", "data"]),
+  # Where yt-dlp's system plugin directory lives - see the Dockerfile and
+  # Vdlarr.YtDlp.BgutilPluginUpdateWorker
+  yt_dlp_plugin_directory: "/etc/yt-dlp/plugins",
+  tmpfile_directory: Path.join([System.tmp_dir!(), "vdlarr", "data"]),
   # Setting BASIC_AUTH_USERNAME and BASIC_AUTH_PASSWORD implies you want to use basic auth.
   # If either is unset, basic auth will not be used.
   basic_auth_username: "",
@@ -31,27 +34,27 @@ config :pinchflat,
   timezone: "UTC",
   base_route_path: "/"
 
-config :pinchflat, Pinchflat.Repo,
+config :vdlarr, Vdlarr.Repo,
   journal_mode: :wal,
   pool_size: 5
 
 # Configures the endpoint
-config :pinchflat, PinchflatWeb.Endpoint,
+config :vdlarr, VdlarrWeb.Endpoint,
   url: [host: "localhost", port: 8945],
   # NOTE: this must be updated if ever deployed traditionally (ie: not self-hosted)
   check_origin: false,
   adapter: Phoenix.Endpoint.Cowboy2Adapter,
   render_errors: [
-    formats: [html: PinchflatWeb.ErrorHTML, json: PinchflatWeb.ErrorJSON],
-    root_layout: {PinchflatWeb.Layouts, :root},
-    layout: {PinchflatWeb.Layouts, :app}
+    formats: [html: VdlarrWeb.ErrorHTML, json: VdlarrWeb.ErrorJSON],
+    root_layout: {VdlarrWeb.Layouts, :root},
+    layout: {VdlarrWeb.Layouts, :app}
   ],
-  pubsub_server: Pinchflat.PubSub,
+  pubsub_server: Vdlarr.PubSub,
   live_view: [signing_salt: "/t5878kO"]
 
-config :pinchflat, Oban,
+config :vdlarr, Oban,
   engine: Oban.Engines.Lite,
-  repo: Pinchflat.Repo
+  repo: Vdlarr.Repo
 
 # Configures the mailer
 #
@@ -60,7 +63,7 @@ config :pinchflat, Oban,
 #
 # For production it's recommended to configure a different adapter
 # at the `config/runtime.exs`.
-config :pinchflat, Pinchflat.Mailer, adapter: Swoosh.Adapters.Local
+config :vdlarr, Vdlarr.Mailer, adapter: Swoosh.Adapters.Local
 
 # Configure esbuild (the version is required)
 config :esbuild,
@@ -92,7 +95,7 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
-config :pinchflat, Pinchflat.PromEx,
+config :vdlarr, Vdlarr.PromEx,
   disabled: true,
   manual_metrics_start_delay: :no_delay,
   drop_metrics_groups: [],

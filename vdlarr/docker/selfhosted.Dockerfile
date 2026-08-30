@@ -139,7 +139,7 @@ ENV UMASK=022
 EXPOSE ${PORT}
 
 # Only copy the final release from the build stage
-COPY --from=builder /app/_build/${MIX_ENV}/rel/pinchflat ./
+COPY --from=builder /app/_build/${MIX_ENV}/rel/vdlarr ./
 
 HEALTHCHECK --interval=30s --start-period=15s \
   CMD curl --fail http://localhost:${PORT}/healthcheck || exit 1

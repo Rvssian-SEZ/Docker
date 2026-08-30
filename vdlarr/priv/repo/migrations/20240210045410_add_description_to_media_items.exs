@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddDescriptionToMediaItems do
+defmodule Vdlarr.Repo.Migrations.AddDescriptionToMediaItems do
   use Ecto.Migration
 
   def change do

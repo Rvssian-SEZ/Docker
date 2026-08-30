@@ -3,6 +3,8 @@
 @import 'tailwindcss/utilities';
 
 @import './satoshi';
+@import './inter';
+@import './sora';
 
 /* This file is for your main application CSS */
 [x-cloak] {
@@ -11,7 +13,7 @@
 
 @layer base {
   body {
-    @apply relative z-1 bg-whiten font-satoshi text-base font-normal text-body;
+    @apply relative z-1 bg-whiten font-sans text-base font-normal text-body;
   }
 }
 

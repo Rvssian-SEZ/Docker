@@ -1,7 +1,7 @@
-defmodule Pinchflat.ProfilesFixtures do
+defmodule Vdlarr.ProfilesFixtures do
   @moduledoc """
   This module defines test helpers for creating
-  entities via the `Pinchflat.Profiles` context.
+  entities via the `Vdlarr.Profiles` context.
   """
 
   @doc """
@@ -14,7 +14,7 @@ defmodule Pinchflat.ProfilesFixtures do
         name: "Media Profile ##{:rand.uniform(1_000_000)}",
         output_path_template: "{{title}}.{{ext}}"
       })
-      |> Pinchflat.Profiles.create_media_profile()
+      |> Vdlarr.Profiles.create_media_profile()
 
     media_profile
   end

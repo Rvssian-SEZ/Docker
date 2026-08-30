@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.RenameVideoFilepathOnMediaItems do
+defmodule Vdlarr.Repo.Migrations.RenameVideoFilepathOnMediaItems do
   use Ecto.Migration
 
   def change do

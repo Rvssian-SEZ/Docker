@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.ReReAddSourceUniquenessIndex do
+defmodule Vdlarr.Repo.Migrations.ReReAddSourceUniquenessIndex do
   use Ecto.Migration
 
   def up do

@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.ModifyUploadDateIndex do
+defmodule Vdlarr.Repo.Migrations.ModifyUploadDateIndex do
   use Ecto.Migration
 
   def change do

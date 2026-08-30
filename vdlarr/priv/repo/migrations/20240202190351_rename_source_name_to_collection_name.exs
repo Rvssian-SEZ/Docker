@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.RenameSourceNameToCollectionName do
+defmodule Vdlarr.Repo.Migrations.RenameSourceNameToCollectionName do
   use Ecto.Migration
 
   def change do

@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddJellyfinSettings do
+defmodule Vdlarr.Repo.Migrations.AddJellyfinSettings do
   use Ecto.Migration
 
   def change do

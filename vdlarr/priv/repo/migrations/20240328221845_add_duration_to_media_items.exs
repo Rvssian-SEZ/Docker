@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddDurationToMediaItems do
+defmodule Vdlarr.Repo.Migrations.AddDurationToMediaItems do
   use Ecto.Migration
 
   def change do

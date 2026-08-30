@@ -1,0 +1,25 @@
+<div class="mb-6 flex gap-3 flex-row items-center justify-between">
+  <div class="flex gap-3 items-center">
+    <h2 class="font-display font-bold text-[22px] text-white">
+      Logs
+    </h2>
+  </div>
+</div>
+
+<div class="rounded-xl border border-white/5 bg-midnight-850 px-5 py-5 sm:px-7.5 mb-4">
+  <pre class="font-mono text-sm text-slate-300 whitespace-pre-wrap">{diagnostic_info_string()}</pre>
+</div>
+
+<div class="rounded-xl border border-white/5 bg-midnight-850 px-5 py-5 sm:px-7.5">
+  <div class="mb-3 flex items-center justify-between">
+    <span class="text-lg font-display font-medium text-white">Recent Logs</span>
+    <.link href={~p"/download_logs"}>
+      <.icon_button icon_name="hero-arrow-down-tray" class="h-8 w-8" tooltip="Download full log file" />
+    </.link>
+  </div>
+  <pre
+    :if={@log_content}
+    class="font-mono text-xs text-slate-300 whitespace-pre-wrap max-h-[32rem] overflow-y-auto rounded-lg bg-midnight-900 border border-white/5 p-4"
+  >{@log_content}</pre>
+  <p :if={!@log_content} class="text-slate-500">Log file couldn't be found.</p>
+</div>

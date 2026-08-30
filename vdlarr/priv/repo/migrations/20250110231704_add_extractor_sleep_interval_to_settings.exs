@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddExtractorSleepIntervalToSettings do
+defmodule Vdlarr.Repo.Migrations.AddExtractorSleepIntervalToSettings do
   use Ecto.Migration
 
   def change do

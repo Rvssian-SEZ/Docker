@@ -18,7 +18,7 @@
         "limit": 100,
         "name": "PromEx service start",
         "showIn": 0,
-        "tags": ["prom_ex", "pinchflat", "start"],
+        "tags": ["prom_ex", "vdlarr", "start"],
         "type": "tags"
       },
       {
@@ -29,7 +29,7 @@
         "limit": 100,
         "name": "PromEx service stop",
         "showIn": 0,
-        "tags": ["prom_ex", "pinchflat", "stop"],
+        "tags": ["prom_ex", "vdlarr", "stop"],
         "type": "tags"
       }
     ]
@@ -109,7 +109,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_application_uptime_milliseconds_count{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_application_uptime_milliseconds_count{job=\"$job\", instance=\"$instance\"}",
           "format": "table",
           "instant": true,
           "interval": "",
@@ -229,7 +229,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_application_dependency_info{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_application_dependency_info{job=\"$job\", instance=\"$instance\"}",
           "format": "table",
           "instant": true,
           "interval": "",
@@ -313,7 +313,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_application_primary_info{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_application_primary_info{job=\"$job\", instance=\"$instance\"}",
           "format": "table",
           "instant": true,
           "interval": "",
@@ -367,7 +367,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_application_git_sha_info{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_application_git_sha_info{job=\"$job\", instance=\"$instance\"}",
           "format": "table",
           "instant": true,
           "interval": "",
@@ -421,7 +421,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_application_git_author_info{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_application_git_author_info{job=\"$job\", instance=\"$instance\"}",
           "format": "table",
           "instant": true,
           "interval": "",
@@ -475,7 +475,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_application_primary_info{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_application_primary_info{job=\"$job\", instance=\"$instance\"}",
           "format": "table",
           "instant": true,
           "interval": "",
@@ -529,7 +529,7 @@
       "pluginVersion": "7.1.3",
       "targets": [
         {
-          "expr": "pinchflat_prom_ex_application_primary_info{job=\"$job\", instance=\"$instance\"}",
+          "expr": "vdlarr_prom_ex_application_primary_info{job=\"$job\", instance=\"$instance\"}",
           "format": "table",
           "instant": true,
           "interval": "",
@@ -546,20 +546,20 @@
   "refresh": "5s",
   "schemaVersion": 26,
   "style": "dark",
-  "tags": ["PromEx", "Application", "pinchflat"],
+  "tags": ["PromEx", "Application", "vdlarr"],
   "templating": {
     "list": [
       {
         "allValue": null,
         "datasource": "prometheus",
-        "definition": "label_values(pinchflat_prom_ex_prom_ex_status_info, job)",
+        "definition": "label_values(vdlarr_prom_ex_prom_ex_status_info, job)",
         "hide": 0,
         "includeAll": false,
         "label": "Prometheus Job",
         "multi": false,
         "name": "job",
         "options": [],
-        "query": "label_values(pinchflat_prom_ex_prom_ex_status_info, job)",
+        "query": "label_values(vdlarr_prom_ex_prom_ex_status_info, job)",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -573,14 +573,14 @@
       {
         "allValue": null,
         "datasource": "prometheus",
-        "definition": "label_values(pinchflat_prom_ex_prom_ex_status_info, instance)",
+        "definition": "label_values(vdlarr_prom_ex_prom_ex_status_info, instance)",
         "hide": 0,
         "includeAll": false,
         "label": "Application Instance",
         "multi": false,
         "name": "instance",
         "options": [],
-        "query": "label_values(pinchflat_prom_ex_prom_ex_status_info{job=\"$job\"}, instance)",
+        "query": "label_values(vdlarr_prom_ex_prom_ex_status_info{job=\"$job\"}, instance)",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
@@ -601,7 +601,7 @@
     "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"]
   },
   "timezone": "",
-  "title": "Pinchflat - PromEx Application Dashboard",
+  "title": "Vdlarr - PromEx Application Dashboard",
   "uid": "7DBBC471C5775585391E8F24D1E62319",
   "version": 1
 }

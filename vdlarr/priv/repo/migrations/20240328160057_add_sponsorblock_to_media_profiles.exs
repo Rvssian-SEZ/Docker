@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddSponsorblockToMediaProfiles do
+defmodule Vdlarr.Repo.Migrations.AddSponsorblockToMediaProfiles do
   use Ecto.Migration
 
   def change do

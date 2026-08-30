@@ -165,7 +165,7 @@
           {CredoNaming.Check.Consistency.ModuleFilename,
            [
              priority: :normal,
-             excluded_paths: [~r/test\/support/, ~r/priv/, ~r/lib\/pinchflat_web/, ~r/test\/pinchflat_web/]
+             excluded_paths: [~r/test\/support/, ~r/priv/, ~r/lib\/vdlarr_web/, ~r/test\/vdlarr_web/]
            ]}
         ],
         disabled: [

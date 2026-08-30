@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddDownloadCutoffDateToSources do
+defmodule Vdlarr.Repo.Migrations.AddDownloadCutoffDateToSources do
   use Ecto.Migration
 
   def change do

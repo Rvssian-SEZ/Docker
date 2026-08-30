@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddTitleRegexToSource do
+defmodule Vdlarr.Repo.Migrations.AddTitleRegexToSource do
   use Ecto.Migration
 
   def change do

@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddMetadataFilepathToMediaMetadata do
+defmodule Vdlarr.Repo.Migrations.AddMetadataFilepathToMediaMetadata do
   use Ecto.Migration
 
   def change do

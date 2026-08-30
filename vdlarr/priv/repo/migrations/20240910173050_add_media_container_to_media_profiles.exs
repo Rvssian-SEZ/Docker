@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddMediaContainerToMediaProfiles do
+defmodule Vdlarr.Repo.Migrations.AddMediaContainerToMediaProfiles do
   use Ecto.Migration
 
   def change do

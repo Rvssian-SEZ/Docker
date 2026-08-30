@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddDownloadMediaToSources do
+defmodule Vdlarr.Repo.Migrations.AddDownloadMediaToSources do
   use Ecto.Migration
 
   def change do

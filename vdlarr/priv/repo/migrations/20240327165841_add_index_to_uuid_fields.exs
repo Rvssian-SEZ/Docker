@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddIndexToUuidFields do
+defmodule Vdlarr.Repo.Migrations.AddIndexToUuidFields do
   use Ecto.Migration
 
   def change do

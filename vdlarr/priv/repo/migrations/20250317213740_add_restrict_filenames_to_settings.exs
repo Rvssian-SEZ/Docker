@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddRestrictFilenamesToSettings do
+defmodule Vdlarr.Repo.Migrations.AddRestrictFilenamesToSettings do
   use Ecto.Migration
 
   def change do

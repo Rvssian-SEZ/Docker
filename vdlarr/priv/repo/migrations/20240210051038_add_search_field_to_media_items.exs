@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddSearchFieldToMediaItems do
+defmodule Vdlarr.Repo.Migrations.AddSearchFieldToMediaItems do
   use Ecto.Migration
 
   def up do

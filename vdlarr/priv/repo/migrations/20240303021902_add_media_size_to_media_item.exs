@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddMediaSizeToMediaItem do
+defmodule Vdlarr.Repo.Migrations.AddMediaSizeToMediaItem do
   use Ecto.Migration
 
   def change do

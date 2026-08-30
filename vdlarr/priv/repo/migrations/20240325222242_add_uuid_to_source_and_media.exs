@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddUuidToSourceAndMedia do
+defmodule Vdlarr.Repo.Migrations.AddUuidToSourceAndMedia do
   use Ecto.Migration
 
   def change do

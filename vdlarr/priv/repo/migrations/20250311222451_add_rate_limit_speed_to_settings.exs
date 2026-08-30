@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddRateLimitSpeedToSettings do
+defmodule Vdlarr.Repo.Migrations.AddRateLimitSpeedToSettings do
   use Ecto.Migration
 
   def change do

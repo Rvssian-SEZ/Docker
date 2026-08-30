@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddPredictedMediaFilepathToMediaItems do
+defmodule Vdlarr.Repo.Migrations.AddPredictedMediaFilepathToMediaItems do
   use Ecto.Migration
 
   def change do

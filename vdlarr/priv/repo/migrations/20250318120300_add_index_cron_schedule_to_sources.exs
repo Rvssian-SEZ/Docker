@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddIndexCronScheduleToSources do
+defmodule Vdlarr.Repo.Migrations.AddIndexCronScheduleToSources do
   use Ecto.Migration
 
   def change do

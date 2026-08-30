@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddThumbnailOptionsToMediaProfiles do
+defmodule Vdlarr.Repo.Migrations.AddThumbnailOptionsToMediaProfiles do
   use Ecto.Migration
 
   def change do

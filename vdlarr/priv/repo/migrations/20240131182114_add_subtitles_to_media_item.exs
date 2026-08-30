@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddSubtitleFilepathsToMediaItem do
+defmodule Vdlarr.Repo.Migrations.AddSubtitleFilepathsToMediaItem do
   use Ecto.Migration
 
   def change do

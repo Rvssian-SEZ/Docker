@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddRetentionPeriodToSources do
+defmodule Vdlarr.Repo.Migrations.AddRetentionPeriodToSources do
   use Ecto.Migration
 
   def change do

@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddCulledAtToMediaItems do
+defmodule Vdlarr.Repo.Migrations.AddCulledAtToMediaItems do
   use Ecto.Migration
 
   def change do

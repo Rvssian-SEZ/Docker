@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.ChangeMediaItemsSearchIndexTokenizer do
+defmodule Vdlarr.Repo.Migrations.ChangeMediaItemsSearchIndexTokenizer do
   use Ecto.Migration
 
   def up do

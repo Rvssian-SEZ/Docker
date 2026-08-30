@@ -1,0 +1,14 @@
+<div class="mb-6 flex gap-3 flex-row items-center justify-between">
+  <div class="flex gap-3 items-center">
+    <h2 class="font-display font-bold text-[22px] text-white">
+      Wanted
+    </h2>
+  </div>
+</div>
+<div class="rounded-xl border border-white/5 bg-midnight-850 p-5">
+  {live_render(
+    @conn,
+    Vdlarr.Pages.HistoryTableLive,
+    session: %{"media_state" => "pending"}
+  )}
+</div>

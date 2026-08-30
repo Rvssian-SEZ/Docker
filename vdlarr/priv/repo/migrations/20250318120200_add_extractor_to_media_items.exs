@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddExtractorToMediaItems do
+defmodule Vdlarr.Repo.Migrations.AddExtractorToMediaItems do
   use Ecto.Migration
 
   def change do

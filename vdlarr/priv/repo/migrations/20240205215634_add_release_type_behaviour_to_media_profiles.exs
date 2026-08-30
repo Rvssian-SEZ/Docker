@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddReleaseTypeBehaviourToMediaProfiles do
+defmodule Vdlarr.Repo.Migrations.AddReleaseTypeBehaviourToMediaProfiles do
   use Ecto.Migration
 
   def change do

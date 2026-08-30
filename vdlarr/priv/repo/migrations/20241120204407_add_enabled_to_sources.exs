@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddEnabledToSources do
+defmodule Vdlarr.Repo.Migrations.AddEnabledToSources do
   use Ecto.Migration
 
   def change do

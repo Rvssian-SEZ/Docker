@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddSubtitleOptionsToMediaProfiles do
+defmodule Vdlarr.Repo.Migrations.AddSubtitleOptionsToMediaProfiles do
   use Ecto.Migration
 
   def change do

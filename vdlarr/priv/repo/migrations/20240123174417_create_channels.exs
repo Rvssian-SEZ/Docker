@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.CreateSources do
+defmodule Vdlarr.Repo.Migrations.CreateSources do
   use Ecto.Migration
 
   def change do

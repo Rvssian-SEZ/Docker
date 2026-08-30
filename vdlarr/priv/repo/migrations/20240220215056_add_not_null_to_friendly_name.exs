@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddNotNullToFriendlyName do
+defmodule Vdlarr.Repo.Migrations.AddNotNullToFriendlyName do
   use Ecto.Migration
 
   def change do

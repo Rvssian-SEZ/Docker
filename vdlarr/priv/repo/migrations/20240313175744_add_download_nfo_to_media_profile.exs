@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddDownloadNfoToMediaProfile do
+defmodule Vdlarr.Repo.Migrations.AddDownloadNfoToMediaProfile do
   use Ecto.Migration
 
   def change do

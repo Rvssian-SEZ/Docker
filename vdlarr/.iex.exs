@@ -1,28 +1,28 @@
 import Ecto.Query, warn: false
-alias Pinchflat.Repo
+alias Vdlarr.Repo
 
-alias Pinchflat.Tasks.Task
-alias Pinchflat.Sources.Source
-alias Pinchflat.Media.MediaItem
-alias Pinchflat.Metadata.MediaMetadata
-alias Pinchflat.Profiles.MediaProfile
+alias Vdlarr.Tasks.Task
+alias Vdlarr.Sources.Source
+alias Vdlarr.Media.MediaItem
+alias Vdlarr.Metadata.MediaMetadata
+alias Vdlarr.Profiles.MediaProfile
 
-alias Pinchflat.Tasks
-alias Pinchflat.Media
-alias Pinchflat.Profiles
-alias Pinchflat.Sources
-alias Pinchflat.Settings
+alias Vdlarr.Tasks
+alias Vdlarr.Media
+alias Vdlarr.Profiles
+alias Vdlarr.Sources
+alias Vdlarr.Settings
 
-alias Pinchflat.Downloading.MediaDownloader
-alias Pinchflat.YtDlp.Media, as: YtDlpMedia
-alias Pinchflat.YtDlp.MediaCollection, as: YtDlpCollection
+alias Vdlarr.Downloading.MediaDownloader
+alias Vdlarr.YtDlp.Media, as: YtDlpMedia
+alias Vdlarr.YtDlp.MediaCollection, as: YtDlpCollection
 
-alias Pinchflat.FastIndexing.YoutubeRss
-alias Pinchflat.Metadata.MetadataFileHelpers
+alias Vdlarr.FastIndexing.YoutubeRss
+alias Vdlarr.Metadata.MetadataFileHelpers
 
-alias Pinchflat.SlowIndexing.FileFollowerServer
+alias Vdlarr.SlowIndexing.FileFollowerServer
 
-Pinchflat.Release.check_file_permissions()
+Vdlarr.Release.check_file_permissions()
 
 defmodule IexHelpers do
   def restart do

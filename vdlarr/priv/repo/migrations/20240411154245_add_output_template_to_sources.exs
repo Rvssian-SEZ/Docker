@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddOutputTemplateToSources do
+defmodule Vdlarr.Repo.Migrations.AddOutputTemplateToSources do
   use Ecto.Migration
 
   def change do

@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.AddIndexFrequencyToSources do
+defmodule Vdlarr.Repo.Migrations.AddIndexFrequencyToSources do
   use Ecto.Migration
 
   def change do

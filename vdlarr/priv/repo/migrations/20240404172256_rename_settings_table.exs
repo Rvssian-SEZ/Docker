@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.RenameSettingsTable do
+defmodule Vdlarr.Repo.Migrations.RenameSettingsTable do
   use Ecto.Migration
 
   def change do

@@ -1,4 +1,4 @@
-defmodule Pinchflat.Repo.Migrations.RefactorCodecPreferences do
+defmodule Vdlarr.Repo.Migrations.RefactorCodecPreferences do
   use Ecto.Migration
 
   def change do

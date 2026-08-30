@@ -1,0 +1,183 @@
+<.simple_form
+  :let={f}
+  for={@changeset}
+  action={@action}
+  x-data="{ advancedMode: !!JSON.parse(localStorage.getItem('advancedMode')) }"
+  x-init="$watch('advancedMode', value => localStorage.setItem('advancedMode', JSON.stringify(value)))"
+>
+  <.error :if={@changeset.action}>
+    Oops, something went wrong! Please check the errors below.
+  </.error>
+
+  <section>
+    <section class="flex justify-between items-center mt-4">
+      <h3 class="text-2xl font-display text-white">
+        Notification Settings
+      </h3>
+      <span class="cursor-pointer text-slate-400 hover:text-white transition-colors" x-on:click="advancedMode = !advancedMode">
+        Editing Mode: <span x-text="advancedMode ? 'Advanced' : 'Standard'"></span>
+      </span>
+    </section>
+
+    {live_render(
+      @conn,
+      Vdlarr.Settings.AppriseServerLive,
+      session: %{"value" => f[:apprise_server].value}
+    )}
+  </section>
+
+  <section class="mt-8">
+    <section class="flex justify-between items-center">
+      <h3 class="text-2xl font-display text-white">
+        Jellyfin
+      </h3>
+      <.link
+        href={~p"/settings/test_jellyfin_connection"}
+        method="post"
+        class="text-sm text-slate-400 hover:text-white underline decoration-slate-500 decoration-1 hover:decoration-white transition-colors"
+      >
+        Test Connection
+      </.link>
+    </section>
+
+    <p class="text-sm mt-2 max-w-prose">
+      Notifies Jellyfin about newly downloaded media so it picks them up immediately instead of waiting for its own
+      library scan. Leave blank to disable. Save your changes before using Test Connection
+    </p>
+
+    <.input
+      field={f[:jellyfin_url]}
+      type="text"
+      placeholder="http://jellyfin.local:8096"
+      label="Jellyfin URL"
+      help="The base URL of your Jellyfin server"
+    />
+
+    <.input
+      field={f[:jellyfin_api_key]}
+      type="password"
+      label="Jellyfin API Key"
+      help="Generate one from Jellyfin's Dashboard &gt; API Keys"
+      html_help={true}
+    />
+
+    <.input
+      field={f[:jellyfin_path_prefix]}
+      type="text"
+      placeholder="/data/youtube"
+      label="Jellyfin Library Path (optional)"
+      help="Only needed if Jellyfin sees this library at a different path than this app does. Leave blank if both apps use the same mount path"
+    />
+  </section>
+
+  <section class="mt-8">
+    <h3 class="text-2xl font-display text-white">
+      PO Token Provider
+    </h3>
+
+    <p class="text-sm mt-2 max-w-prose">
+      If you're running a bgutil-ytdlp-pot-provider (or compatible) server alongside this app to
+      help yt-dlp get past bot/age checks, set its URL here and this app will periodically check
+      that its installed yt-dlp plugin matches the server's own reported version - a mismatch
+      between the two can silently break the plugin's fallback client support. Leave blank if
+      you're not running one.
+    </p>
+
+    <.input
+      field={f[:bgutil_provider_url]}
+      type="text"
+      placeholder="http://bgutil-provider:4416"
+      label="PO Token Provider URL"
+      help="The base URL of your bgutil-ytdlp-pot-provider HTTP server"
+    />
+  </section>
+
+  <section class="mt-8">
+    <section>
+      <h3 class="text-2xl font-display text-white">
+        General Settings
+      </h3>
+
+      <.input
+        field={f[:timezone]}
+        type="select"
+        options={timezone_options()}
+        label="Timezone"
+        help="Used for scheduling (cron schedules, cutoff dates) and displaying timestamps. Changes apply immediately, no restart needed"
+      />
+    </section>
+  </section>
+
+  <section class="mt-8">
+    <section>
+      <h3 class="text-2xl font-display text-white">
+        Extractor Settings
+      </h3>
+
+      <.input
+        field={f[:extractor_sleep_interval_seconds]}
+        placeholder="0"
+        type="number"
+        label="Sleep Interval (seconds)"
+        help="Sleep interval in seconds between each extractor request. Must be a positive whole number. Set to 0 to disable"
+      />
+
+      <.input
+        field={f[:download_throughput_limit]}
+        placeholder="4.2M"
+        label="Download Throughput"
+        help="Sets the max bytes-per-second throughput when downloading media. Examples: '50K' or '4.2M'. Leave blank to disable"
+      />
+
+      <.input
+        field={f[:restrict_filenames]}
+        type="toggle"
+        label="Restrict Filenames"
+        help="Restrict filenames to only ASCII characters and avoid ampersands/spaces in filenames"
+      />
+
+      <.input
+        field={f[:show_hidden_sources_menu]}
+        type="toggle"
+        label="Show Hidden Sources Menu"
+        help="Adds a Hidden Sources link to the sidebar for viewing sources you've marked Hidden. Turning this off just hides the menu link - it doesn't un-hide any sources"
+      />
+    </section>
+  </section>
+
+  <section class="mt-8" x-show="advancedMode">
+    <section>
+      <h3 class="text-2xl font-display text-white">
+        Codec Options
+      </h3>
+
+      <p class="text-sm mt-2 max-w-prose">
+        The best available codec will be used if your preferred codecs are not found
+      </p>
+
+      <.input
+        field={f[:video_codec_preference]}
+        placeholder="avc"
+        type="text"
+        label="Video Codec Preference"
+        help="Video codec preference. Will be remuxed into an MP4 container. See below for more details"
+        inputclass="font-mono text-sm mr-4"
+      />
+
+      <.input
+        field={f[:audio_codec_preference]}
+        placeholder="m4a"
+        type="text"
+        label="Audio Codec Preference"
+        help="Audio codec preference. See below for more details"
+        inputclass="font-mono text-sm mr-4"
+      />
+    </section>
+
+    <div class="rounded-lg bg-midnight-800 border border-white/5 p-4 md:p-6 mt-5">
+      <.codec_settings_help />
+    </div>
+  </section>
+
+  <.button class="mt-10 mb-4 sm:mb-8 w-full sm:w-auto" rounding="rounded-lg">Save Settings</.button>
+</.simple_form>
