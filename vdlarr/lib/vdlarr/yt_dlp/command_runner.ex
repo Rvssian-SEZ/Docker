@@ -10,6 +10,7 @@ defmodule Vdlarr.YtDlp.CommandRunner do
   alias Vdlarr.Utils.NumberUtils
   alias Vdlarr.YtDlp.YtDlpCommandRunner
   alias Vdlarr.Utils.FilesystemUtils, as: FSUtils
+  alias Vdlarr.Downloading.DownloadProgress
 
   @behaviour YtDlpCommandRunner
 
@@ -57,7 +58,7 @@ defmodule Vdlarr.YtDlp.CommandRunner do
         File.read(output_filepath)
 
       {output, status} ->
-        {:error, output, status}
+        {:error, strip_progress_lines(output), status}
     end
   end
 
@@ -95,6 +96,22 @@ defmodule Vdlarr.YtDlp.CommandRunner do
       {output, _} ->
         {:error, output}
     end
+  end
+
+  # A failed command's captured output is `stdout` and `stderr` combined (see
+  # `stderr_to_stdout: true` above), so on a download it's interleaved with every
+  # `--progress-template` line emitted while the transfer was in progress (see
+  # `Vdlarr.Downloading.DownloadProgress`). Those lines carry no error information and,
+  # left in, dominate the message shown as the media item's `last_error` (and the raw
+  # substring matches used to detect recoverable errors) with byte-count noise instead
+  # of yt-dlp's actual warnings/errors.
+  defp strip_progress_lines(output) do
+    prefix = DownloadProgress.progress_line_prefix()
+
+    output
+    |> String.split("\n")
+    |> Enum.reject(&String.starts_with?(&1, prefix))
+    |> Enum.join("\n")
   end
 
   defp generate_output_filepath(addl_opts) do

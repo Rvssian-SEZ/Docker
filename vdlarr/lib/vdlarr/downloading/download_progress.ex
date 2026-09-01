@@ -10,6 +10,16 @@ defmodule Vdlarr.Downloading.DownloadProgress do
   @progress_line_prefix "PROGRESS_JSON:"
 
   @doc """
+  The prefix yt-dlp's `--progress-template` output is tagged with, so other
+  modules (eg: `Vdlarr.YtDlp.CommandRunner`, when stripping progress noise out
+  of a failed command's captured output) can recognize these lines without
+  duplicating the literal string.
+
+  Returns binary()
+  """
+  def progress_line_prefix, do: @progress_line_prefix
+
+  @doc """
   Called with each line of a download command's output as it's produced (see
   `Vdlarr.Utils.CliUtils.wrap_cmd/4`'s `:line_handler` option). Lines that
   aren't progress-template output (yt-dlp warnings, etc, since stdout/stderr

@@ -42,6 +42,16 @@ defmodule Vdlarr.YtDlp.CommandRunnerTest do
       end)
     end
 
+    test "strips PROGRESS_JSON lines out of a failed command's output" do
+      wrap_executable("/app/test/support/scripts/yt-dlp-mocks/progress_then_error.sh", fn ->
+        assert {:error, output, 1} = Runner.run(@media_url, :foo, [], "")
+
+        refute String.contains?(output, "PROGRESS_JSON:")
+        assert String.contains?(output, "WARNING: [youtube] some_id: some transient warning")
+        assert String.contains?(output, "ERROR: [youtube] some_id: the actual failure reason")
+      end)
+    end
+
     test "optionally lets you specify an output_filepath" do
       assert {:ok, output} = Runner.run(@media_url, :foo, [], "%(id)s", output_filepath: "/tmp/yt-dlp-output.json")
 
