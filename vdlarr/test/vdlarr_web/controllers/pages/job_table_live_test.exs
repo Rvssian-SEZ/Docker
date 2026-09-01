@@ -25,13 +25,51 @@ defmodule VdlarrWeb.Pages.JobTableLiveTest do
       assert html =~ "Subject"
     end
 
-    test "doesn't show records when not in executing state", %{conn: conn} do
-      {_source, _media_item, _task, _job} = create_media_item_job(:scheduled)
+    test "doesn't show records in a terminal state", %{conn: conn} do
       {_source, _media_item, _task, _job} = create_media_item_job(:completed)
+      {_source, _media_item, _task, _job} = create_media_item_job(:discarded)
+      {_source, _media_item, _task, _job} = create_media_item_job(:cancelled)
       {:ok, _view, html} = live_isolated(conn, JobTableLive, session: %{})
 
       assert html =~ "Nothing Here!"
       refute html =~ "Subject"
+    end
+
+    test "shows records that are queued, scheduled, or retrying - not just the executing one", %{conn: conn} do
+      {source1, _task, _job} = create_source_job(:available)
+      {source2, _task, _job} = create_source_job(:scheduled)
+      {source3, _task, _job} = create_source_job(:retryable)
+      {:ok, _view, html} = live_isolated(conn, JobTableLive, session: %{})
+
+      assert html =~ source1.custom_name
+      assert html =~ source2.custom_name
+      assert html =~ source3.custom_name
+    end
+  end
+
+  describe "job status column" do
+    test "labels each job by its current state", %{conn: conn} do
+      create_media_item_job(:executing)
+      create_media_item_job(:available)
+      create_media_item_job(:scheduled)
+      create_media_item_job(:retryable)
+      {:ok, _view, html} = live_isolated(conn, JobTableLive, session: %{})
+
+      assert html =~ "Running"
+      assert html =~ "Queued"
+      assert html =~ "Scheduled"
+      assert html =~ "Retrying"
+    end
+
+    test "shows the executing job before queued/scheduled ones", %{conn: conn} do
+      {queued_source, _task, _job} = create_source_job(:available, custom_name: "Queued Source")
+      {running_source, _task, _job} = create_source_job(:executing, custom_name: "Running Source")
+      {:ok, _view, html} = live_isolated(conn, JobTableLive, session: %{})
+
+      {running_index, _} = :binary.match(html, running_source.custom_name)
+      {queued_index, _} = :binary.match(html, queued_source.custom_name)
+
+      assert running_index < queued_index
     end
   end
 
@@ -95,8 +133,8 @@ defmodule VdlarrWeb.Pages.JobTableLiveTest do
     {source, media_item, task, job}
   end
 
-  defp create_source_job(job_state \\ :executing) do
-    source = source_fixture()
+  defp create_source_job(job_state \\ :executing, source_attrs \\ []) do
+    source = source_fixture(source_attrs)
     {:ok, task} = SourceMetadataStorageWorker.kickoff_with_task(source)
 
     Oban.Job

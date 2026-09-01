@@ -26,6 +26,9 @@ defmodule Vdlarr.Pages.JobTableLive do
             {task_to_record_name(task)}
           </.subtle_link>
         </:col>
+        <:col :let={task} label="Status">
+          {job_state_to_label(task.job.state)}
+        </:col>
         <:col :let={task} label="Attempt No.">
           {task.job.attempt}
         </:col>
@@ -47,15 +50,29 @@ defmodule Vdlarr.Pages.JobTableLive do
     {:noreply, assign(socket, tasks: get_tasks())}
   end
 
+  # Includes not just the currently-executing job but everything still waiting to
+  # run, so the Activity tab reflects the whole queue rather than a single row -
+  # "retryable" covers a job that failed and is waiting on its backoff to retry.
+  @queued_and_running_states ["executing", "available", "scheduled", "retryable"]
+
   defp get_tasks do
     TasksQuery.new()
     |> TasksQuery.join_job()
-    |> where(^TasksQuery.in_state("executing"))
+    |> where(^TasksQuery.in_state(@queued_and_running_states))
     |> where(^TasksQuery.has_tag("show_in_dashboard"))
-    |> order_by([t, j], desc: j.attempted_at)
+    |> order_by([t, j],
+      asc: fragment("CASE WHEN ? = 'executing' THEN 0 ELSE 1 END", j.state),
+      asc: j.scheduled_at
+    )
     |> Repo.all()
     |> Repo.preload([:media_item, :source])
   end
+
+  defp job_state_to_label("executing"), do: "Running"
+  defp job_state_to_label("available"), do: "Queued"
+  defp job_state_to_label("scheduled"), do: "Scheduled"
+  defp job_state_to_label("retryable"), do: "Retrying"
+  defp job_state_to_label(other), do: other
 
   defp worker_to_task_name(worker) do
     final_module_part =
