@@ -1,0 +1,33 @@
+# Place at .github/workflows/vdlarr-ci.yml in the Rvssian-SEZ/Docker repo root.
+# Builds on push to main when files under vdlarr/ change.
+name: vdlarr-ci
+
+on:
+  push:
+    branches: [main]
+    paths: ["vdlarr/**"]
+  workflow_dispatch: {}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: vdlarr
+          file: vdlarr/docker/selfhosted.Dockerfile
+          push: true
+          tags: |
+            ghcr.io/rvssian-sez/vdlarr:latest
+            ghcr.io/rvssian-sez/vdlarr:${{ github.sha }}
