@@ -101,6 +101,7 @@ defmodule VdlarrWeb.CustomComponents.ButtonComponents do
   attr :icon_name, :string, required: true
   attr :class, :string, default: ""
   attr :tooltip, :string, default: nil
+  attr :disabled, :boolean, default: false
   attr :rest, :global
 
   def icon_button(assigns) do
@@ -111,9 +112,11 @@ defmodule VdlarrWeb.CustomComponents.ButtonComponents do
           "flex justify-center items-center rounded-lg ",
           "bg-form-input border-2 border-strokedark",
           "hover:bg-meta-4 hover:border-form-strokedark",
+          "disabled:opacity-50 disabled:cursor-not-allowed",
           @class
         ]}
         type="button"
+        disabled={@disabled}
         {@rest}
       >
         <CoreComponents.icon name={@icon_name} class="text-stroke" />

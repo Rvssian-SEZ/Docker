@@ -18,6 +18,10 @@ defmodule VdlarrWeb.Settings.SettingHTML do
     ~s(Server endpoint for Apprise notifications when new media is found. See <a href="#{url}" class="#{help_link_classes()}" target="_blank">Apprise docs</a> for more information)
   end
 
+  def yt_dlp_update_policy_help do
+    "Which yt-dlp build to track. Frozen/pinned options re-assert their target on every boot, since the binary lives on the container's ephemeral filesystem and reverts to whatever's baked into the image otherwise"
+  end
+
   @timezone_region_labels %{
     africa: "Africa",
     antarctica: "Antarctica",
@@ -40,6 +44,7 @@ defmodule VdlarrWeb.Settings.SettingHTML do
     """
     - App Version: #{Application.spec(:vdlarr)[:vsn]}
     - yt-dlp Version: #{Settings.get!(:yt_dlp_version)}
+    - yt-dlp Update Behavior: #{Vdlarr.YtDlp.UpdateManager.humanize_policy(Settings.get!(:yt_dlp_update_policy))}
     - Apprise Version: #{Settings.get!(:apprise_version)}
     - System Architecture: #{to_string(:erlang.system_info(:system_architecture))}
     - Timezone: #{Application.get_env(:vdlarr, :timezone)}

@@ -6,8 +6,13 @@ defmodule Vdlarr.Settings.Setting do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias Vdlarr.YtDlp.UpdateManager
+
   @allowed_fields [
     :yt_dlp_version,
+    :yt_dlp_update_policy,
+    :yt_dlp_pinned_version,
+    :yt_dlp_nightly_baseline,
     :apprise_version,
     :apprise_server,
     :video_codec_preference,
@@ -16,6 +21,7 @@ defmodule Vdlarr.Settings.Setting do
     :download_throughput_limit,
     :restrict_filenames,
     :show_hidden_sources_menu,
+    :ignore_unavailable_media,
     :timezone,
     :jellyfin_url,
     :jellyfin_api_key,
@@ -31,6 +37,13 @@ defmodule Vdlarr.Settings.Setting do
 
   schema "settings" do
     field :yt_dlp_version, :string
+    # See Vdlarr.YtDlp.UpdateManager for what each policy means
+    field :yt_dlp_update_policy, :string, default: "stable"
+    field :yt_dlp_pinned_version, :string
+    # Records which exact nightly build a "nightly_frozen"/"nightly_until_stable"
+    # jump landed on, so a later boot can re-assert that same build instead of
+    # drifting to whatever the latest nightly happens to be at boot time
+    field :yt_dlp_nightly_baseline, :string
     field :apprise_version, :string
     field :apprise_server, :string
     field :route_token, :string
@@ -39,6 +52,10 @@ defmodule Vdlarr.Settings.Setting do
     field :download_throughput_limit, :string
     field :restrict_filenames, :boolean, default: false
     field :show_hidden_sources_menu, :boolean, default: true
+    # When true, a download that fails with a known "permanently unavailable" error
+    # (private/removed/members-only, see Vdlarr.YtDlp.UnavailableMedia) is marked
+    # prevent_download instead of just being left to fail forever
+    field :ignore_unavailable_media, :boolean, default: false
     # Nullable on purpose - nil means "not yet seeded from the TZ/TIMEZONE env var".
     # See Vdlarr.Boot.PreJobStartupTasks
     field :timezone, :string
@@ -66,6 +83,7 @@ defmodule Vdlarr.Settings.Setting do
     |> validate_required(@required_fields)
     |> validate_number(:extractor_sleep_interval_seconds, greater_than_or_equal_to: 0)
     |> validate_timezone()
+    |> validate_inclusion(:yt_dlp_update_policy, UpdateManager.policies())
   end
 
   defp validate_timezone(changeset) do

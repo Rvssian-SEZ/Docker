@@ -3,7 +3,9 @@ defmodule VdlarrWeb.Sources.SourceController do
   use Vdlarr.Sources.SourcesQuery
 
   alias Vdlarr.Repo
+  alias Vdlarr.Media
   alias Vdlarr.Tasks
+  alias Vdlarr.Tasks.Task
   alias Vdlarr.Sources
   alias Vdlarr.Sources.Source
   alias Vdlarr.Profiles.MediaProfile
@@ -131,7 +133,9 @@ defmodule VdlarrWeb.Sources.SourceController do
   end
 
   def create(conn, %{"source" => source_params}) do
-    case Sources.create_source_from_params(source_params) do
+    delay_automatic_download = Map.get(source_params, "delay_automatic_download") == "true"
+
+    case Sources.create_source_from_params(source_params, delay_automatic_download: delay_automatic_download) do
       {:ok, source} ->
         conn
         |> put_flash(:info, "Source created successfully.")
@@ -247,6 +251,86 @@ defmodule VdlarrWeb.Sources.SourceController do
     )
   end
 
+  def restore_automatic_downloads(conn, %{"source_id" => id}) do
+    source = Sources.get_source!(id)
+
+    case Sources.restore_automatic_downloads(source) do
+      {:ok, source} ->
+        conn
+        |> put_flash(:info, "Automatic downloads restored.")
+        |> redirect(to: ~p"/sources/#{source}")
+
+      {:error, %Ecto.Changeset{}} ->
+        conn
+        |> put_flash(:error, "Could not restore automatic downloads.")
+        |> redirect(to: ~p"/sources/#{source}/edit")
+    end
+  end
+
+  @doc """
+  Enables the source and turns downloading back on. A no-op (aside from the flash
+  message) if there's nothing pending to download, so this can't be used to silently
+  re-enable a source that has no reason to be running.
+  """
+  def start_all(conn, %{"source_id" => id}) do
+    source = Sources.get_source!(id)
+
+    if startable_source?(source) do
+      {:ok, source} = Sources.update_source(source, %{enabled: true, download_media: true})
+
+      conn
+      |> put_flash(:info, "Source started.")
+      |> redirect(to: ~p"/sources/#{source}")
+    else
+      conn
+      |> put_flash(:info, "Nothing to download for this source.")
+      |> redirect(to: ~p"/sources/#{source}")
+    end
+  end
+
+  @doc """
+  Turns downloading off and cancels anything currently in progress or queued, but
+  leaves the source enabled - indexing keeps running, media just stops downloading
+  until Start is used again. See stop_all/2 for fully disabling the source instead.
+  """
+  def pause_all(conn, %{"source_id" => id}) do
+    source = Sources.get_source!(id)
+
+    if active_downloads_for_source?(source) || queued_downloads_for_source?(source) do
+      {:ok, source} = Sources.update_source(source, %{download_media: false})
+      DownloadingHelpers.dequeue_pending_download_tasks(source, include_executing: true)
+
+      conn
+      |> put_flash(:info, "Source downloads paused.")
+      |> redirect(to: ~p"/sources/#{source}")
+    else
+      conn
+      |> put_flash(:info, "No active downloads to pause for this source.")
+      |> redirect(to: ~p"/sources/#{source}")
+    end
+  end
+
+  @doc """
+  Fully disables the source (stops indexing too, unlike pause_all/2) and cancels
+  anything currently downloading or queued.
+  """
+  def stop_all(conn, %{"source_id" => id}) do
+    source = Sources.get_source!(id)
+
+    if active_downloads_for_source?(source) || queued_downloads_for_source?(source) do
+      {:ok, source} = Sources.update_source(source, %{enabled: false, download_media: false})
+      DownloadingHelpers.dequeue_pending_download_tasks(source, include_executing: true)
+
+      conn
+      |> put_flash(:info, "Source stopped.")
+      |> redirect(to: ~p"/sources/#{source}")
+    else
+      conn
+      |> put_flash(:info, "Nothing to stop for this source.")
+      |> redirect(to: ~p"/sources/#{source}")
+    end
+  end
+
   def force_redownload(conn, %{"source_id" => id}) do
     wrap_forced_action(
       conn,
@@ -290,6 +374,33 @@ defmodule VdlarrWeb.Sources.SourceController do
     conn
     |> put_flash(:info, message)
     |> redirect(to: ~p"/sources/#{source}")
+  end
+
+  defp startable_source?(source) do
+    source
+    |> Media.list_pending_media_items_for()
+    |> Enum.any?()
+  end
+
+  defp active_downloads_for_source?(source), do: count_download_tasks_for_source(source, ["executing"]) > 0
+
+  defp queued_downloads_for_source?(source) do
+    count_download_tasks_for_source(source, ["available", "scheduled", "retryable"]) > 0
+  end
+
+  # Download tasks are attached to their media_item, not the source directly (see
+  # Tasks.list_tasks_for/3), so this can't just filter on tasks.source_id - it has to
+  # join through media_items to find everything currently in flight for this source.
+  defp count_download_tasks_for_source(source, states) do
+    Repo.one(
+      from t in Task,
+        join: j in assoc(t, :job),
+        join: mi in assoc(t, :media_item),
+        where: mi.source_id == ^source.id,
+        where: fragment("? LIKE ?", j.worker, "%.MediaDownloadWorker"),
+        where: j.state in ^states,
+        select: count(t.id)
+    )
   end
 
   defp media_profiles do

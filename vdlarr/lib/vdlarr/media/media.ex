@@ -134,9 +134,14 @@ defmodule Vdlarr.Media do
   """
   def create_media_item_from_backend_attrs(source, media_attrs_struct) do
     attrs = Map.merge(%{source_id: source.id}, Map.from_struct(media_attrs_struct))
+    # Only affects the initial insert's changeset below, not the on_conflict `set:` list a
+    # few lines down (which is still built from the unmodified `attrs`) - so a re-index
+    # of an already-indexed item never re-applies this default over a user's own later
+    # choice (eg: after they've force-downloaded it from the Other tab).
+    insert_attrs = maybe_prevent_download_by_default(attrs, source)
 
     %MediaItem{}
-    |> MediaItem.changeset(attrs)
+    |> MediaItem.changeset(insert_attrs)
     |> Repo.insert(
       on_conflict: [
         set:
@@ -239,4 +244,13 @@ defmodule Vdlarr.Media do
 
     runner.run(event, media_item)
   end
+
+  # See Sources.selection_mode - a playlist source in manual selection mode indexes
+  # normally but shouldn't auto-download anything until the user picks it (from the
+  # source's Other tab, via the existing Force Download action).
+  defp maybe_prevent_download_by_default(attrs, %Source{collection_type: :playlist, selection_mode: :manual}) do
+    Map.put_new(attrs, :prevent_download, true)
+  end
+
+  defp maybe_prevent_download_by_default(attrs, _source), do: attrs
 end

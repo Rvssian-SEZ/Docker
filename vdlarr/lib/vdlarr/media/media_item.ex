@@ -46,7 +46,9 @@ defmodule Vdlarr.Media.MediaItem do
     :prevent_download,
     :prevent_culling,
     :culled_at,
-    :media_redownloaded_at
+    :media_redownloaded_at,
+    :unavailable_at,
+    :unavailable_reason
   ]
   # Pretty much all the fields captured at index are required.
   @required_fields ~w(
@@ -98,6 +100,12 @@ defmodule Vdlarr.Media.MediaItem do
     field :prevent_download, :boolean, default: false
     field :prevent_culling, :boolean, default: false
     field :culled_at, :utc_datetime
+    # Set when the "Ignore Unavailable Media" setting auto-marks this item
+    # prevent_download after a permanently-unavailable download error (see
+    # Vdlarr.YtDlp.UnavailableMedia) - distinguishes that from a user manually
+    # setting prevent_download themselves.
+    field :unavailable_at, :utc_datetime
+    field :unavailable_reason, :string
 
     field :matching_search_term, :string, virtual: true
 

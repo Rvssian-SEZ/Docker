@@ -2,7 +2,10 @@ defmodule VdlarrWeb.Settings.SettingController do
   use VdlarrWeb, :controller
 
   alias Vdlarr.Settings
+  alias Vdlarr.YtDlp.UpdateWorker
   alias Vdlarr.Lifecycle.Notifications.JellyfinNotifier
+
+  @yt_dlp_policy_fields [:yt_dlp_update_policy, :yt_dlp_pinned_version]
 
   def show(conn, _params) do
     setting = Settings.record()
@@ -15,7 +18,9 @@ defmodule VdlarrWeb.Settings.SettingController do
     setting = Settings.record()
 
     case Settings.update_setting(setting, setting_params) do
-      {:ok, _} ->
+      {:ok, updated_setting} ->
+        maybe_apply_yt_dlp_policy(setting, updated_setting)
+
         conn
         |> put_flash(:info, "Settings updated successfully.")
         |> redirect(to: ~p"/settings")
@@ -23,6 +28,16 @@ defmodule VdlarrWeb.Settings.SettingController do
       {:error, %Ecto.Changeset{} = changeset} ->
         render(conn, "show.html", changeset: changeset)
     end
+  end
+
+  # yt-dlp's own binary lives on the container's ephemeral filesystem, and the update
+  # policy determines which channel/version it should be on - so a policy change needs
+  # to actually trigger an update, not just save the new preference. Kicked off as a
+  # background job (not run inline here) so the settings save itself stays fast.
+  defp maybe_apply_yt_dlp_policy(old_setting, new_setting) do
+    changed? = Enum.any?(@yt_dlp_policy_fields, &(Map.get(old_setting, &1) != Map.get(new_setting, &1)))
+
+    if changed?, do: UpdateWorker.kickoff_apply()
   end
 
   @doc """

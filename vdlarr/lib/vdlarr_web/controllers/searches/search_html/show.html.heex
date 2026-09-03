@@ -1,14 +1,14 @@
 <div class="mb-6 flex gap-3 flex-row items-center justify-between">
-  <h2 class="text-title-md2 font-bold text-black dark:text-white truncate">
+  <h2 class="font-display font-bold text-[22px] text-white truncate">
     Results for "{@search_term}"
   </h2>
 </div>
 
-<div class="rounded-sm border border-stroke bg-white px-5 py-5 shadow-default dark:border-strokedark dark:bg-boxdark sm:px-7.5">
+<div class="rounded-xl border border-white/5 bg-midnight-850 px-5 py-5 shadow-default sm:px-7.5">
   <div class="max-w-full">
-    <div class="flex flex-col gap-10 dark:text-white">
+    <div class="flex flex-col gap-10 text-white">
       <%= if match?([_|_], @search_results) do %>
-        <.table rows={@search_results} table_class="text-black dark:text-white">
+        <.table rows={@search_results} table_class="text-white">
           <:col :let={result} label="Title" class="truncate max-w-xs">
             <.subtle_link href={~p"/sources/#{result.source_id}/media/#{result.id}"}>
               {result.title}
@@ -19,7 +19,7 @@
           </:col>
         </.table>
       <% else %>
-        <p class="font-bold text-lg text-center text-black dark:text-white">No results found</p>
+        <p class="font-bold text-lg text-center text-white">No results found</p>
       <% end %>
     </div>
   </div>

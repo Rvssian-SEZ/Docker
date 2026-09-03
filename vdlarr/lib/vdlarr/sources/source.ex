@@ -31,6 +31,7 @@ defmodule Vdlarr.Sources.Source do
     index_frequency_minutes
     index_cron_schedule
     cookie_behaviour
+    selection_mode
     download_media
     last_indexed_at
     original_url
@@ -87,6 +88,11 @@ defmodule Vdlarr.Sources.Source do
     # `Vdlarr.Utils.CronUtils` and `cron_scheduled?/1`.
     field :index_cron_schedule, :string
     field :cookie_behaviour, Ecto.Enum, values: [:disabled, :when_needed, :all_operations], default: :disabled
+    # :manual is only ever set via the "Delay Automatic Download" option at source creation
+    # (see Sources.create_source/2's delay_automatic_download opt) - not directly editable
+    # from the source edit form. Only meaningful for collection_type: :playlist; see
+    # Media.maybe_prevent_download_by_default/2 and Sources.restore_automatic_downloads/1.
+    field :selection_mode, Ecto.Enum, values: [:all, :manual], default: :all
     field :download_media, :boolean, default: true
     field :last_indexed_at, :utc_datetime
     # Only download media items that were published after this date

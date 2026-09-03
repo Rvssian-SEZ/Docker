@@ -167,6 +167,15 @@
     />
 
     <.input
+      :if={@show_delay_automatic_download}
+      type="toggle"
+      name="delay_automatic_download"
+      value="false"
+      label="Delay Automatic Download"
+      help="For playlists only. Index first, then pick which items to download from the source's Other tab"
+    />
+
+    <.input
       field={f[:cookie_behaviour]}
       options={friendly_cookie_behaviours()}
       type="select"

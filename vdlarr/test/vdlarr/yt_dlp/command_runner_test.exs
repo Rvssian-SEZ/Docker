@@ -211,11 +211,30 @@ defmodule Vdlarr.YtDlp.CommandRunnerTest do
     end
   end
 
-  describe "update/0" do
-    test "adds the update arg" do
-      assert {:ok, output} = Runner.update()
+  describe "update/1" do
+    test "adds the --update arg for the stable target" do
+      assert {:ok, output} = Runner.update("stable")
 
       assert String.contains?(output, "--update")
+      refute String.contains?(output, "--update-to")
+    end
+
+    test "adds an --update-to nightly arg for the nightly target" do
+      assert {:ok, output} = Runner.update("nightly")
+
+      assert String.contains?(output, "--update-to nightly")
+    end
+
+    test "adds an --update-to nightly@<version> arg for a pinned nightly target" do
+      assert {:ok, output} = Runner.update("nightly@2025.12.08.123456")
+
+      assert String.contains?(output, "--update-to nightly@2025.12.08.123456")
+    end
+
+    test "adds an --update-to yt-dlp/yt-dlp@<version> arg for a pinned stable version" do
+      assert {:ok, output} = Runner.update("2025.12.08")
+
+      assert String.contains?(output, "--update-to yt-dlp/yt-dlp@2025.12.08")
     end
   end
 

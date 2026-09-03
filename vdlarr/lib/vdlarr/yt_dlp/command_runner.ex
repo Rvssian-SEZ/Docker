@@ -81,15 +81,21 @@ defmodule Vdlarr.YtDlp.CommandRunner do
   end
 
   @doc """
-  Updates yt-dlp to the latest version
+  Updates yt-dlp to the given target.
+
+  The target can be:
+    - "stable" - updates to the latest stable release
+    - "nightly" - updates to the latest nightly build
+    - "nightly@2025.12.08.123456" - pins to that exact nightly build
+    - a specific version like "2025.12.08" - pins to that exact stable release
 
   Returns {:ok, binary()} | {:error, binary()}
   """
   @impl YtDlpCommandRunner
-  def update do
+  def update(target) do
     command = backend_executable()
 
-    case CliUtils.wrap_cmd(command, ["--update"]) do
+    case CliUtils.wrap_cmd(command, build_update_args(target)) do
       {output, 0} ->
         {:ok, String.trim(output)}
 
@@ -97,6 +103,14 @@ defmodule Vdlarr.YtDlp.CommandRunner do
         {:error, output}
     end
   end
+
+  defp build_update_args("stable"), do: ["--update"]
+  defp build_update_args("nightly"), do: ["--update-to", "nightly"]
+  # `nightly` is yt-dlp's channel alias for the yt-dlp/yt-dlp-nightly-builds repo;
+  # `<channel>@<tag>` pins to an exact build. Naming the repo directly (e.g.
+  # `yt-dlp/yt-dlp_nightly@<tag>`) fails because that repo doesn't exist.
+  defp build_update_args("nightly@" <> version), do: ["--update-to", "nightly@#{version}"]
+  defp build_update_args(version), do: ["--update-to", "yt-dlp/yt-dlp@#{version}"]
 
   # A failed command's captured output is `stdout` and `stderr` combined (see
   # `stderr_to_stdout: true` above), so on a download it's interleaved with every

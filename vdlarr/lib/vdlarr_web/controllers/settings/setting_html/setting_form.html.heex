@@ -137,11 +137,53 @@
       />
 
       <.input
+        field={f[:ignore_unavailable_media]}
+        type="toggle"
+        label="Ignore Unavailable Media"
+        help="When a download fails because the video is private, removed, or members-only, mark it ignored instead of leaving it to fail forever. Only applies after cookie-based retries (if any) have been exhausted"
+      />
+
+      <.input
         field={f[:show_hidden_sources_menu]}
         type="toggle"
         label="Show Hidden Sources Menu"
         help="Adds a Hidden Sources link to the sidebar for viewing sources you've marked Hidden. Turning this off just hides the menu link - it doesn't un-hide any sources"
       />
+    </section>
+  </section>
+
+  <section class="mt-8">
+    <section>
+      <h3 class="text-2xl font-display text-white">
+        yt-dlp Updates
+      </h3>
+
+      {live_render(
+        @conn,
+        Vdlarr.Settings.YtDlpVersionLive,
+        id: "yt-dlp-update-policy-live",
+        session: %{"policy" => f[:yt_dlp_update_policy].value, "pinned_version" => f[:yt_dlp_pinned_version].value}
+      )}
+    </section>
+  </section>
+
+  <section class="mt-8">
+    <section>
+      <h3 class="text-2xl font-display text-white">
+        yt-dlp Config
+      </h3>
+
+      {live_render(@conn, Vdlarr.Settings.YtDlpConfigLive, id: "yt-dlp-base-config-live")}
+    </section>
+  </section>
+
+  <section class="mt-8">
+    <section>
+      <h3 class="text-2xl font-display text-white">
+        Cookies
+      </h3>
+
+      {live_render(@conn, Vdlarr.Settings.CookieFileLive, id: "cookie-file-live")}
     </section>
   </section>
 

@@ -121,6 +121,48 @@ defmodule VdlarrWeb.Sources.MediaItemTableLiveTest do
       assert html =~ ~p"/sources/#{source.id}/media/#{media_item.id}/force_download"
     end
 
+    test "shows an unavailable badge with the reason for auto-ignored media", %{conn: conn, source: source} do
+      media_item =
+        media_item_fixture(
+          source_id: source.id,
+          media_filepath: nil,
+          prevent_download: true,
+          unavailable_at: DateTime.utc_now(),
+          unavailable_reason: "Private video"
+        )
+
+      {:ok, _view, html} = live_isolated(conn, MediaItemTableLive, session: create_session(source, "other"))
+
+      assert html =~ media_item.title
+      assert html =~ "Private video"
+    end
+
+    test "shows a force download link on the other tab for a manually-ignored item", %{conn: conn, source: source} do
+      media_item = media_item_fixture(source_id: source.id, media_filepath: nil, prevent_download: true)
+
+      {:ok, _view, html} = live_isolated(conn, MediaItemTableLive, session: create_session(source, "other"))
+
+      assert html =~ ~p"/sources/#{source.id}/media/#{media_item.id}/force_download"
+    end
+
+    test "does not show a force download link on the other tab for a truly-unavailable item", %{
+      conn: conn,
+      source: source
+    } do
+      media_item =
+        media_item_fixture(
+          source_id: source.id,
+          media_filepath: nil,
+          prevent_download: true,
+          unavailable_at: DateTime.utc_now(),
+          unavailable_reason: "Private video"
+        )
+
+      {:ok, _view, html} = live_isolated(conn, MediaItemTableLive, session: create_session(source, "other"))
+
+      refute html =~ ~p"/sources/#{source.id}/media/#{media_item.id}/force_download"
+    end
+
     test "shows a non-retryable badge for known-unrecoverable errors", %{conn: conn, source: source} do
       _media_item =
         media_item_fixture(source_id: source.id, media_filepath: nil, last_error: "ERROR: Video unavailable")

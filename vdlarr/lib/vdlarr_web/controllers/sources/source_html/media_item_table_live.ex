@@ -57,6 +57,14 @@ defmodule VdlarrWeb.Sources.MediaItemTableLive do
             >
               <.icon name="hero-exclamation-circle-solid" class="text-red-500" />
             </.tooltip>
+            <.tooltip
+              :if={media_item.unavailable_at}
+              tooltip={media_item.unavailable_reason || "Automatically marked unavailable"}
+              position="bottom-right"
+              tooltip_class="w-64"
+            >
+              <.icon name="hero-eye-slash-solid" class="text-bodydark2" />
+            </.tooltip>
             <span class="truncate">
               <.subtle_link href={~p"/sources/#{@source.id}/media/#{media_item.id}"}>
                 {media_item.title}
@@ -78,8 +86,12 @@ defmodule VdlarrWeb.Sources.MediaItemTableLive do
         <:col :let={media_item} label="Upload Date">
           {DateTime.to_date(media_item.uploaded_at)}
         </:col>
-        <:col :let={media_item} :if={@media_state in ["failed", "pending"]} label="" class="flex justify-end">
+        <:col :let={media_item} :if={@media_state in ["failed", "pending", "other"]} label="" class="flex justify-end">
           <.link
+            :if={
+              @media_state in ["failed", "pending"] ||
+                (media_item.prevent_download && is_nil(media_item.unavailable_at))
+            }
             href={~p"/sources/#{@source.id}/media/#{media_item.id}/force_download"}
             method="post"
             data-confirm={
@@ -305,6 +317,6 @@ defmodule VdlarrWeb.Sources.MediaItemTableLive do
 
   # Selecting only what we need GREATLY speeds up queries on large tables
   defp select_fields do
-    [:id, :title, :uploaded_at, :prevent_download, :last_error]
+    [:id, :title, :uploaded_at, :prevent_download, :last_error, :unavailable_at, :unavailable_reason]
   end
 end

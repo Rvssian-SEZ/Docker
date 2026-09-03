@@ -13,7 +13,9 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
   alias Vdlarr.Tasks
   alias Vdlarr.Repo
   alias Vdlarr.Media
+  alias Vdlarr.Settings
   alias Vdlarr.Media.FileSyncing
+  alias Vdlarr.YtDlp.UnavailableMedia
   alias Vdlarr.Downloading.MediaDownloader
   alias Vdlarr.Lifecycle.Notifications.JellyfinNotificationWorker
 
@@ -114,7 +116,34 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
         {:ok, :non_retry}
 
       {:error, _error_atom, message} ->
-        action_on_error(message)
+        maybe_ignore_unavailable_media(media_item, message)
+    end
+  end
+
+  # If the "ignore unavailable media" setting is enabled and the error indicates the
+  # media is permanently inaccessible (members-only, private, or removed), mark the
+  # item as prevent_download so it drops out of the pending/failed sets and isn't
+  # retried. The error is cleared so it reads as intentionally skipped rather than
+  # failed. This intentionally runs after MediaDownloader's own cookie-retry path has
+  # already had its chance - a members-only video may still succeed with cookies.
+  defp maybe_ignore_unavailable_media(media_item, message) do
+    if Settings.get!(:ignore_unavailable_media) && UnavailableMedia.error?(message) do
+      Logger.info("Ignoring unavailable media item ##{media_item.id}: #{inspect(message)}")
+
+      attrs = %{
+        prevent_download: true,
+        last_error: nil,
+        unavailable_at: DateTime.utc_now(),
+        unavailable_reason: UnavailableMedia.matched_reason(message)
+      }
+
+      # Reload first: download_for_media_item already persisted last_error, but the
+      # in-memory struct still has the old value, so clearing it would be a no-op change.
+      {:ok, _} = media_item |> Repo.reload() |> Media.update_media_item(attrs)
+
+      {:ok, :non_retry}
+    else
+      action_on_error(message)
     end
   end
 

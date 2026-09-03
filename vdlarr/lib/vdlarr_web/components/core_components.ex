@@ -470,7 +470,7 @@ defmodule VdlarrWeb.CoreComponents do
 
   def label(assigns) do
     ~H"""
-    <label for={@for} class="mt-5 mb-2 inline-block text-md font-medium text-black dark:text-white">
+    <label for={@for} class="mt-5 mb-2 inline-block text-md font-medium text-white">
       {render_slot(@inner_block)}
     </label>
     """

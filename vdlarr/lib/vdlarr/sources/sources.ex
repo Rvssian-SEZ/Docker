@@ -88,6 +88,7 @@ defmodule Vdlarr.Sources do
       %Ecto.Changeset{valid?: true} ->
         %Source{}
         |> maybe_change_source_from_url(attrs)
+        |> maybe_enable_manual_selection(opts)
         |> commit_and_handle_tasks(opts)
 
       changeset ->
@@ -190,6 +191,37 @@ defmodule Vdlarr.Sources do
     Source.changeset(source, attrs, validation_stage)
   end
 
+  @doc """
+  Restores a manually-selected playlist source (see `selection_mode`) back to normal
+  automatic downloads: switches `selection_mode` to `:all`, re-enables `download_media`,
+  and clears `prevent_download` on every media item already indexed for the source, then
+  enqueues downloads for anything now pending.
+
+  Returns {:ok, %Source{}} | {:error, %Ecto.Changeset{}}
+  """
+  def restore_automatic_downloads(%Source{} = source) do
+    multi =
+      Ecto.Multi.new()
+      |> Ecto.Multi.update(:source, change_source(source, %{selection_mode: :all, download_media: true}, :initial))
+      |> Ecto.Multi.update_all(
+        :restore_media_items,
+        MediaQuery.new() |> where(^MediaQuery.for_source(source)),
+        set: [prevent_download: false]
+      )
+
+    case Repo.transaction(multi) do
+      {:ok, %{source: source}} ->
+        if source.enabled do
+          DownloadingHelpers.enqueue_pending_download_tasks(source)
+        end
+
+        {:ok, source}
+
+      {:error, :source, %Ecto.Changeset{} = changeset, _changes} ->
+        {:error, changeset}
+    end
+  end
+
   # NOTE: When operating in the ideal path, this effectively adds an API call
   # to the source creation/update process. Should be used only when needed.
   defp maybe_change_source_from_url(%Source{} = source, attrs) do
@@ -205,6 +237,21 @@ defmodule Vdlarr.Sources do
 
       changeset ->
         changeset
+    end
+  end
+
+  # Only applies at creation time, via the `delay_automatic_download` opt (set from the
+  # "Delay Automatic Download" toggle on the New Source form) - playlists only, since
+  # indexing a channel with this on would just mean nothing downloads until the user finds
+  # the source again. See `restore_automatic_downloads/1` for reverting this.
+  defp maybe_enable_manual_selection(changeset, opts) do
+    if Keyword.get(opts, :delay_automatic_download, false) &&
+         Ecto.Changeset.get_field(changeset, :collection_type) == :playlist do
+      changeset
+      |> Ecto.Changeset.put_change(:selection_mode, :manual)
+      |> Ecto.Changeset.put_change(:download_media, false)
+    else
+      changeset
     end
   end
 

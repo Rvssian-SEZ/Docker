@@ -1,9 +1,9 @@
 <div class="mb-6 flex gap-3 flex-row items-center justify-between">
   <div class="flex gap-3 items-center min-w-0">
     <.link href={~p"/sources"}>
-      <.icon name="hero-arrow-left" class="w-10 h-10 hover:dark:text-white" />
+      <.icon name="hero-arrow-left" class="w-8 h-8 text-slate-400 hover:text-white transition-colors" />
     </.link>
-    <h2 class="text-title-md2 font-bold text-black dark:text-white ml-4 truncate">
+    <h2 class="font-display font-bold text-[22px] text-white ml-2 truncate">
       {@source.custom_name}
     </h2>
   </div>
@@ -16,7 +16,7 @@
     </.link>
   </nav>
 </div>
-<div class="rounded-sm border border-stroke bg-white px-5 py-5 shadow-default dark:border-strokedark dark:bg-boxdark sm:px-7.5">
+<div class="rounded-xl border border-white/5 bg-midnight-850 px-5 py-5 shadow-default sm:px-7.5">
   <div class="max-w-full">
     <.tabbed_layout>
       <:tab_append>
@@ -68,7 +68,7 @@
       </:tab>
       <:tab title="Tasks" id="tasks">
         <%= if match?([_|_], @pending_tasks) do %>
-          <.table rows={@pending_tasks} table_class="text-black dark:text-white">
+          <.table rows={@pending_tasks} table_class="text-white">
             <:col :let={task} label="Worker">
               {task.job.worker}
             </:col>

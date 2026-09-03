@@ -71,12 +71,16 @@ defmodule Vdlarr.Downloading.DownloadingHelpers do
   @doc """
   Deletes ALL pending tasks for a source's media items.
 
+  Accepts the same `include_executing` option as `Tasks.delete_pending_tasks_for/3` -
+  pass `include_executing: true` to also cancel any download currently in progress,
+  not just ones still queued (used by the source Pause/Stop actions).
+
   Returns :ok
   """
-  def dequeue_pending_download_tasks(%Source{} = source) do
+  def dequeue_pending_download_tasks(%Source{} = source, opts \\ []) do
     source
     |> Media.list_pending_media_items_for()
-    |> Enum.each(&Tasks.delete_pending_tasks_for/1)
+    |> Enum.each(&Tasks.delete_pending_tasks_for(&1, nil, opts))
   end
 
   @doc """
