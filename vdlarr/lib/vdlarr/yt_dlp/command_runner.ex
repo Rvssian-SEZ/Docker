@@ -27,6 +27,10 @@ defmodule Vdlarr.YtDlp.CommandRunner do
       attach a cookie file if the user hasn't set one up.
     - :skip_sleep_interval - if true, will not add the sleep interval options to the command.
       Usually only used for commands that would be UI-blocking
+    - :sleep_interval_context - :download (default) or :indexing. Picks which of the two
+      independent sleep-interval settings to apply - :indexing calls are lighter-weight
+      metadata-only requests, so they're commonly given a shorter interval than actual
+      media downloads. Ignored if :skip_sleep_interval is set.
     - :line_handler - if set, called with each line of output as it's produced instead of
       waiting for the command to finish. See `Vdlarr.Utils.CliUtils.wrap_cmd/4`.
 
@@ -174,7 +178,11 @@ defmodule Vdlarr.YtDlp.CommandRunner do
   end
 
   defp sleep_interval_opts(addl_opts) do
-    sleep_interval = Settings.get!(:extractor_sleep_interval_seconds)
+    sleep_interval =
+      case Keyword.get(addl_opts, :sleep_interval_context, :download) do
+        :indexing -> Settings.get!(:indexing_sleep_interval_seconds)
+        :download -> Settings.get!(:extractor_sleep_interval_seconds)
+      end
 
     if sleep_interval <= 0 || Keyword.get(addl_opts, :skip_sleep_interval) do
       []

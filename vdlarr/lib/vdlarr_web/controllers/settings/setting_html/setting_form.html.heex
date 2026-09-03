@@ -118,8 +118,16 @@
         field={f[:extractor_sleep_interval_seconds]}
         placeholder="0"
         type="number"
-        label="Sleep Interval (seconds)"
-        help="Sleep interval in seconds between each extractor request. Must be a positive whole number. Set to 0 to disable"
+        label="Download Sleep Interval (seconds)"
+        help="Sleep interval in seconds between each request made while downloading media. Must be a positive whole number. Set to 0 to disable"
+      />
+
+      <.input
+        field={f[:indexing_sleep_interval_seconds]}
+        placeholder="5"
+        type="number"
+        label="Indexing Sleep Interval (seconds)"
+        help="Sleep interval in seconds between each request made while indexing a source (listing a channel/playlist and fetching each video's metadata) - independent from the Download Sleep Interval above. Indexing requests are lighter-weight than downloads, so this can usually be set lower. Must be a positive whole number. Set to 0 to disable"
       />
 
       <.input

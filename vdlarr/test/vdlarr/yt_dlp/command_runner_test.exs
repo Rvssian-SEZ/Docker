@@ -148,6 +148,44 @@ defmodule Vdlarr.YtDlp.CommandRunnerTest do
       refute String.contains?(output, "--sleep-subtitles")
     end
 
+    test "uses extractor_sleep_interval_seconds by default (no sleep_interval_context given)" do
+      Settings.set(extractor_sleep_interval_seconds: 5)
+      Settings.set(indexing_sleep_interval_seconds: 0)
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "")
+
+      assert String.contains?(output, "--sleep-interval")
+    end
+
+    test "uses indexing_sleep_interval_seconds when sleep_interval_context is :indexing" do
+      Settings.set(extractor_sleep_interval_seconds: 0)
+      Settings.set(indexing_sleep_interval_seconds: 5)
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "", sleep_interval_context: :indexing)
+
+      assert String.contains?(output, "--sleep-interval")
+    end
+
+    test "doesn't include sleep interval options when indexing_sleep_interval_seconds is 0, even with a nonzero download interval" do
+      Settings.set(extractor_sleep_interval_seconds: 5)
+      Settings.set(indexing_sleep_interval_seconds: 0)
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "", sleep_interval_context: :indexing)
+
+      refute String.contains?(output, "--sleep-interval")
+      refute String.contains?(output, "--sleep-requests")
+      refute String.contains?(output, "--sleep-subtitles")
+    end
+
+    test "skip_sleep_interval overrides sleep_interval_context: :indexing too" do
+      Settings.set(indexing_sleep_interval_seconds: 5)
+
+      assert {:ok, output} =
+               Runner.run(@media_url, :foo, [], "", sleep_interval_context: :indexing, skip_sleep_interval: true)
+
+      refute String.contains?(output, "--sleep-interval")
+    end
+
     test "includes limit_rate option when specified" do
       Settings.set(download_throughput_limit: "100K")
 

@@ -116,7 +116,10 @@ defmodule Vdlarr.SlowIndexing.SlowIndexingHelpers do
     should_use_cookies = Sources.use_cookies?(source, :indexing)
 
     result =
-      case YtDlpMedia.get_media_attributes(source.original_url, [], use_cookies: should_use_cookies) do
+      case YtDlpMedia.get_media_attributes(source.original_url, [],
+             use_cookies: should_use_cookies,
+             sleep_interval_context: :indexing
+           ) do
         {:ok, media_attrs} ->
           case Media.create_media_item_from_backend_attrs(source, media_attrs) do
             {:ok, media_item} -> [media_item]
@@ -193,7 +196,7 @@ defmodule Vdlarr.SlowIndexing.SlowIndexingHelpers do
         DownloadOptionBuilder.build_quality_options_for(source) ++
         build_download_archive_options(source, was_forced)
 
-    runner_opts = [file_listener_handler: handler, use_cookies: should_use_cookies]
+    runner_opts = [file_listener_handler: handler, use_cookies: should_use_cookies, sleep_interval_context: :indexing]
     result = MediaCollection.get_media_attributes_for_collection(source.original_url, command_opts, runner_opts)
 
     FileFollowerServer.stop(pid)

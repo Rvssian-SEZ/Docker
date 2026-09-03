@@ -18,6 +18,7 @@ defmodule Vdlarr.Settings.Setting do
     :video_codec_preference,
     :audio_codec_preference,
     :extractor_sleep_interval_seconds,
+    :indexing_sleep_interval_seconds,
     :download_throughput_limit,
     :restrict_filenames,
     :show_hidden_sources_menu,
@@ -32,7 +33,8 @@ defmodule Vdlarr.Settings.Setting do
   @required_fields [
     :video_codec_preference,
     :audio_codec_preference,
-    :extractor_sleep_interval_seconds
+    :extractor_sleep_interval_seconds,
+    :indexing_sleep_interval_seconds
   ]
 
   schema "settings" do
@@ -48,6 +50,12 @@ defmodule Vdlarr.Settings.Setting do
     field :apprise_server, :string
     field :route_token, :string
     field :extractor_sleep_interval_seconds, :integer, default: 0
+    # Independent from extractor_sleep_interval_seconds above - indexing (channel/playlist
+    # listing and per-video metadata fetches) is a much lighter request than an actual media
+    # download, so it's commonly safe to run it on a shorter interval. Defaults to something
+    # noticeably faster than a typical download interval while still being polite to YouTube,
+    # rather than defaulting to 0/disabled - most installs will want this on from the start.
+    field :indexing_sleep_interval_seconds, :integer, default: 5
     # This is a string because it accepts values like "100K" or "4.2M"
     field :download_throughput_limit, :string
     field :restrict_filenames, :boolean, default: false
@@ -82,6 +90,7 @@ defmodule Vdlarr.Settings.Setting do
     |> cast(attrs, @allowed_fields)
     |> validate_required(@required_fields)
     |> validate_number(:extractor_sleep_interval_seconds, greater_than_or_equal_to: 0)
+    |> validate_number(:indexing_sleep_interval_seconds, greater_than_or_equal_to: 0)
     |> validate_timezone()
     |> validate_inclusion(:yt_dlp_update_policy, UpdateManager.policies())
   end
