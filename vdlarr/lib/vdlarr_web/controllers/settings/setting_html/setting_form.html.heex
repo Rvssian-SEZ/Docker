@@ -177,16 +177,6 @@
     </section>
   </section>
 
-  <section class="mt-8">
-    <section>
-      <h3 class="text-2xl font-display text-white">
-        Cookies
-      </h3>
-
-      {live_render(@conn, Vdlarr.Settings.CookieFileLive, id: "cookie-file-live")}
-    </section>
-  </section>
-
   <section class="mt-8" x-show="advancedMode">
     <section>
       <h3 class="text-2xl font-display text-white">
@@ -223,3 +213,13 @@
 
   <.button class="mt-10 mb-4 sm:mb-8 w-full sm:w-auto" rounding="rounded-lg">Save Settings</.button>
 </.simple_form>
+
+<section class="mt-8">
+  <section>
+    <h3 class="text-2xl font-display text-white">
+      Cookies
+    </h3>
+
+    {live_render(@conn, Vdlarr.Settings.CookieFileLive, id: "cookie-file-live")}
+  </section>
+</section>
