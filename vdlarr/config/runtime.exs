@@ -45,6 +45,13 @@ config :vdlarr, Vdlarr.Repo,
 # Some users may want to increase the number of workers that use yt-dlp to improve speeds
 # Others may want to decrease the number of these workers to lessen the chance of an IP ban
 {yt_dlp_worker_count, _} = Integer.parse(System.get_env("YT_DLP_WORKER_CONCURRENCY", "2"))
+# Indexing gets its own, separate concurrency knob rather than sharing yt_dlp_worker_count -
+# the sleep interval between requests (see Settings.indexing_sleep_interval_seconds) is applied
+# per concurrent stream, not against the aggregate, so raising indexing concurrency multiplies
+# the actual request rate YouTube sees from this IP even though each individual stream's pacing
+# is unchanged. Keeping this separate from media_fetching (downloads) means indexing can be
+# tuned independently without also loosening how many downloads run at once.
+{indexing_worker_count, _} = Integer.parse(System.get_env("INDEXING_WORKER_CONCURRENCY", "1"))
 # Used to set the cron for the yt-dlp update worker. The reason for this is
 # to avoid all instances of PF updating yt-dlp at the same time, which 1)
 # could result in rate limiting and 2) gives me time to react if an update
@@ -55,7 +62,7 @@ config :vdlarr, Oban,
   queues: [
     default: 10,
     fast_indexing: yt_dlp_worker_count,
-    media_collection_indexing: yt_dlp_worker_count,
+    media_collection_indexing: indexing_worker_count,
     media_fetching: yt_dlp_worker_count,
     remote_metadata: yt_dlp_worker_count,
     local_data: 8

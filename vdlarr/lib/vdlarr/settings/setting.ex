@@ -55,7 +55,7 @@ defmodule Vdlarr.Settings.Setting do
     # download, so it's commonly safe to run it on a shorter interval. Defaults to something
     # noticeably faster than a typical download interval while still being polite to YouTube,
     # rather than defaulting to 0/disabled - most installs will want this on from the start.
-    field :indexing_sleep_interval_seconds, :integer, default: 5
+    field :indexing_sleep_interval_seconds, :integer, default: 8
     # This is a string because it accepts values like "100K" or "4.2M"
     field :download_throughput_limit, :string
     field :restrict_filenames, :boolean, default: false
