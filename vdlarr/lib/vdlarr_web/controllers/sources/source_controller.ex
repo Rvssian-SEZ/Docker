@@ -38,6 +38,12 @@ defmodule VdlarrWeb.Sources.SourceController do
   @doc """
   Serves the best available poster image for a source, or a 404 if none exists
   (or the image it points to has been deleted from disk). See `SourceImageHelpers`.
+
+  Cacheable: the underlying file only changes when a source is re-indexed with new
+  art (or a custom poster is uploaded), so this sets an ETag/Last-Modified derived
+  from the file's own mtime and answers conditional requests with 304 - letting the
+  browser skip re-downloading the same poster on every page load while still picking
+  up a genuinely new image immediately once the file itself changes.
   """
   def poster(conn, %{"source_id" => id}) do
     source = Sources.get_source!(id)
@@ -47,9 +53,23 @@ defmodule VdlarrWeb.Sources.SourceController do
         send_resp(conn, 404, "Image not found")
 
       filepath ->
-        conn
-        |> put_resp_content_type(MIME.from_path(filepath))
-        |> send_file(200, filepath)
+        serve_cacheable_file(conn, filepath)
+    end
+  end
+
+  defp serve_cacheable_file(conn, filepath) do
+    %{mtime: mtime, size: size} = File.stat!(filepath, time: :posix)
+    etag = ~s("#{mtime}-#{size}")
+
+    conn = put_resp_header(conn, "cache-control", "public, max-age=86400, must-revalidate")
+
+    if etag in get_req_header(conn, "if-none-match") do
+      send_resp(conn, 304, "")
+    else
+      conn
+      |> put_resp_header("etag", etag)
+      |> put_resp_content_type(MIME.from_path(filepath))
+      |> send_file(200, filepath)
     end
   end
 
