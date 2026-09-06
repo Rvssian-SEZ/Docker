@@ -20,21 +20,25 @@ defmodule Vdlarr.Downloading.DownloadProgress do
   @doc """
   Called with each line of a download command's output as it's produced (see
   `Vdlarr.Utils.CliUtils.wrap_cmd/4`'s `:line_handler` option). Lines that
-  aren't progress-template output (yt-dlp warnings, etc, since stdout/stderr
-  are combined) are silently ignored.
+  aren't progress-template output (yt-dlp's own status lines - extraction
+  phase, `Sleeping N seconds ...`, post-processing tool names, etc - since
+  `:quiet` is dropped for commands with a line_handler, see
+  `Vdlarr.YtDlp.CommandRunner`) are broadcast separately as raw status text.
 
   Broadcasts on the `"downloads:progress"` topic, `"progress"` event, with a
   payload of `%{media_item_id: media_item_id, progress: progress_map}` where
   `progress_map` is yt-dlp's own progress dict as-is (`downloaded_bytes`,
   `total_bytes`, `eta`, `speed`, `elapsed`, `status`, etc - `status: "finished"`
-  marks the terminal update for a download).
+  marks the terminal update for a download), or on the `"downloads:status"`
+  topic, `"status"` event, with a payload of `%{media_item_id: media_item_id,
+  line: line}` for everything else.
 
   Returns :ok
   """
   def handle_line(media_item_id, line) do
     case String.split(line, @progress_line_prefix, parts: 2) do
       [_, json] -> broadcast_progress(media_item_id, json)
-      _ -> :ok
+      _ -> broadcast_status_line(media_item_id, line)
     end
   end
 
@@ -48,6 +52,19 @@ defmodule Vdlarr.Downloading.DownloadProgress do
 
       err ->
         Logger.debug("DownloadProgress: Error decoding JSON: #{inspect(err)}")
+    end
+
+    :ok
+  end
+
+  defp broadcast_status_line(media_item_id, line) do
+    trimmed_line = String.trim(line)
+
+    if trimmed_line != "" do
+      VdlarrWeb.Endpoint.broadcast("downloads:status", "status", %{
+        media_item_id: media_item_id,
+        line: trimmed_line
+      })
     end
 
     :ok

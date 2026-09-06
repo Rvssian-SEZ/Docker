@@ -76,7 +76,7 @@ defmodule VdlarrWeb.Sources.MediaItemTableLive do
           <.icon name={if media_item.prevent_download, do: "hero-check", else: "hero-x-mark"} />
         </:col>
         <:col :let={media_item} :if={@media_state in ["pending", "failed"]} label="Progress">
-          <.download_progress_bar progress={@progress[media_item.id]} />
+          <.download_progress_bar progress={@progress[media_item.id]} status_line={@status_lines[media_item.id]} />
         </:col>
         <:col :let={media_item} :if={@media_state == "failed"} label="">
           <span :if={MediaDownloadWorker.non_retryable_error?(media_item.last_error)} class="text-xs text-bodydark2">
@@ -125,6 +125,7 @@ defmodule VdlarrWeb.Sources.MediaItemTableLive do
     # subscribing everywhere would just mean the other tabs ignore every message.
     if media_state in ["pending", "failed"] do
       VdlarrWeb.Endpoint.subscribe("downloads:progress")
+      VdlarrWeb.Endpoint.subscribe("downloads:status")
       VdlarrWeb.Endpoint.subscribe("job:state")
     end
 
@@ -135,7 +136,8 @@ defmodule VdlarrWeb.Sources.MediaItemTableLive do
           base_query: base_query,
           source: source,
           media_state: media_state,
-          progress: %{}
+          progress: %{},
+          status_lines: %{}
         }
       )
 
@@ -177,6 +179,12 @@ defmodule VdlarrWeb.Sources.MediaItemTableLive do
     {:noreply, assign(socket, :progress, progress)}
   end
 
+  def handle_info(%{topic: "downloads:status", event: "status", payload: payload}, socket) do
+    status_lines = Map.put(socket.assigns.status_lines, payload.media_item_id, payload.line)
+
+    {:noreply, assign(socket, :status_lines, status_lines)}
+  end
+
   # Nothing currently refetches the pending list when a download finishes (only
   # the manual "reload_page" button does), which would otherwise leave a
   # completed download's progress bar frozen at its last percentage instead of
@@ -190,16 +198,24 @@ defmodule VdlarrWeb.Sources.MediaItemTableLive do
     pruned_progress =
       Map.filter(assigns.progress, fn {media_item_id, _} -> MapSet.member?(visible_ids, media_item_id) end)
 
-    {:noreply, assign(socket, Map.put(new_assigns, :progress, pruned_progress))}
+    pruned_status_lines =
+      Map.filter(assigns.status_lines, fn {media_item_id, _} -> MapSet.member?(visible_ids, media_item_id) end)
+
+    new_assigns = Map.merge(new_assigns, %{progress: pruned_progress, status_lines: pruned_status_lines})
+
+    {:noreply, assign(socket, new_assigns)}
   end
 
   defp download_progress_bar(assigns) do
     ~H"""
-    <div :if={@progress} class="w-32">
+    <div :if={@progress} class="w-40">
       <div class="h-2 w-full rounded-full bg-meta-4">
         <div class="h-2 rounded-full bg-primary transition-all" style={"width: #{progress_percent(@progress)}%"}></div>
       </div>
       <span class="text-xs text-bodydark2">{progress_percent(@progress)}% {progress_speed_label(@progress)}</span>
+      <div :if={@status_line} class="text-xs text-bodydark2 truncate italic" title={@status_line}>
+        {@status_line}
+      </div>
     </div>
     """
   end

@@ -44,7 +44,7 @@ defmodule Vdlarr.YtDlp.CommandRunner do
     print_to_file_opts = [{:print_to_file, output_template}, output_filepath]
     user_configured_opts = cookie_file_options(addl_opts) ++ rate_limit_options(addl_opts) ++ misc_options()
     # These must stay in exactly this order, hence why I'm giving it its own variable.
-    all_opts = command_opts ++ print_to_file_opts ++ user_configured_opts ++ global_options()
+    all_opts = command_opts ++ print_to_file_opts ++ user_configured_opts ++ global_options(addl_opts)
     formatted_command_opts = [url] ++ CliUtils.parse_options(all_opts)
     wrap_cmd_opts = Keyword.take(addl_opts, [:line_handler])
 
@@ -139,12 +139,23 @@ defmodule Vdlarr.YtDlp.CommandRunner do
     end
   end
 
-  defp global_options do
-    [
+  # `:quiet` is dropped when a `:line_handler` is present - that's only ever wired up for
+  # the actual download command (see `MediaDownloader`), where yt-dlp's own status lines
+  # (extraction phase, `Sleeping N seconds ...`, post-processing tool names) get streamed
+  # to `DownloadProgress.handle_line/2` and shown alongside the download progress bar
+  # instead of being silently swallowed. Indexing/metadata calls have no line_handler and
+  # stay quiet since nothing consumes their extra chatter.
+  defp global_options(addl_opts) do
+    base_options = [
       :windows_filenames,
-      :quiet,
       cache_dir: Path.join(Application.get_env(:vdlarr, :tmpfile_directory), "yt-dlp-cache")
     ]
+
+    if Keyword.has_key?(addl_opts, :line_handler) do
+      base_options
+    else
+      [:quiet | base_options]
+    end
   end
 
   defp cookie_file_options(addl_opts) do
