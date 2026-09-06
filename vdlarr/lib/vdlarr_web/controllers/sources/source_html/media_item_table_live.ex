@@ -208,11 +208,13 @@ defmodule VdlarrWeb.Sources.MediaItemTableLive do
 
   defp download_progress_bar(assigns) do
     ~H"""
-    <div :if={@progress} class="w-40">
-      <div class="h-2 w-full rounded-full bg-meta-4">
-        <div class="h-2 rounded-full bg-primary transition-all" style={"width: #{progress_percent(@progress)}%"}></div>
+    <div :if={@progress || @status_line} class="w-40">
+      <div :if={@progress}>
+        <div class="h-2 w-full rounded-full bg-meta-4">
+          <div class="h-2 rounded-full bg-primary transition-all" style={"width: #{progress_percent(@progress)}%"}></div>
+        </div>
+        <span class="text-xs text-bodydark2">{progress_percent(@progress)}% {progress_speed_label(@progress)}</span>
       </div>
-      <span class="text-xs text-bodydark2">{progress_percent(@progress)}% {progress_speed_label(@progress)}</span>
       <div :if={@status_line} class="text-xs text-bodydark2 truncate italic" title={@status_line}>
         {@status_line}
       </div>
