@@ -174,3 +174,51 @@ async def trigger_delete_computer(store: SettingsStore, *, target_sam: str) -> N
             if status in ("error", "stopped"):
                 raise SemaphoreError(f"Computer deletion failed (Semaphore task #{task_id}, status={status}).")
         raise SemaphoreError(f"Computer deletion timed out (Semaphore task #{task_id}).")
+
+
+async def trigger_move_object(store: SettingsStore, *, target_sam: str, target_ou: str) -> None:
+    """Fallback-only OU move, called by app/routers/ad_accounts.py ONLY
+    after the normal LDAPS modify_dn (svc-adminconsole's write-property
+    delegation) fails with insufficientAccessRights — confirmed live
+    2026-09-07 that a cross-OU move needs Delete Child rights on the
+    source OU, blocked domain-wide by the same "Deny Everyone: Delete
+    Child" ACE that blocks Delete Computer (see CLAUDE_CONTEXT.md "Move
+    (OU relocation)"), so — same as delete — this fallback is the only
+    path that actually works today. Uses the separate
+    move_object_template_id (Ansible@SAA.SC, not svc-adminconsole). The
+    playbook re-resolves the object and re-checks it's a user/computer
+    before moving anything, on top of the app's own check."""
+    base_url = store.get("semaphore.url").rstrip("/")
+    username = store.get("semaphore.username")
+    password = store.get_secret("semaphore.password")
+    project_id = store.get_int("semaphore.project_id")
+    template_id = store.get_int("semaphore.move_object_template_id")
+    if not (base_url and username and password and project_id and template_id):
+        raise SemaphoreError("Move-object fallback is not configured (Settings -> Automation).")
+
+    async with httpx.AsyncClient(base_url=base_url, timeout=15) as client:
+        login_resp = await client.post("/api/auth/login", json={"auth": username, "password": password})
+        if login_resp.status_code != 204:
+            raise SemaphoreError("Semaphore login failed — check semaphore.username/password in Settings.")
+
+        task_resp = await client.post(
+            f"/api/project/{project_id}/tasks",
+            json={
+                "template_id": template_id,
+                "project_id": project_id,
+                "environment": '{"target_sam": "%s", "target_ou": "%s"}' % (target_sam, target_ou),
+            },
+        )
+        if task_resp.status_code != 201:
+            raise SemaphoreError(f"Semaphore task creation failed: {task_resp.status_code}")
+        task_id = task_resp.json()["id"]
+
+        for _ in range(60):
+            await asyncio.sleep(1)
+            status_resp = await client.get(f"/api/project/{project_id}/tasks/{task_id}")
+            status = status_resp.json().get("status")
+            if status == "success":
+                return
+            if status in ("error", "stopped"):
+                raise SemaphoreError(f"Move failed (Semaphore task #{task_id}, status={status}).")
+        raise SemaphoreError(f"Move timed out (Semaphore task #{task_id}).")

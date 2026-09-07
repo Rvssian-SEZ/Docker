@@ -86,6 +86,12 @@ DEFAULTS: dict[str, tuple[str, str]] = {
     # real OU (confirmed live 2026-09-07, see CLAUDE_CONTEXT.md "Delete
     # Computer") - same Ansible@SAA.SC pattern as the unlock fallback.
     "semaphore.delete_computer_template_id": ("", "int"),
+    # Fallback move path for OU relocation - a cross-OU move needs Delete
+    # Child rights on the source OU, which is blocked domain-wide by the
+    # same "Deny Everyone: Delete Child" ACE that blocks Delete Computer
+    # (confirmed live 2026-09-07, see CLAUDE_CONTEXT.md "Move (OU
+    # relocation)") - same Ansible@SAA.SC pattern as that fallback.
+    "semaphore.move_object_template_id": ("", "int"),
 
     # --- Reporting sync ---
     "sync.frequency_minutes": ("60", "int"),
