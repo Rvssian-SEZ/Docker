@@ -649,9 +649,23 @@ User's OU picker uses) plus a required reason/ticket-ref.
   in this router.
 - **Not rate-limited** — same risk tier as Modify/Enable/Disable (not
   create_user/reset_password/laps_reveal/delete_computer, which are).
-- **Not yet exercised against a real object** — same honesty convention as
-  every other AD path in this file; verify with a real move before relying
-  on it without double-checking.
+- **Confirmed live 2026-09-07: LDAPS also blocked here, same root cause as
+  Delete Computer.** First real move hit `insufficientAccessRights` — a
+  cross-OU move needs Delete Child rights on the *source* OU (removing the
+  object from its old parent) as well as Create Child on the destination,
+  and Delete Child is blocked domain-wide by the same "Deny Everyone:
+  Delete Child" ACE that blocks Delete Computer (see that section above).
+  **Fixed the same way**: the move route tries LDAPS `modify_dn` first,
+  and on `insufficientAccessRights` falls back to a Semaphore-triggered
+  `Move-ADObject` running as `Ansible@SAA.SC`
+  (`SAA/playbooks/admin_move_object.yml`, persistent Semaphore template id
+  37 "Move Object (fallback)", `semaphore.move_object_template_id` in
+  Settings -> Automation). Same as Delete Computer, **this fallback is the
+  only path that actually works today**, not a rare edge case — every real
+  move will hit it. `semaphore_client.trigger_move_object()` mirrors
+  `trigger_delete_computer()`/`trigger_protected_unlock()` exactly. Same
+  live-DB gotcha as always — `semaphore.move_object_template_id` patched
+  directly into `app_settings` (value `37`).
 
 ## Unrelated infra incident on the same host — Sophos WAN/WireGuard outage, resolved 2026-08-20
 Not about this app, but worth keeping here since it's the same host
