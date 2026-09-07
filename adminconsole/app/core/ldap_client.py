@@ -266,6 +266,22 @@ def delete_object(conn: Connection, dn: str) -> None:
         raise LdapError(f"Delete failed: {conn.result.get('description')}")
 
 
+def move_object(conn: Connection, dn: str, new_ou_dn: str) -> str:
+    """Moves a user or computer object to a different OU via LDAP's
+    modify_dn (moddn) — the same operation ADUC's "Move..." uses under the
+    hood. Keeps the object's RDN (CN=...) unchanged, only relocates it
+    under new_ou_dn; returns the new DN on success. Only the first RDN
+    component is handled (every real user/computer object in this forest
+    has a single-valued CN= RDN — multi-valued RDNs are exotic enough to
+    be out of scope here, same precision level as escape_dn_value())."""
+    attr, value, _ = parse_dn(dn)[0]
+    rdn = f"{attr}={escape_dn_value(value)}"
+    ok = conn.modify_dn(dn, rdn, new_superior=new_ou_dn)
+    if not ok:
+        raise LdapError(f"Move failed: {conn.result.get('description')}")
+    return f"{rdn},{new_ou_dn}"
+
+
 def _escape(value: str) -> str:
     """Minimal RFC 4515 filter escaping for exact-match lookups (unlock/
     reset/enable-disable/attribute-edit/LAPS all resolve one already-known

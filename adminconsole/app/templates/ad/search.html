@@ -38,6 +38,9 @@
           {% if user.can('ad.delete_computer') %}
           <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteComputerModal{{ loop.index }}">Delete</button>
           {% endif %}
+          {% if user.can('ad.move_object') %}
+          <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#moveModal{{ loop.index }}">Move</button>
+          {% endif %}
         {% elif r.kind == 'user' %}
           {% if user.can('ad.unlock') %}<button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#unlockModal{{ loop.index }}">Unlock</button>{% endif %}
           {% if user.can('ad.reset_password') %}<button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#resetModal{{ loop.index }}">Reset PW</button>{% endif %}
@@ -45,6 +48,9 @@
           {% if user.can('ad.enable_disable') %}
           <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#enableModal{{ loop.index }}">Enable</button>
           <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#disableModal{{ loop.index }}">Disable</button>
+          {% endif %}
+          {% if user.can('ad.move_object') %}
+          <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#moveModal{{ loop.index }}">Move</button>
           {% endif %}
         {% else %}
           <span class="text-secondary small">No actions (not a user account)</span>
@@ -130,6 +136,27 @@
     <div class="modal-header"><h5 class="modal-title">Disable {{ r.sam }}</h5></div>
     <div class="modal-body"><label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required></div>
     <div class="modal-footer"><button class="btn btn-danger">Disable</button></div>
+  </form>
+</div></div></div>
+{% endif %}
+
+{% if r.kind in ('computer', 'user') and user.can('ad.move_object') %}
+<div class="modal fade" id="moveModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/ad/{{ r.sam }}/move">
+    <div class="modal-header"><h5 class="modal-title">Move {{ r.sam }} to a different OU</h5></div>
+    <div class="modal-body">
+      <div class="mb-2">
+        <label class="form-label">Destination OU</label>
+        <select name="new_ou_dn" class="form-select" required>
+          <option value="" disabled selected>Choose an OU...</option>
+          {% for ou in ous %}
+          <option value="{{ ou.dn }}">{{ ou.display }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required>
+    </div>
+    <div class="modal-footer"><button class="btn btn-secondary">Move</button></div>
   </form>
 </div></div></div>
 {% endif %}

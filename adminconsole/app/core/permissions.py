@@ -7,7 +7,8 @@ Tiers (Alex, 2026-08-19 — supersedes the spec's original suggested
 starting table for Helpdesk L2):
   Helpdesk L1 — unlock, reset password (standard-user OU only). Does NOT
       get ad.create_user (Alex, 2026-08-24 — account creation is L2+) or
-      ad.delete_computer (Alex, 2026-09-07 — same reasoning, delete is L2+).
+      ad.delete_computer (Alex, 2026-09-07 — same reasoning, delete is L2+)
+      or ad.move_object (Alex, 2026-09-07 — same reasoning, move is L2+).
   Helpdesk L2 — everything Admin has EXCEPT settings.manage (the Settings
       tab, incl. Graph/Authentik/AD/break-glass-alerting/Automation
       credentials) — deliberately excludes ad.group_membership too, same
@@ -36,6 +37,7 @@ PERMISSIONS: dict[str, list[str]] = {
         "ad.laps_read",
         "ad.create_user",  # Admin + Helpdesk L2 only (Alex, 2026-08-24) — see DEFAULTS below
         "ad.delete_computer",  # Admin + Helpdesk L2 only (Alex, 2026-09-07) — see DEFAULTS below
+        "ad.move_object",  # Admin + Helpdesk L2 only (Alex, 2026-09-07) — see DEFAULTS below
         "ad.group_membership",  # granted to no default role in v1 (out of scope, see spec) — reserved
     ],
     "Reporting": [

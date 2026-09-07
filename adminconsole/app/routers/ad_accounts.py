@@ -112,6 +112,7 @@ async def ad_search_page(
         return templates.TemplateResponse(request, "ad/not_configured.html", {"user": user}, status_code=200)
     results = []
     error = None
+    ous = []
     if q:
         try:
             conn = _open_conn(store)
@@ -119,6 +120,12 @@ async def ad_search_page(
                 results = ldap_client.search_accounts(conn, store.get("ad.base_dn"), q.strip())
                 if not results:
                     error = f"No accounts found matching '{q.strip()}'."
+                elif user.can("ad.move_object"):
+                    # Only fetched when there's something to move and the
+                    # role can actually move it — same OU tree the Move
+                    # modal's destination dropdown needs, reusing Create
+                    # User's list_ous() rather than a separate query shape.
+                    ous = ldap_client.list_ous(conn, store.get("ad.base_dn"))
             finally:
                 conn.unbind()
         except AdNotConfigured:
@@ -126,7 +133,7 @@ async def ad_search_page(
         except Exception as exc:
             error = f"AD search failed: {exc}"
     return templates.TemplateResponse(
-        request, "ad/search.html", {"user": user, "q": q or "", "results": results, "error": error}
+        request, "ad/search.html", {"user": user, "q": q or "", "results": results, "error": error, "ous": ous}
     )
 
 
@@ -193,6 +200,61 @@ async def ad_modify_attributes(
     if not changes:
         return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "No changes submitted."})
     return await _perform(request, db, user, sam, reason, action="modify", op=lambda conn, dn, attrs: ldap_client.edit_attributes(conn, dn, changes))
+
+
+@router.post("/ad/{sam}/move")
+async def ad_move_object(
+    request: Request,
+    sam: str,
+    reason: str = Form(...),
+    new_ou_dn: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("ad.move_object")),
+):
+    if not reason.strip():
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "A reason/ticket-ref is required."})
+    if not new_ou_dn.strip():
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "Destination OU is required."})
+    store = await load_settings(db)
+    try:
+        conn = _open_conn(store)
+    except AdNotConfigured:
+        return templates.TemplateResponse(request, "ad/not_configured.html", {"user": user}, status_code=200)
+    try:
+        found = ldap_client.find_user(conn, store.get("ad.base_dn"), sam)
+        if found is None:
+            return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"No account found for '{sam}'."})
+        object_classes = [c.lower() for c in found["attributes"].get("objectClass", [])]
+        if "user" not in object_classes:
+            # A computer's objectClass chain includes "user" (see
+            # ldap_client._classify()'s docstring), so this one check
+            # covers both users and computers while excluding contacts
+            # and everything else — same backend re-check convention as
+            # the delete-computer route.
+            return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"'{sam}' is not a user or computer object — refusing to move."})
+        # OU scoping on BOTH ends: a scoped Helpdesk L2 shouldn't be able
+        # to move something out of their delegated OUs into the open, or
+        # move something from outside their scope into it either.
+        _check_scope(store, found["dn"], user)
+        _check_scope(store, new_ou_dn.strip(), user)
+        new_dn = ldap_client.move_object(conn, found["dn"], new_ou_dn.strip())
+    except ScopeDenied as exc:
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": exc.message})
+    except ldap_client.LdapError as exc:
+        await _log_and_alert(request, user, action="move_failed", target_id=sam, reason=reason, detail=str(exc))
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": str(exc)})
+    finally:
+        conn.unbind()
+
+    await _log_and_alert(request, user, action="move", target_id=sam, reason=reason, detail=f"Moved to {new_ou_dn.strip()} (new DN: {new_dn})")
+    if user.is_breakglass:
+        pending = getattr(request.state, "breakglass_alert_pending", None)
+        if pending:
+            await alert(db, subject="SAA Admin Console: break-glass move", body=pending)
+    return templates.TemplateResponse(
+        request, "ad/action_result.html",
+        {"user": user, "ok": True, "message": f"'{sam}' moved to {new_ou_dn.strip()}."},
+    )
 
 
 @router.get("/ad/new-password")
