@@ -143,6 +143,25 @@ document.querySelectorAll(".regen-password-btn").forEach(function (btn) {
       .then(data => { btn.previousElementSibling.value = data.password; });
   });
 });
+
+// Guards every action form on this page (unlock/reset/modify/enable/disable/
+// delete) against a double-click submitting the same action twice — hit
+// live 2026-09-07 on Delete Computer, where two near-simultaneous submits
+// both ran the full LDAPS-then-Semaphore-fallback flow for the same
+// target; the first succeeded and the second failed only because the
+// object was already gone by the time it got around to checking. Doesn't
+// touch anything server-side (rate limiting/idempotency there is a
+// separate concern) — this just stops the redundant second submit at the
+// source.
+document.querySelectorAll(".modal form").forEach(function (form) {
+  form.addEventListener("submit", function () {
+    var btn = form.querySelector("button[type=submit], .modal-footer button");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Working...";
+    }
+  });
+});
 </script>
 {% endif %}
 {% endblock %}
