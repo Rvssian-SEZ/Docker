@@ -1,0 +1,216 @@
+defmodule Vdlarr.YtDlp.CommandRunner do
+  @moduledoc """
+  Runs yt-dlp commands using the `System.cmd/3` function
+  """
+
+  require Logger
+
+  alias Vdlarr.Settings
+  alias Vdlarr.Utils.CliUtils
+  alias Vdlarr.Utils.NumberUtils
+  alias Vdlarr.YtDlp.YtDlpCommandRunner
+  alias Vdlarr.Utils.FilesystemUtils, as: FSUtils
+  alias Vdlarr.Downloading.DownloadProgress
+
+  @behaviour YtDlpCommandRunner
+
+  @doc """
+  Runs a yt-dlp command and returns the string output. Saves the output to
+  a file and then returns its contents because yt-dlp will return warnings
+  to stdout even if the command is successful, but these will break JSON parsing.
+
+  Additional Opts:
+    - :output_filepath - the path to save the output to. If not provided, a temporary
+      file will be created and used. Useful for if you need a reference to the file
+      for a file watcher.
+    - :use_cookies - if true, will add a cookie file to the command options. Will not
+      attach a cookie file if the user hasn't set one up.
+    - :skip_sleep_interval - if true, will not add the sleep interval options to the command.
+      Usually only used for commands that would be UI-blocking
+    - :sleep_interval_context - :download (default) or :indexing. Picks which of the two
+      independent sleep-interval settings to apply - :indexing calls are lighter-weight
+      metadata-only requests, so they're commonly given a shorter interval than actual
+      media downloads. Ignored if :skip_sleep_interval is set.
+    - :line_handler - if set, called with each line of output as it's produced instead of
+      waiting for the command to finish. See `Vdlarr.Utils.CliUtils.wrap_cmd/4`.
+
+  Returns {:ok, binary()} | {:error, output, status}.
+  """
+  @impl YtDlpCommandRunner
+  def run(url, action_name, command_opts, output_template, addl_opts \\ []) do
+    Logger.debug("Running yt-dlp command for action: #{action_name}")
+
+    output_filepath = generate_output_filepath(addl_opts)
+    print_to_file_opts = [{:print_to_file, output_template}, output_filepath]
+    user_configured_opts = cookie_file_options(addl_opts) ++ rate_limit_options(addl_opts) ++ misc_options()
+    # These must stay in exactly this order, hence why I'm giving it its own variable.
+    all_opts = command_opts ++ print_to_file_opts ++ user_configured_opts ++ global_options(addl_opts)
+    formatted_command_opts = [url] ++ CliUtils.parse_options(all_opts)
+    wrap_cmd_opts = Keyword.take(addl_opts, [:line_handler])
+
+    case CliUtils.wrap_cmd(backend_executable(), formatted_command_opts, [stderr_to_stdout: true], wrap_cmd_opts) do
+      # yt-dlp exit codes:
+      #   0 = Everything is successful
+      #   100 = yt-dlp must restart for update to complete
+      #   101 = Download cancelled by --max-downloads etc
+      #     2 = Error in user-provided options
+      #     1 = Any other error
+      {_, status} when status in [0, 101] ->
+        # IDEA: consider deleting the file after reading it. It's in the tmp dir, so it's not
+        # a huge deal, but it's still a good idea to clean up after ourselves.
+        # (even on error? especially on error?)
+        File.read(output_filepath)
+
+      {output, status} ->
+        {:error, strip_progress_lines(output), status}
+    end
+  end
+
+  @doc """
+  Returns the version of yt-dlp as a string
+
+  Returns {:ok, binary()} | {:error, binary()}
+  """
+  @impl YtDlpCommandRunner
+  def version do
+    command = backend_executable()
+
+    case CliUtils.wrap_cmd(command, ["--version"]) do
+      {output, 0} ->
+        {:ok, String.trim(output)}
+
+      {output, _} ->
+        {:error, output}
+    end
+  end
+
+  @doc """
+  Updates yt-dlp to the given target.
+
+  The target can be:
+    - "stable" - updates to the latest stable release
+    - "nightly" - updates to the latest nightly build
+    - "nightly@2025.12.08.123456" - pins to that exact nightly build
+    - a specific version like "2025.12.08" - pins to that exact stable release
+
+  Returns {:ok, binary()} | {:error, binary()}
+  """
+  @impl YtDlpCommandRunner
+  def update(target) do
+    command = backend_executable()
+
+    case CliUtils.wrap_cmd(command, build_update_args(target)) do
+      {output, 0} ->
+        {:ok, String.trim(output)}
+
+      {output, _} ->
+        {:error, output}
+    end
+  end
+
+  defp build_update_args("stable"), do: ["--update"]
+  defp build_update_args("nightly"), do: ["--update-to", "nightly"]
+  # `nightly` is yt-dlp's channel alias for the yt-dlp/yt-dlp-nightly-builds repo;
+  # `<channel>@<tag>` pins to an exact build. Naming the repo directly (e.g.
+  # `yt-dlp/yt-dlp_nightly@<tag>`) fails because that repo doesn't exist.
+  defp build_update_args("nightly@" <> version), do: ["--update-to", "nightly@#{version}"]
+  defp build_update_args(version), do: ["--update-to", "yt-dlp/yt-dlp@#{version}"]
+
+  # A failed command's captured output is `stdout` and `stderr` combined (see
+  # `stderr_to_stdout: true` above), so on a download it's interleaved with every
+  # `--progress-template` line emitted while the transfer was in progress (see
+  # `Vdlarr.Downloading.DownloadProgress`). Those lines carry no error information and,
+  # left in, dominate the message shown as the media item's `last_error` (and the raw
+  # substring matches used to detect recoverable errors) with byte-count noise instead
+  # of yt-dlp's actual warnings/errors.
+  defp strip_progress_lines(output) do
+    prefix = DownloadProgress.progress_line_prefix()
+
+    output
+    |> String.split("\n")
+    |> Enum.reject(&String.starts_with?(&1, prefix))
+    |> Enum.join("\n")
+  end
+
+  defp generate_output_filepath(addl_opts) do
+    case Keyword.get(addl_opts, :output_filepath) do
+      nil -> FSUtils.generate_metadata_tmpfile(:json)
+      path -> path
+    end
+  end
+
+  # `:quiet` is dropped when a `:line_handler` is present - that's only ever wired up for
+  # the actual download command (see `MediaDownloader`), where yt-dlp's own status lines
+  # (extraction phase, `Sleeping N seconds ...`, post-processing tool names) get streamed
+  # to `DownloadProgress.handle_line/2` and shown alongside the download progress bar
+  # instead of being silently swallowed. Indexing/metadata calls have no line_handler and
+  # stay quiet since nothing consumes their extra chatter.
+  defp global_options(addl_opts) do
+    base_options = [
+      :windows_filenames,
+      cache_dir: Path.join(Application.get_env(:vdlarr, :tmpfile_directory), "yt-dlp-cache")
+    ]
+
+    if Keyword.has_key?(addl_opts, :line_handler) do
+      base_options
+    else
+      [:quiet | base_options]
+    end
+  end
+
+  defp cookie_file_options(addl_opts) do
+    case Keyword.get(addl_opts, :use_cookies) do
+      true -> add_cookie_file()
+      _ -> []
+    end
+  end
+
+  defp add_cookie_file do
+    base_dir = Application.get_env(:vdlarr, :extras_directory)
+    filename_options_map = %{cookies: "cookies.txt"}
+
+    Enum.reduce(filename_options_map, [], fn {opt_name, filename}, acc ->
+      filepath = Path.join(base_dir, filename)
+
+      if FSUtils.exists_and_nonempty?(filepath) do
+        [{opt_name, filepath} | acc]
+      else
+        acc
+      end
+    end)
+  end
+
+  defp rate_limit_options(addl_opts) do
+    throughput_limit = Settings.get!(:download_throughput_limit)
+    sleep_interval_opts = sleep_interval_opts(addl_opts)
+    throughput_option = if throughput_limit, do: [limit_rate: throughput_limit], else: []
+
+    throughput_option ++ sleep_interval_opts
+  end
+
+  defp sleep_interval_opts(addl_opts) do
+    sleep_interval =
+      case Keyword.get(addl_opts, :sleep_interval_context, :download) do
+        :indexing -> Settings.get!(:indexing_sleep_interval_seconds)
+        :download -> Settings.get!(:extractor_sleep_interval_seconds)
+      end
+
+    if sleep_interval <= 0 || Keyword.get(addl_opts, :skip_sleep_interval) do
+      []
+    else
+      [
+        sleep_requests: NumberUtils.add_jitter(sleep_interval),
+        sleep_interval: NumberUtils.add_jitter(sleep_interval),
+        sleep_subtitles: NumberUtils.add_jitter(sleep_interval)
+      ]
+    end
+  end
+
+  defp misc_options do
+    if Settings.get!(:restrict_filenames), do: [:restrict_filenames], else: []
+  end
+
+  defp backend_executable do
+    Application.get_env(:vdlarr, :yt_dlp_executable)
+  end
+end

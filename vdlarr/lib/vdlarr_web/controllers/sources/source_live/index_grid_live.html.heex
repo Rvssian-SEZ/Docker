@@ -1,0 +1,178 @@
+<div class="flex flex-col">
+  <div class="flex flex-wrap items-center gap-2.5 mb-4 px-1">
+    <div class="inline-flex rounded-lg border border-white/10 overflow-hidden">
+      <button
+        type="button"
+        phx-click="set_view_mode"
+        phx-value-mode="poster"
+        class={[
+          "px-3 py-1.5 text-[12px] font-medium transition-colors",
+          if(@view_mode == :poster, do: "bg-indigo-500 text-white", else: "text-slate-400 hover:text-white hover:bg-white/5")
+        ]}
+      >
+        Poster
+      </button>
+      <button
+        type="button"
+        phx-click="set_view_mode"
+        phx-value-mode="table"
+        class={[
+          "px-3 py-1.5 text-[12px] font-medium transition-colors",
+          if(@view_mode == :table, do: "bg-indigo-500 text-white", else: "text-slate-400 hover:text-white hover:bg-white/5")
+        ]}
+      >
+        Table
+      </button>
+    </div>
+
+    <form phx-change="sort_update" id="source-sort-form">
+      <select
+        name="sort_key"
+        class="bg-midnight-800 border border-white/10 text-slate-300 rounded-lg px-2.5 py-1.5 text-[12px] outline-none focus:border-indigo-400/50"
+      >
+        <option value="custom_name" selected={@sort_key == :custom_name}>Sort: Name</option>
+        <option value="pending_count" selected={@sort_key == :pending_count}>Sort: Pending</option>
+        <option value="downloaded_count" selected={@sort_key == :downloaded_count}>Sort: Downloaded</option>
+        <option value="media_size_bytes" selected={@sort_key == :media_size_bytes}>Sort: Size</option>
+        <option value="media_profile_name" selected={@sort_key == :media_profile_name}>Sort: Media Profile</option>
+        <option value="enabled" selected={@sort_key == :enabled}>Sort: Enabled?</option>
+      </select>
+    </form>
+    <button
+      type="button"
+      id="sort-direction-toggle"
+      phx-click="sort_update"
+      phx-value-sort_key={@sort_key}
+      class="rounded-lg border border-white/10 p-1.5 text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+      title="Toggle sort direction"
+    >
+      <.icon name={if @sort_direction == :asc, do: "hero-chevron-up", else: "hero-chevron-down"} class="w-4 h-4" />
+    </button>
+
+    <form phx-change="search" phx-submit="search" id="source-search-form" class="ml-auto">
+      <div class="flex items-center gap-2 bg-black/30 border border-white/10 rounded-lg px-3 py-1.5 w-56 focus-within:ring-1 focus-within:ring-indigo-400/60 focus-within:border-indigo-400/40 transition-shadow">
+        <.icon name="hero-magnifying-glass" class="w-[14px] h-[14px] text-slate-500 flex-none" />
+        <input
+          type="text"
+          name="search_term"
+          value={@search_term}
+          placeholder="Filter sources…"
+          phx-debounce="300"
+          class="bg-transparent border-none outline-none text-slate-200 placeholder-slate-500 text-[12px] w-full p-0 focus:ring-0"
+        />
+      </div>
+    </form>
+  </div>
+
+  <div :if={@view_mode == :poster} class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+    <div
+      :for={source <- @sources}
+      class="group relative rounded-xl overflow-hidden bg-midnight-850 border border-white/5 hover:border-indigo-400/40 hover:-translate-y-1 shadow-md hover:shadow-xl hover:shadow-indigo-500/10 transition-all duration-200"
+      data-testid="source-grid-item"
+    >
+      <.link href={~p"/sources/#{source.id}"} class="block relative aspect-[2/3] w-full bg-midnight-800">
+        <img
+          :if={source.resolved_poster_filepath}
+          src={~p"/sources/#{source.id}/poster"}
+          class="w-full h-full object-cover"
+        />
+        <div :if={!source.resolved_poster_filepath} class="w-full h-full flex items-center justify-center">
+          <.icon name="hero-photo" class="w-12 h-12 text-slate-600" />
+        </div>
+        <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+        </div>
+        <div :if={!source.enabled} class="absolute inset-0 bg-black/50"></div>
+        <span class={[
+          "absolute top-2 right-2 text-[10px] font-semibold px-2 py-0.5 rounded-full backdrop-blur",
+          if(source.enabled, do: "bg-emerald-500/90 text-emerald-950", else: "bg-slate-600/90 text-slate-100")
+        ]}>
+          {if source.enabled, do: "Monitored", else: "Paused"}
+        </span>
+      </.link>
+
+      <div class="h-1 bg-black/40">
+        <div
+          class="h-full bg-gradient-to-r from-indigo-400 to-violet-400"
+          style={"width: #{source_progress_pct(source)}%"}
+        >
+        </div>
+      </div>
+
+      <div class="absolute top-1 left-1">
+        <.live_component
+          module={VdlarrWeb.Sources.SourceLive.SourceEnableToggle}
+          source={source}
+          id={"source_#{source.id}_enabled"}
+        />
+      </div>
+
+      <div class="absolute top-8 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <.icon_link href={~p"/sources/#{source.id}/edit"} icon="hero-pencil-square" class="bg-black/60 rounded p-1" />
+      </div>
+
+      <div class="p-2.5">
+        <div class="truncate text-[12.5px] font-semibold text-white">
+          <.subtle_link href={~p"/sources/#{source.id}"}>
+            {source.custom_name}
+          </.subtle_link>
+        </div>
+        <div class="flex justify-between text-[10px] text-slate-500 mt-1 gap-1 whitespace-nowrap">
+          <.subtle_link href={~p"/sources/#{source.id}/#tab-pending"}>
+            Pending: <.localized_number number={source.pending_count} />
+          </.subtle_link>
+          <.subtle_link href={~p"/sources/#{source.id}/#tab-downloaded"}>
+            Downloaded: <.localized_number number={source.downloaded_count} />
+          </.subtle_link>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div :if={@view_mode == :table} class="max-w-full overflow-x-auto">
+    <table class="w-full border-collapse rounded-xl overflow-hidden">
+      <thead>
+        <tr class="text-left text-slate-500 text-[11px] uppercase tracking-wide bg-white/5">
+          <th class="px-3 py-2.5 font-semibold">Title</th>
+          <th class="px-3 py-2.5 font-semibold">Status</th>
+          <th class="px-3 py-2.5 font-semibold">Pending</th>
+          <th class="px-3 py-2.5 font-semibold">Downloaded</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr :for={source <- @sources} class="border-b border-white/5 hover:bg-white/5 transition-colors">
+          <td class="px-3 py-2.5">
+            <div class="flex items-center gap-3">
+              <div class="w-7 h-10 rounded flex-none overflow-hidden bg-midnight-800 flex items-center justify-center">
+                <img
+                  :if={source.resolved_poster_filepath}
+                  src={~p"/sources/#{source.id}/poster"}
+                  class="w-full h-full object-cover"
+                />
+                <.icon :if={!source.resolved_poster_filepath} name="hero-photo" class="w-4 h-4 text-slate-600" />
+              </div>
+              <span class="text-slate-200">
+                <.subtle_link href={~p"/sources/#{source.id}"}>
+                  {source.custom_name}
+                </.subtle_link>
+              </span>
+            </div>
+          </td>
+          <td class="px-3 py-2.5">
+            <span class={[
+              "text-[10px] font-semibold px-2 py-0.5 rounded-full",
+              if(source.enabled, do: "bg-emerald-500/90 text-emerald-950", else: "bg-slate-600/90 text-slate-100")
+            ]}>
+              {if source.enabled, do: "Monitored", else: "Paused"}
+            </span>
+          </td>
+          <td class="px-3 py-2.5 text-slate-300"><.localized_number number={source.pending_count} /></td>
+          <td class="px-3 py-2.5 text-slate-300"><.localized_number number={source.downloaded_count} /></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <section class="flex justify-center my-5">
+    <.live_pagination_controls page_number={@page} total_pages={@total_pages} />
+  </section>
+</div>

@@ -1,0 +1,38 @@
+/**
+ * Font Family: Inter (variable)
+ * https://fonts.google.com/specimen/Inter
+ * Self-hosted (see satoshi.css for the established pattern this mirrors) rather than a
+ * Google Fonts <link>, since this is a self-hosted app that shouldn't phone home at runtime.
+ */
+
+@font-face {
+  font-family: 'Inter';
+  src: url('../fonts/inter/Inter-Variable.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('../fonts/inter/Inter-Variable.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('../fonts/inter/Inter-Variable.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('../fonts/inter/Inter-Variable.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+  font-style: normal;
+}

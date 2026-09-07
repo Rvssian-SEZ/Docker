@@ -1,0 +1,288 @@
+defmodule Vdlarr.YtDlp.CommandRunnerTest do
+  use Vdlarr.DataCase
+
+  alias Vdlarr.Settings
+  alias Vdlarr.Utils.FilesystemUtils
+
+  alias Vdlarr.YtDlp.CommandRunner, as: Runner
+
+  @original_executable Application.compile_env(:vdlarr, :yt_dlp_executable)
+  @media_url "https://www.youtube.com/watch?v=-LHXuyzpex0"
+
+  setup do
+    on_exit(&reset_executable/0)
+  end
+
+  describe "run/4" do
+    test "returns the output and status when the command succeeds" do
+      assert {:ok, _output} = Runner.run(@media_url, :foo, [], "")
+    end
+
+    test "considers a 101 exit code as being successful" do
+      wrap_executable("/app/test/support/scripts/yt-dlp-mocks/101_exit_code.sh", fn ->
+        assert {:ok, _output} = Runner.run(@media_url, :foo, [], "")
+      end)
+    end
+
+    test "includes the media url as the first argument" do
+      assert {:ok, output} = Runner.run(@media_url, :foo, [:ignore_errors], "")
+
+      assert String.contains?(output, "#{@media_url} --ignore-errors")
+    end
+
+    test "automatically includes the --print-to-file flag" do
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "%(id)s")
+
+      assert String.contains?(output, "--print-to-file %(id)s /tmp/")
+    end
+
+    test "returns the output and status when the command fails" do
+      wrap_executable("/bin/false", fn ->
+        assert {:error, "", 1} = Runner.run(@media_url, :foo, [], "")
+      end)
+    end
+
+    test "strips PROGRESS_JSON lines out of a failed command's output" do
+      wrap_executable("/app/test/support/scripts/yt-dlp-mocks/progress_then_error.sh", fn ->
+        assert {:error, output, 1} = Runner.run(@media_url, :foo, [], "")
+
+        refute String.contains?(output, "PROGRESS_JSON:")
+        assert String.contains?(output, "WARNING: [youtube] some_id: some transient warning")
+        assert String.contains?(output, "ERROR: [youtube] some_id: the actual failure reason")
+      end)
+    end
+
+    test "optionally lets you specify an output_filepath" do
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "%(id)s", output_filepath: "/tmp/yt-dlp-output.json")
+
+      assert String.contains?(output, "--print-to-file %(id)s /tmp/yt-dlp-output.json")
+    end
+
+    test "optionally forwards each line of output to a line_handler as it's produced" do
+      wrap_executable("/app/test/support/scripts/yt-dlp-mocks/progress_streamer.sh", fn ->
+        test_pid = self()
+        handler = fn line -> send(test_pid, {:line, line}) end
+
+        assert {:ok, _output} = Runner.run(@media_url, :foo, [], "", line_handler: handler)
+
+        assert_received {:line, "PROGRESS_JSON:" <> _}
+        assert_received {:line, "PROGRESS_JSON:" <> _}
+        assert_received {:line, "PROGRESS_JSON:" <> _}
+      end)
+    end
+  end
+
+  describe "run/4 when testing external file options" do
+    setup do
+      base_dir = Application.get_env(:vdlarr, :extras_directory)
+      cookie_file = Path.join(base_dir, "cookies.txt")
+      yt_dlp_file = Path.join([base_dir, "yt-dlp-configs", "main.txt"])
+
+      {:ok, cookie_file: cookie_file, yt_dlp_file: yt_dlp_file}
+    end
+
+    test "includes cookie options when cookies.txt exists and enabled", %{cookie_file: cookie_file} do
+      FilesystemUtils.write_p!(cookie_file, "cookie data")
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "", use_cookies: true)
+
+      assert String.contains?(output, "--cookies #{cookie_file}")
+    end
+
+    test "doesn't include cookie options when cookies.txt exists but disabled", %{cookie_file: cookie_file} do
+      FilesystemUtils.write_p!(cookie_file, "cookie data")
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "", use_cookies: false)
+
+      refute String.contains?(output, "--cookies #{cookie_file}")
+    end
+
+    test "doesn't include cookie options when cookies.txt blank", %{cookie_file: cookie_file} do
+      FilesystemUtils.write_p!(cookie_file, " \n \n ")
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "", use_cookies: true)
+
+      refute String.contains?(output, "--cookies")
+      refute String.contains?(output, cookie_file)
+    end
+
+    test "doesn't include cookie options when cookies.txt doesn't exist", %{cookie_file: cookie_file} do
+      File.rm(cookie_file)
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "")
+
+      refute String.contains?(output, "--cookies")
+      refute String.contains?(output, cookie_file)
+
+      # Cleanup
+      FilesystemUtils.write_p!(cookie_file, "")
+    end
+  end
+
+  describe "run/4 when testing rate limit options" do
+    test "includes sleep interval options by default" do
+      Settings.set(extractor_sleep_interval_seconds: 5)
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "")
+
+      assert String.contains?(output, "--sleep-interval")
+      assert String.contains?(output, "--sleep-requests")
+      assert String.contains?(output, "--sleep-subtitles")
+    end
+
+    test "doesn't include sleep interval options when skip_sleep_interval is true" do
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "", skip_sleep_interval: true)
+
+      refute String.contains?(output, "--sleep-interval")
+      refute String.contains?(output, "--sleep-requests")
+      refute String.contains?(output, "--sleep-subtitles")
+    end
+
+    test "doesn't include sleep interval options when extractor_sleep_interval_seconds is 0" do
+      Settings.set(extractor_sleep_interval_seconds: 0)
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "")
+
+      refute String.contains?(output, "--sleep-interval")
+      refute String.contains?(output, "--sleep-requests")
+      refute String.contains?(output, "--sleep-subtitles")
+    end
+
+    test "uses extractor_sleep_interval_seconds by default (no sleep_interval_context given)" do
+      Settings.set(extractor_sleep_interval_seconds: 5)
+      Settings.set(indexing_sleep_interval_seconds: 0)
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "")
+
+      assert String.contains?(output, "--sleep-interval")
+    end
+
+    test "uses indexing_sleep_interval_seconds when sleep_interval_context is :indexing" do
+      Settings.set(extractor_sleep_interval_seconds: 0)
+      Settings.set(indexing_sleep_interval_seconds: 5)
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "", sleep_interval_context: :indexing)
+
+      assert String.contains?(output, "--sleep-interval")
+    end
+
+    test "doesn't include sleep interval options when indexing_sleep_interval_seconds is 0, even with a nonzero download interval" do
+      Settings.set(extractor_sleep_interval_seconds: 5)
+      Settings.set(indexing_sleep_interval_seconds: 0)
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "", sleep_interval_context: :indexing)
+
+      refute String.contains?(output, "--sleep-interval")
+      refute String.contains?(output, "--sleep-requests")
+      refute String.contains?(output, "--sleep-subtitles")
+    end
+
+    test "skip_sleep_interval overrides sleep_interval_context: :indexing too" do
+      Settings.set(indexing_sleep_interval_seconds: 5)
+
+      assert {:ok, output} =
+               Runner.run(@media_url, :foo, [], "", sleep_interval_context: :indexing, skip_sleep_interval: true)
+
+      refute String.contains?(output, "--sleep-interval")
+    end
+
+    test "includes limit_rate option when specified" do
+      Settings.set(download_throughput_limit: "100K")
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "")
+
+      assert String.contains?(output, "--limit-rate 100K")
+    end
+
+    test "doesn't include limit_rate option when download_throughput_limit is nil" do
+      Settings.set(download_throughput_limit: nil)
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "")
+
+      refute String.contains?(output, "--limit-rate")
+    end
+  end
+
+  describe "run/4 when testing global options" do
+    test "creates windows-safe filenames" do
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "")
+
+      assert String.contains?(output, "--windows-filenames")
+    end
+
+    test "runs quietly" do
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "")
+
+      assert String.contains?(output, "--quiet")
+    end
+
+    test "sets the cache directory" do
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "")
+
+      assert String.contains?(output, "--cache-dir /tmp/test/tmpfiles/yt-dlp-cache")
+    end
+  end
+
+  describe "run/4 when testing misc options" do
+    test "includes --restrict-filenames when enabled" do
+      Settings.set(restrict_filenames: true)
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "")
+
+      assert String.contains?(output, "--restrict-filenames")
+    end
+
+    test "doesn't include --restrict-filenames when disabled" do
+      Settings.set(restrict_filenames: false)
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "")
+
+      refute String.contains?(output, "--restrict-filenames")
+    end
+  end
+
+  describe "version/0" do
+    test "adds the version arg" do
+      assert {:ok, output} = Runner.version()
+
+      assert String.contains?(output, "--version")
+    end
+  end
+
+  describe "update/1" do
+    test "adds the --update arg for the stable target" do
+      assert {:ok, output} = Runner.update("stable")
+
+      assert String.contains?(output, "--update")
+      refute String.contains?(output, "--update-to")
+    end
+
+    test "adds an --update-to nightly arg for the nightly target" do
+      assert {:ok, output} = Runner.update("nightly")
+
+      assert String.contains?(output, "--update-to nightly")
+    end
+
+    test "adds an --update-to nightly@<version> arg for a pinned nightly target" do
+      assert {:ok, output} = Runner.update("nightly@2025.12.08.123456")
+
+      assert String.contains?(output, "--update-to nightly@2025.12.08.123456")
+    end
+
+    test "adds an --update-to yt-dlp/yt-dlp@<version> arg for a pinned stable version" do
+      assert {:ok, output} = Runner.update("2025.12.08")
+
+      assert String.contains?(output, "--update-to yt-dlp/yt-dlp@2025.12.08")
+    end
+  end
+
+  defp wrap_executable(new_executable, fun) do
+    Application.put_env(:vdlarr, :yt_dlp_executable, new_executable)
+    fun.()
+    reset_executable()
+  end
+
+  def reset_executable do
+    Application.put_env(:vdlarr, :yt_dlp_executable, @original_executable)
+  end
+end

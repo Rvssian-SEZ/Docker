@@ -1,0 +1,30 @@
+/**
+ * Font Family: Sora (variable)
+ * https://fonts.google.com/specimen/Sora
+ * Self-hosted (see satoshi.css for the established pattern this mirrors) rather than a
+ * Google Fonts <link>, since this is a self-hosted app that shouldn't phone home at runtime.
+ */
+
+@font-face {
+  font-family: 'Sora';
+  src: url('../fonts/sora/Sora-Variable.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Sora';
+  src: url('../fonts/sora/Sora-Variable.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Sora';
+  src: url('../fonts/sora/Sora-Variable.woff2') format('woff2');
+  font-weight: 800;
+  font-display: swap;
+  font-style: normal;
+}
