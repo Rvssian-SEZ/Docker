@@ -222,3 +222,47 @@ async def trigger_move_object(store: SettingsStore, *, target_sam: str, target_o
             if status in ("error", "stopped"):
                 raise SemaphoreError(f"Move failed (Semaphore task #{task_id}, status={status}).")
         raise SemaphoreError(f"Move timed out (Semaphore task #{task_id}).")
+
+
+async def trigger_rename_group(store: SettingsStore, *, target_sam: str, new_name: str) -> None:
+    """Fallback-only group rename, called by app/routers/ad_accounts.py.
+    A same-parent modify_dn hit insufficientAccessRights even with
+    WP;sAMAccountName;group/WP;displayName;group granted (confirmed live
+    2026-09-07, see CLAUDE_CONTEXT.md "Manage Groups") — unlike create and
+    membership changes on groups, which both worked fine via LDAPS with
+    the same delegation round. Uses the separate rename_group_template_id
+    (Ansible@SAA.SC, not svc-adminconsole)."""
+    base_url = store.get("semaphore.url").rstrip("/")
+    username = store.get("semaphore.username")
+    password = store.get_secret("semaphore.password")
+    project_id = store.get_int("semaphore.project_id")
+    template_id = store.get_int("semaphore.rename_group_template_id")
+    if not (base_url and username and password and project_id and template_id):
+        raise SemaphoreError("Rename-group fallback is not configured (Settings -> Automation).")
+
+    async with httpx.AsyncClient(base_url=base_url, timeout=15) as client:
+        login_resp = await client.post("/api/auth/login", json={"auth": username, "password": password})
+        if login_resp.status_code != 204:
+            raise SemaphoreError("Semaphore login failed — check semaphore.username/password in Settings.")
+
+        task_resp = await client.post(
+            f"/api/project/{project_id}/tasks",
+            json={
+                "template_id": template_id,
+                "project_id": project_id,
+                "environment": '{"target_sam": "%s", "new_name": "%s"}' % (target_sam, new_name),
+            },
+        )
+        if task_resp.status_code != 201:
+            raise SemaphoreError(f"Semaphore task creation failed: {task_resp.status_code}")
+        task_id = task_resp.json()["id"]
+
+        for _ in range(60):
+            await asyncio.sleep(1)
+            status_resp = await client.get(f"/api/project/{project_id}/tasks/{task_id}")
+            status = status_resp.json().get("status")
+            if status == "success":
+                return
+            if status in ("error", "stopped"):
+                raise SemaphoreError(f"Rename failed (Semaphore task #{task_id}, status={status}).")
+        raise SemaphoreError(f"Rename timed out (Semaphore task #{task_id}).")

@@ -92,6 +92,11 @@ DEFAULTS: dict[str, tuple[str, str]] = {
     # (confirmed live 2026-09-07, see CLAUDE_CONTEXT.md "Move (OU
     # relocation)") - same Ansible@SAA.SC pattern as that fallback.
     "semaphore.move_object_template_id": ("", "int"),
+    # Fallback rename path for groups - a same-parent rename hit
+    # insufficientAccessRights even with WP;sAMAccountName;group /
+    # WP;displayName;group granted (confirmed live 2026-09-07, see
+    # CLAUDE_CONTEXT.md "Manage Groups") - same Ansible@SAA.SC pattern.
+    "semaphore.rename_group_template_id": ("", "int"),
 
     # --- Reporting sync ---
     "sync.frequency_minutes": ("60", "int"),

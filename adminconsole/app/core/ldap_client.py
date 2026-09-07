@@ -26,7 +26,7 @@ single bind instead of re-authenticating per call.
 import logging
 import ssl
 
-from ldap3 import ALL_ATTRIBUTES, MODIFY_REPLACE, SUBTREE, Connection, Server, Tls
+from ldap3 import ALL_ATTRIBUTES, MODIFY_ADD, MODIFY_DELETE, MODIFY_REPLACE, SUBTREE, Connection, Server, Tls
 from ldap3.utils.dn import parse_dn
 
 from app.core.config import get_settings
@@ -264,6 +264,133 @@ def delete_object(conn: Connection, dn: str) -> None:
     ok = conn.delete(dn)
     if not ok:
         raise LdapError(f"Delete failed: {conn.result.get('description')}")
+
+
+# groupType values AD/ADUC uses for the 6 standard scope x type
+# combinations (MS-ADTS 2.2.11) — negative values are security groups
+# (the high bit, ADS_GROUP_TYPE_SECURITY_ENABLED, set on a signed int32),
+# positive are distribution-only.
+GROUP_TYPES: dict[str, int] = {
+    "domainlocal_security": -2147483644,
+    "domainlocal_distribution": 4,
+    "global_security": -2147483646,
+    "global_distribution": 2,
+    "universal_security": -2147483640,
+    "universal_distribution": 8,
+}
+
+# Real security/distribution groups in this forest run from a few members
+# to (for built-ins like "Domain Users") every account in the domain —
+# resolving every member's display info for a group that large would be
+# slow and mostly useless in a UI. Caps what group_detail shows/resolves;
+# the group's own `member` attribute is untouched, this only limits what
+# one page load renders.
+MEMBER_DISPLAY_LIMIT = 200
+
+
+def search_groups(conn: Connection, base_dn: str, query: str, *, limit: int = 50) -> list[dict]:
+    """Name/username search across group objects — cn and sAMAccountName,
+    substring-wildcarded by default, same convention as search_accounts()."""
+    pattern = query if "*" in query else f"*{query}*"
+    escaped = _escape_wildcard(pattern)
+    filt = f"(&(objectClass=group)(|(cn={escaped})(sAMAccountName={escaped})))"
+    conn.search(
+        search_base=base_dn,
+        search_filter=filt,
+        search_scope=SUBTREE,
+        attributes=["cn", "sAMAccountName", "description", "member", "groupType"],
+        size_limit=limit,
+    )
+    results = []
+    for entry in conn.entries:
+        attrs = entry.entry_attributes_as_dict
+        results.append(
+            {
+                "dn": entry.entry_dn,
+                "sam": (attrs.get("sAMAccountName") or [""])[0],
+                "name": (attrs.get("cn") or [""])[0],
+                "description": (attrs.get("description") or [""])[0],
+                "member_count": len(attrs.get("member", [])),
+            }
+        )
+    return results
+
+
+def get_group(conn: Connection, base_dn: str, sam: str) -> dict | None:
+    """Single group lookup by sAMAccountName — like find_user() but scoped
+    to group objects and with the fields group_detail actually needs."""
+    conn.search(
+        search_base=base_dn,
+        search_filter=f"(&(objectClass=group)(sAMAccountName={_escape(sam)}))",
+        search_scope=SUBTREE,
+        attributes=["cn", "sAMAccountName", "description", "member", "groupType"],
+    )
+    if not conn.entries:
+        return None
+    entry = conn.entries[0]
+    attrs = entry.entry_attributes_as_dict
+    return {
+        "dn": entry.entry_dn,
+        "sam": (attrs.get("sAMAccountName") or [""])[0],
+        "name": (attrs.get("cn") or [""])[0],
+        "description": (attrs.get("description") or [""])[0],
+        "member_dns": attrs.get("member", []),
+    }
+
+
+def resolve_members(conn: Connection, base_dn: str, member_dns: list[str]) -> tuple[list[dict], int]:
+    """Resolves a group's raw member DNs to display info in a single
+    batched search (one OR filter of distinguishedName equality) rather
+    than one round trip per member. Returns (resolved, total_count) —
+    total_count is len(member_dns) even when the display list itself is
+    capped at MEMBER_DISPLAY_LIMIT, so the caller can show "showing first
+    N of M" when a group is bigger than what's rendered."""
+    total = len(member_dns)
+    shown = member_dns[:MEMBER_DISPLAY_LIMIT]
+    if not shown:
+        return [], total
+    filt = "(|" + "".join(f"(distinguishedName={_escape(dn)})" for dn in shown) + ")"
+    conn.search(
+        search_base=base_dn,
+        search_filter=filt,
+        search_scope=SUBTREE,
+        attributes=["sAMAccountName", "displayName", "objectClass"],
+    )
+    by_dn = {}
+    for entry in conn.entries:
+        attrs = entry.entry_attributes_as_dict
+        object_classes = [c.lower() for c in attrs.get("objectClass", [])]
+        by_dn[entry.entry_dn] = {
+            "dn": entry.entry_dn,
+            "sam": (attrs.get("sAMAccountName") or [""])[0],
+            "display_name": (attrs.get("displayName") or [""])[0],
+            "kind": _classify(object_classes),
+        }
+    # Preserve the group's own member order; fall back to a bare DN entry
+    # for anything that didn't resolve (e.g. a foreign-domain SID) rather
+    # than silently dropping it.
+    resolved = [by_dn.get(dn, {"dn": dn, "sam": dn, "display_name": "", "kind": "other"}) for dn in shown]
+    return resolved, total
+
+
+def add_group_member(conn: Connection, group_dn: str, member_dn: str) -> None:
+    ok = conn.modify(group_dn, {"member": [(MODIFY_ADD, [member_dn])]})
+    if not ok:
+        raise LdapError(f"Add member failed: {conn.result.get('description')}")
+
+
+def remove_group_member(conn: Connection, group_dn: str, member_dn: str) -> None:
+    ok = conn.modify(group_dn, {"member": [(MODIFY_DELETE, [member_dn])]})
+    if not ok:
+        raise LdapError(f"Remove member failed: {conn.result.get('description')}")
+
+
+def create_group(conn: Connection, dn: str, attributes: dict[str, str | int]) -> None:
+    """Creates a new AD group object. Caller (ad_accounts.py's create-group
+    route) is responsible for computing groupType from GROUP_TYPES."""
+    ok = conn.add(dn, object_class=["top", "group"], attributes=attributes)
+    if not ok:
+        raise LdapError(f"Group creation failed: {conn.result.get('description')} — {conn.result.get('message')}")
 
 
 def _escape(value: str) -> str:

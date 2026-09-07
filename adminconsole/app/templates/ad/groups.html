@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0"><i class="bi bi-people me-2"></i>AD Groups</h1>
+  <a href="/ad/groups/create" class="btn btn-sm btn-outline-light"><i class="bi bi-plus-lg me-1"></i>Create Group</a>
+</div>
+
+<form method="get" action="/ad/groups" class="row g-2 mb-4">
+  <div class="col-auto">
+    <input type="text" name="q" class="form-control" placeholder="Group name or partial match" value="{{ q }}" autofocus style="width: 22rem">
+  </div>
+  <div class="col-auto"><button class="btn btn-outline-light">Search</button></div>
+</form>
+
+{% if error %}<div class="alert alert-warning">{{ error }}</div>{% endif %}
+
+{% if results %}
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <thead><tr><th>Name</th><th>Username</th><th>Description</th><th>Members</th><th></th></tr></thead>
+  <tbody>
+  {% for r in results %}
+    <tr>
+      <td>{{ r.name or '—' }}</td>
+      <td>{{ r.sam }}</td>
+      <td>{{ r.description or '—' }}</td>
+      <td>{{ r.member_count }}</td>
+      <td class="text-end"><a href="/ad/groups/{{ r.sam }}" class="btn btn-sm btn-outline-info">View / Manage</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}
