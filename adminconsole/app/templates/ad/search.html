@@ -35,6 +35,9 @@
           {% if user.can('ad.laps_read') %}
           <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#lapsModal{{ loop.index }}">LAPS Reveal</button>
           {% endif %}
+          {% if user.can('ad.delete_computer') %}
+          <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteComputerModal{{ loop.index }}">Delete</button>
+          {% endif %}
         {% elif r.kind == 'user' %}
           {% if user.can('ad.unlock') %}<button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#unlockModal{{ loop.index }}">Unlock</button>{% endif %}
           {% if user.can('ad.reset_password') %}<button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#resetModal{{ loop.index }}">Reset PW</button>{% endif %}
@@ -60,6 +63,17 @@
     <div class="modal-header"><h5 class="modal-title">Reveal LAPS password for {{ r.sam }}</h5></div>
     <div class="modal-body"><label class="form-label">Reason / ticket ref (required)</label><input name="reason" class="form-control" required></div>
     <div class="modal-footer"><button class="btn btn-info">Reveal</button></div>
+  </form>
+</div></div></div>
+
+<div class="modal fade" id="deleteComputerModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/ad/{{ r.sam }}/delete-computer">
+    <div class="modal-header"><h5 class="modal-title text-danger">Delete computer object</h5></div>
+    <div class="modal-body">
+      <p>Are you sure you want to delete <strong>{{ r.sam }}</strong>? This permanently removes the computer object from Active Directory and cannot be undone from this app.</p>
+      <label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required>
+    </div>
+    <div class="modal-footer"><button class="btn btn-danger">Delete {{ r.sam }}</button></div>
   </form>
 </div></div></div>
 {% elif r.kind == 'user' %}

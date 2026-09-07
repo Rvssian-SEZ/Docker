@@ -125,3 +125,52 @@ async def trigger_protected_unlock(store: SettingsStore, *, target_sam: str) -> 
             if status in ("error", "stopped"):
                 raise SemaphoreError(f"Protected-account unlock failed (Semaphore task #{task_id}, status={status}).")
         raise SemaphoreError(f"Protected-account unlock timed out (Semaphore task #{task_id}).")
+
+
+async def trigger_delete_computer(store: SettingsStore, *, target_sam: str) -> None:
+    """Fallback-only computer deletion, called by
+    app/routers/ad_accounts.py ONLY after the normal LDAPS delete
+    (svc-adminconsole's DC;computer dsacls grant) fails with
+    insufficientAccessRights — confirmed live 2026-09-07 that this grant
+    is blocked domain-wide by a pre-existing "Deny Everyone: Delete Child"
+    ACE inherited onto every real OU (see CLAUDE_CONTEXT.md "Delete
+    Computer"), so this fallback isn't a rare edge case here the way the
+    AdminSDHolder unlock fallback is — it's the only path that actually
+    works today. Uses the separate delete_computer_template_id
+    (Ansible@SAA.SC, not svc-adminconsole). The playbook itself re-checks
+    the target is a computer object before deleting anything, on top of
+    the same check this app's own route already does."""
+    base_url = store.get("semaphore.url").rstrip("/")
+    username = store.get("semaphore.username")
+    password = store.get_secret("semaphore.password")
+    project_id = store.get_int("semaphore.project_id")
+    template_id = store.get_int("semaphore.delete_computer_template_id")
+    if not (base_url and username and password and project_id and template_id):
+        raise SemaphoreError("Delete-computer fallback is not configured (Settings -> Automation).")
+
+    async with httpx.AsyncClient(base_url=base_url, timeout=15) as client:
+        login_resp = await client.post("/api/auth/login", json={"auth": username, "password": password})
+        if login_resp.status_code != 204:
+            raise SemaphoreError("Semaphore login failed — check semaphore.username/password in Settings.")
+
+        task_resp = await client.post(
+            f"/api/project/{project_id}/tasks",
+            json={
+                "template_id": template_id,
+                "project_id": project_id,
+                "environment": '{"target_sam": "%s"}' % target_sam,
+            },
+        )
+        if task_resp.status_code != 201:
+            raise SemaphoreError(f"Semaphore task creation failed: {task_resp.status_code}")
+        task_id = task_resp.json()["id"]
+
+        for _ in range(60):
+            await asyncio.sleep(1)
+            status_resp = await client.get(f"/api/project/{project_id}/tasks/{task_id}")
+            status = status_resp.json().get("status")
+            if status == "success":
+                return
+            if status in ("error", "stopped"):
+                raise SemaphoreError(f"Computer deletion failed (Semaphore task #{task_id}, status={status}).")
+        raise SemaphoreError(f"Computer deletion timed out (Semaphore task #{task_id}).")

@@ -80,6 +80,12 @@ DEFAULTS: dict[str, tuple[str, str]] = {
     # cycle - see app/routers/ad_accounts.py and CLAUDE_CONTEXT.md
     # "Protected Users unlock". Uses Ansible@SAA.SC, not svc-adminconsole.
     "semaphore.unlock_template_id": ("", "int"),
+    # Fallback delete path for computer objects - svc-adminconsole's own
+    # LDAPS delegation (DC;computer) turned out to be blocked by a
+    # domain-wide "Deny Everyone: Delete Child" ACE inherited onto every
+    # real OU (confirmed live 2026-09-07, see CLAUDE_CONTEXT.md "Delete
+    # Computer") - same Ansible@SAA.SC pattern as the unlock fallback.
+    "semaphore.delete_computer_template_id": ("", "int"),
 
     # --- Reporting sync ---
     "sync.frequency_minutes": ("60", "int"),

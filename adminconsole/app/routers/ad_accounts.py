@@ -226,6 +226,83 @@ async def ad_disable(
     )
 
 
+@router.post("/ad/{sam}/delete-computer")
+async def ad_delete_computer(
+    request: Request,
+    sam: str,
+    reason: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("ad.delete_computer")),
+):
+    if not reason.strip():
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "A reason/ticket-ref is required."})
+    if not rate_check(f"delete_computer:{user.username}", max_calls=10, window_seconds=600):
+        raise HTTPException(status_code=429, detail="Too many deletions — try again shortly.")
+    store = await load_settings(db)
+    try:
+        conn = _open_conn(store)
+    except AdNotConfigured:
+        return templates.TemplateResponse(request, "ad/not_configured.html", {"user": user}, status_code=200)
+    try:
+        found = ldap_client.find_user(conn, store.get("ad.base_dn"), sam)
+        if found is None:
+            return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"No computer object found for '{sam}'."})
+        object_classes = [c.lower() for c in found["attributes"].get("objectClass", [])]
+        if "computer" not in object_classes:
+            # Backend re-check even though the UI only shows this button for
+            # computer rows — refuses to let a crafted POST delete a user
+            # account by reusing this route.
+            return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"'{sam}' is not a computer object — refusing to delete."})
+        _check_scope(store, found["dn"], user)
+        try:
+            ldap_client.delete_object(conn, found["dn"])
+            fallback_used = False
+        except ldap_client.LdapError as exc:
+            if "insufficientAccessRights" not in str(exc):
+                raise
+            # Confirmed live 2026-09-07: svc-adminconsole's DC;computer
+            # dsacls grant is blocked domain-wide by a pre-existing
+            # "Deny Everyone: Delete Child" ACE inherited onto every real
+            # OU (see CLAUDE_CONTEXT.md "Delete Computer") — same fallback
+            # shape as the AdminSDHolder-protected unlock path, except this
+            # is the only path that actually works today, not a rare edge
+            # case.
+            conn.unbind()
+            try:
+                await semaphore_client.trigger_delete_computer(store, target_sam=sam)
+            except semaphore_client.SemaphoreError as fallback_exc:
+                await _log_and_alert(
+                    request, user, action="delete_computer_failed", target_id=sam, reason=reason,
+                    detail=f"LDAPS insufficientAccessRights; Semaphore fallback also failed: {fallback_exc}",
+                )
+                return templates.TemplateResponse(
+                    request, "ad/action_result.html",
+                    {"user": user, "ok": False, "message": f"Delete failed via LDAPS (insufficient rights) and via the fallback: {fallback_exc}"},
+                )
+            fallback_used = True
+    except ScopeDenied as exc:
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": exc.message})
+    except ldap_client.LdapError as exc:
+        await _log_and_alert(request, user, action="delete_computer_failed", target_id=sam, reason=reason, detail=str(exc))
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": str(exc)})
+    finally:
+        if conn.bound:
+            conn.unbind()
+
+    await _log_and_alert(
+        request, user, action="delete_computer", target_id=sam, reason=reason,
+        detail="via Semaphore fallback (Ansible@SAA.SC)" if fallback_used else None,
+    )
+    if user.is_breakglass:
+        pending = getattr(request.state, "breakglass_alert_pending", None)
+        if pending:
+            await alert(db, subject="SAA Admin Console: break-glass delete_computer", body=pending)
+    return templates.TemplateResponse(
+        request, "ad/action_result.html",
+        {"user": user, "ok": True, "message": f"Computer object '{sam}' deleted from Active Directory."},
+    )
+
+
 @router.post("/ad/{sam}/laps")
 async def ad_laps_reveal(
     request: Request,

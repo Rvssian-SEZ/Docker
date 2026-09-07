@@ -537,6 +537,69 @@ deploy, every time, for every role whose `DEFAULTS` you expect it to
 reach — the code change alone is not sufficient for an already-running
 instance.
 
+### Delete Computer (2026-09-07)
+Admin + Helpdesk L2 only (`ad.delete_computer`, same L2-not-L1 pattern as
+`ad.create_user`) — a "Delete" button on computer rows in AD search
+results, gated behind a confirmation modal ("Are you sure you want to
+delete `<computername>`?") plus a required reason/ticket-ref, same modal
+convention as every other destructive action here (Disable, etc.).
+`ad_accounts.py`'s route re-classifies the target from freshly-fetched
+`objectClass` before doing anything (never trusts the UI alone to have
+only shown the button for a computer row) and refuses to proceed if it
+isn't actually a computer object — this route can never be used to delete
+a user account even via a crafted POST.
+
+**LDAPS delegation turned out to be a dead end — confirmed live**:
+granted `svc-adminconsole` a `DC;computer` (Delete Child computer objects)
+dsacls ACE at the domain root, same `/I:S` pattern as every other grant
+(`SAA/playbooks/admin_grant_delete_computer_adminconsole.yml`, Semaphore
+task history under the now-deleted temp template). The grant itself
+succeeded (`rc=0`) but is **not actually effective**: a pre-existing
+domain-wide **`Deny Everyone: DELETE CHILD`** ACE (no object-class
+qualifier — applies to every child object type) sits at the domain root
+and is inherited onto every real container checked
+(`admin_check_delete_computer_acl.yml` against `CN=Computers`,
+`OU=Domain Controllers`, `OU=Servers`, and a test OU) — in every case the
+Deny appears *earlier* in the DACL than svc-adminconsole's new inherited
+Allow. Windows evaluates ACEs top-to-bottom and stops at the first
+matching Deny for a requested right, so this blanket Deny wins regardless
+of the new grant. This is presumably a deliberate hardening control
+against accidental mass object deletion — **do not remove or narrow it**
+without first understanding why it's there; that's a much bigger,
+separate decision than this feature.
+
+**Fix**: same shape as the existing AdminSDHolder-protected-unlock
+fallback (see "Protected Users unlock" above) — `ad_accounts.py`'s delete
+route tries the normal LDAPS delete first, and on
+`insufficientAccessRights` falls back to a Semaphore-triggered
+`Remove-ADComputer` running as `Ansible@SAA.SC`
+(`SAA/playbooks/admin_delete_computer.yml`, persistent Semaphore template
+id 36 "Delete Computer (fallback)", `semaphore.delete_computer_template_id`
+in Settings -> Automation). Unlike the unlock fallback (a rare
+AdminSDHolder edge case), **this fallback is the only path that actually
+works today** — the direct LDAPS grant is real but permanently
+ineffective against the current ACL, so every real delete will hit it.
+The fallback playbook re-checks the target is a computer object itself
+before deleting anything, on top of the app's own check.
+`semaphore_client.trigger_delete_computer()` mirrors
+`trigger_protected_unlock()` exactly (fire the task, poll to a terminal
+state, raise `SemaphoreError` on failure/timeout/misconfiguration).
+
+**Not yet exercised against a real computer object** — deliberately did
+not test-delete a real object in this forest to verify the fallback
+end-to-end (no disposable/test computer object was available); the
+`Remove-ADComputer` call and precheck otherwise mirror the already-proven
+`Unlock-ADAccount` fallback exactly (same accounts, same connection
+method). Verify with a real deletion before relying on this without
+double-checking, same honesty convention as every other AD path in this
+file.
+
+Same live-DB gotcha as above applied here too — `ad.delete_computer`
+patched directly into `role_permissions` for role_id 3 (admin) and 2
+(helpdesk_l2) after deploy, and `semaphore.delete_computer_template_id`
+patched directly into `app_settings` (value `36`) since there was no UI
+form submission involved in setting it up this way.
+
 ## Unrelated infra incident on the same host — Sophos WAN/WireGuard outage, resolved 2026-08-20
 Not about this app, but worth keeping here since it's the same host
 (saa-docker) and touches the `wgdashboard` container that lives alongside

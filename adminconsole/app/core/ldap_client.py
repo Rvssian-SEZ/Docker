@@ -253,6 +253,19 @@ def edit_attributes(conn: Connection, dn: str, changes: dict[str, str]) -> None:
         raise LdapError(f"Attribute edit failed: {conn.result.get('description')}")
 
 
+def delete_object(conn: Connection, dn: str) -> None:
+    """Deletes an AD object outright. Currently only wired up for computer
+    accounts (see ad_accounts.py's delete-computer route, which classifies
+    the target via _classify() before ever calling this, so a user account
+    can't reach this path). No soft-delete here — if the AD Recycle Bin
+    isn't enabled on this forest, this is unrecoverable, so the caller is
+    responsible for getting operator confirmation first (see the "are you
+    sure" modal in ad/search.html)."""
+    ok = conn.delete(dn)
+    if not ok:
+        raise LdapError(f"Delete failed: {conn.result.get('description')}")
+
+
 def _escape(value: str) -> str:
     """Minimal RFC 4515 filter escaping for exact-match lookups (unlock/
     reset/enable-disable/attribute-edit/LAPS all resolve one already-known
