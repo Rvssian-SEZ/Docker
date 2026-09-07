@@ -237,44 +237,29 @@ async def ad_move_object(
         # move something from outside their scope into it either.
         _check_scope(store, found["dn"], user)
         _check_scope(store, new_ou_dn.strip(), user)
-        try:
-            new_dn = ldap_client.move_object(conn, found["dn"], new_ou_dn.strip())
-            fallback_used = False
-        except ldap_client.LdapError as exc:
-            if "insufficientAccessRights" not in str(exc):
-                raise
-            # Confirmed live 2026-09-07: a cross-OU move needs Delete
-            # Child rights on the SOURCE OU, blocked domain-wide by the
-            # same "Deny Everyone: Delete Child" ACE that blocks Delete
-            # Computer (see CLAUDE_CONTEXT.md "Move (OU relocation)") —
-            # same fallback shape, and again the only path that actually
-            # works today, not a rare edge case.
-            conn.unbind()
-            try:
-                await semaphore_client.trigger_move_object(store, target_sam=sam, target_ou=new_ou_dn.strip())
-            except semaphore_client.SemaphoreError as fallback_exc:
-                await _log_and_alert(
-                    request, user, action="move_failed", target_id=sam, reason=reason,
-                    detail=f"LDAPS insufficientAccessRights; Semaphore fallback also failed: {fallback_exc}",
-                )
-                return templates.TemplateResponse(
-                    request, "ad/action_result.html",
-                    {"user": user, "ok": False, "message": f"Move failed via LDAPS (insufficient rights) and via the fallback: {fallback_exc}"},
-                )
-            new_dn = f"...,{new_ou_dn.strip()}"
-            fallback_used = True
     except ScopeDenied as exc:
         return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": exc.message})
-    except ldap_client.LdapError as exc:
+    finally:
+        conn.unbind()
+
+    # LDAPS modify_dn is NOT attempted here — confirmed live 2026-09-07
+    # that it always hits insufficientAccessRights (a cross-OU move needs
+    # Delete Child on the source OU, blocked domain-wide by the same
+    # "Deny Everyone: Delete Child" ACE that blocks Delete Computer, see
+    # CLAUDE_CONTEXT.md "Move (OU relocation)"). Alex chose to skip
+    # straight to the known-working path (2026-09-07) rather than pay for
+    # a bind + write attempt that's confirmed to never succeed. The
+    # read-only lookup/scope-check above still goes through LDAPS as
+    # usual — only the actual move itself goes straight to Semaphore.
+    try:
+        await semaphore_client.trigger_move_object(store, target_sam=sam, target_ou=new_ou_dn.strip())
+    except semaphore_client.SemaphoreError as exc:
         await _log_and_alert(request, user, action="move_failed", target_id=sam, reason=reason, detail=str(exc))
         return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": str(exc)})
-    finally:
-        if conn.bound:
-            conn.unbind()
 
     await _log_and_alert(
         request, user, action="move", target_id=sam, reason=reason,
-        detail=f"Moved to {new_ou_dn.strip()} (new DN: {new_dn})" + (" via Semaphore fallback (Ansible@SAA.SC)" if fallback_used else ""),
+        detail=f"Moved to {new_ou_dn.strip()} via Semaphore (Ansible@SAA.SC)",
     )
     if user.is_breakglass:
         pending = getattr(request.state, "breakglass_alert_pending", None)

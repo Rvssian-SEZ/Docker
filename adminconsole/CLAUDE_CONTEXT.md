@@ -626,12 +626,6 @@ AND user rows (not contact/other) in AD search results, opening a modal
 with a destination-OU dropdown (same `ldap_client.list_ous()` tree Create
 User's OU picker uses) plus a required reason/ticket-ref.
 
-- **`ldap_client.move_object()`**: LDAP `modify_dn` (moddn) — the same
-  operation ADUC's "Move..." uses. Keeps the RDN (`CN=...`) unchanged,
-  only relocates the object under the new parent. Only handles a
-  single-valued RDN (every real user/computer object here has one) — same
-  precision level as `escape_dn_value()`, not a general-purpose DN
-  manipulator.
 - **One backend check covers both kinds**: the route checks `"user" in
   object_classes` rather than checking `r.kind` — a computer's objectClass
   chain includes `"user"` (see `_classify()`'s docstring), so this single
@@ -649,20 +643,26 @@ User's OU picker uses) plus a required reason/ticket-ref.
   in this router.
 - **Not rate-limited** — same risk tier as Modify/Enable/Disable (not
   create_user/reset_password/laps_reveal/delete_computer, which are).
-- **Confirmed live 2026-09-07: LDAPS also blocked here, same root cause as
-  Delete Computer.** First real move hit `insufficientAccessRights` — a
-  cross-OU move needs Delete Child rights on the *source* OU (removing the
-  object from its old parent) as well as Create Child on the destination,
-  and Delete Child is blocked domain-wide by the same "Deny Everyone:
-  Delete Child" ACE that blocks Delete Computer (see that section above).
-  **Fixed the same way**: the move route tries LDAPS `modify_dn` first,
-  and on `insufficientAccessRights` falls back to a Semaphore-triggered
+- **LDAPS `modify_dn` is not attempted at all — goes straight to Semaphore
+  (Alex's explicit choice, 2026-09-07).** First real move hit
+  `insufficientAccessRights` — a cross-OU move needs Delete Child rights
+  on the *source* OU (removing the object from its old parent) as well as
+  Create Child on the destination, and Delete Child is blocked
+  domain-wide by the same "Deny Everyone: Delete Child" ACE that blocks
+  Delete Computer (see that section above). Since this is confirmed to
+  *always* fail (not a rare edge case), the move route skips the doomed
+  LDAPS write attempt entirely and goes directly to a Semaphore-triggered
   `Move-ADObject` running as `Ansible@SAA.SC`
   (`SAA/playbooks/admin_move_object.yml`, persistent Semaphore template id
-  37 "Move Object (fallback)", `semaphore.move_object_template_id` in
-  Settings -> Automation). Same as Delete Computer, **this fallback is the
-  only path that actually works today**, not a rare edge case — every real
-  move will hit it. `semaphore_client.trigger_move_object()` mirrors
+  37 "Move Object (fallback)" — name kept as "fallback" even though it's
+  now the only path, to match the sibling Delete Computer template's
+  naming; `semaphore.move_object_template_id` in Settings -> Automation).
+  `ldap_client.move_object()` (the `modify_dn` wrapper) was written first,
+  proven to fail live, and then deleted once Alex asked to skip straight
+  to the known-working path rather than pay for a doomed bind+write
+  attempt every time — the object lookup/classification/OU-scope checks
+  right before this still go through LDAPS as normal (only reads, not
+  blocked). `semaphore_client.trigger_move_object()` mirrors
   `trigger_delete_computer()`/`trigger_protected_unlock()` exactly. Same
   live-DB gotcha as always — `semaphore.move_object_template_id` patched
   directly into `app_settings` (value `37`).
