@@ -600,6 +600,59 @@ patched directly into `role_permissions` for role_id 3 (admin) and 2
 patched directly into `app_settings` (value `36`) since there was no UI
 form submission involved in setting it up this way.
 
+### Confirmed live 2026-09-07: Delete Computer actually works end-to-end
+First real-object test (target: a disposable test computer object,
+`000-111-222$`) hit `insufficientAccessRights` on the LDAPS attempt
+exactly as predicted above, fell back to the Semaphore path, and
+**succeeded** — confirmed via the audit log (`delete_computer`, detail
+"via Semaphore fallback (Ansible@SAA.SC)"). A near-simultaneous second
+click on the same Delete button ran the whole flow again independently;
+its own LDAPS attempt also correctly hit insufficientAccessRights, but by
+the time *its* Semaphore fallback task got around to the precheck, the
+object was already gone (deleted by the first request 24s earlier) — so
+it correctly failed with "not found" and the user saw that failure
+message despite the delete having actually succeeded. Root cause: nothing
+disabled the button after the first click. **Fixed**: every action form
+on `ad/search.html` now disables its submit button (and shows
+"Working...") on submit — see the `<script>` block at the bottom of that
+file. Not a server-side idempotency fix (two independent requests still
+race exactly as before if someone opens two tabs) — just stops the literal
+double-click case that actually happened.
+
+### Move (OU relocation) (2026-09-07)
+Admin + Helpdesk L2 only (`ad.move_object`, same L2-not-L1 pattern as
+`ad.create_user`/`ad.delete_computer`) — a "Move" button on both computer
+AND user rows (not contact/other) in AD search results, opening a modal
+with a destination-OU dropdown (same `ldap_client.list_ous()` tree Create
+User's OU picker uses) plus a required reason/ticket-ref.
+
+- **`ldap_client.move_object()`**: LDAP `modify_dn` (moddn) — the same
+  operation ADUC's "Move..." uses. Keeps the RDN (`CN=...`) unchanged,
+  only relocates the object under the new parent. Only handles a
+  single-valued RDN (every real user/computer object here has one) — same
+  precision level as `escape_dn_value()`, not a general-purpose DN
+  manipulator.
+- **One backend check covers both kinds**: the route checks `"user" in
+  object_classes` rather than checking `r.kind` — a computer's objectClass
+  chain includes `"user"` (see `_classify()`'s docstring), so this single
+  check naturally allows both users and computers while still refusing
+  contacts/other, without needing two branches.
+- **OU-scoped on BOTH ends**, not just one — `_check_scope()` is called
+  against the object's *current* DN and again against the *destination*
+  OU. A scoped Helpdesk L2 can't use Move to relocate something out of
+  their delegated OUs to escape oversight, or pull something from outside
+  their scope into it. Admin/break-glass unscoped as usual.
+- **`ous` is only fetched on the search page when there's something to
+  move AND the caller has `ad.move_object`** (`ad_search_page` in
+  `ad_accounts.py`) — avoids an extra LDAP round trip for roles that can't
+  use it, same least-privilege-shaped efficiency choice as everywhere else
+  in this router.
+- **Not rate-limited** — same risk tier as Modify/Enable/Disable (not
+  create_user/reset_password/laps_reveal/delete_computer, which are).
+- **Not yet exercised against a real object** — same honesty convention as
+  every other AD path in this file; verify with a real move before relying
+  on it without double-checking.
+
 ## Unrelated infra incident on the same host — Sophos WAN/WireGuard outage, resolved 2026-08-20
 Not about this app, but worth keeping here since it's the same host
 (saa-docker) and touches the `wgdashboard` container that lives alongside
