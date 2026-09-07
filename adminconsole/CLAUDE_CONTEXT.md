@@ -667,6 +667,77 @@ User's OU picker uses) plus a required reason/ticket-ref.
   live-DB gotcha as always — `semaphore.move_object_template_id` patched
   directly into `app_settings` (value `37`).
 
+### Manage Groups (2026-09-07)
+Admin + Helpdesk L2 only (`ad.manage_groups`) — a "Groups" nav tab below
+Create User: search/list groups, view a group's members, add/remove
+members, create a new group, rename a group. **Explicitly excludes group
+deletion** and **explicitly has no hard-coded privileged-group blocklist**
+(Domain Admins etc. are manageable like any other group) — both were
+Alex's deliberate choices (2026-09-07), not oversights; see the
+AskUserQuestion answers in the session transcript if the tradeoff ever
+needs revisiting. `ad.manage_groups` is a rename of the old
+`ad.group_membership` key, which was reserved/unused in v1 per the
+original spec's explicit exclusion of group membership — Alex asked to
+build it now, so the same slot got activated and renamed to match what it
+actually covers (search/create/rename too, not just membership) rather
+than adding a second permission key alongside it.
+
+- **`ldap_client.search_groups()`/`get_group()`**: same substring-search
+  and single-lookup shape as `search_accounts()`/`find_user()`, scoped to
+  `objectClass=group`.
+- **`resolve_members()`**: one batched LDAP search (a single OR filter of
+  `distinguishedName` equalities for every member DN) rather than one
+  round trip per member. Capped at `MEMBER_DISPLAY_LIMIT = 200` — a group
+  like "Domain Users" can have thousands of members, and resolving/
+  rendering all of them would be slow and not very useful in a UI; the
+  group's own `member` attribute is untouched, only what one page load
+  shows is capped. `group_detail.html` shows a "showing first N of M"
+  banner when truncated.
+- **One scope check, not two** (unlike Move): membership changes modify
+  the *group's own* `member` attribute rather than relocating anything, so
+  `_check_scope()` is only checked against the group's DN — the member
+  being added/removed is not scope-checked, consistent with how every
+  other single-target action here works (reset/modify/enable-disable).
+- **Confirmed live 2026-09-07 — mixed delegation results, same domain-root
+  `/I:S` grant round for all of it**
+  (`SAA/playbooks/admin_grant_manage_groups_adminconsole.yml`: `CC;group`,
+  `WP;member;group`, `WP;sAMAccountName;group`, `WP;displayName;group`,
+  `WP;description;group`, all rc=0):
+  - **Create Group, Add Member, Remove Member all work via LDAPS
+    directly** — tested against a real disposable group
+    (`zzz-test-manage-groups`) end-to-end: `create_group()`,
+    `add_group_member()` (added `asedgwick`), `resolve_members()`
+    (correctly resolved it), `remove_group_member()` — all succeeded with
+    no fallback needed. Makes sense in hindsight: none of these need
+    Create/Delete Child rights on a *container* the way Delete
+    Computer/Move do — Create Group only needs Create Child on the OU
+    being created *into* (not blocked, only Delete Child is), and
+    add/remove-member is a plain attribute write on the group object
+    itself, same risk tier as Modify's telephone/title/etc. writes (which
+    already worked).
+  - **Rename hit `insufficientAccessRights` anyway** — a same-parent
+    `modify_dn` apparently needs a right beyond `WP;sAMAccountName;group`/
+    `WP;displayName;group` (not dug into further — see the "goes straight
+    to Semaphore" pattern below instead of chasing the exact missing ACE).
+    Same fix as Move (Alex's now-established preference, 2026-09-07): skip
+    the LDAPS attempt entirely and go straight to a Semaphore-triggered
+    `Rename-ADObject` + `Set-ADGroup` running as `Ansible@SAA.SC`
+    (`SAA/playbooks/admin_rename_group.yml`, persistent Semaphore template
+    id 39 "Rename Group (fallback)",
+    `semaphore.rename_group_template_id` in Settings -> Automation).
+    `ldap_client.rename_group()` was written, proven to fail live, then
+    deleted — same pattern as `move_object()`. Confirmed live end-to-end
+    via the Semaphore template directly (task #430, `STATUS=renamed`,
+    `failed=0`) against the same disposable test group.
+  - Test group cleaned up afterward via a one-off
+    `admin_cleanup_test_group.yml` run (`Remove-ADGroup`, since the app
+    itself has no delete-group capability by design) — temp template
+    deleted, task history stays in Semaphore for the audit trail per this
+    project's usual convention.
+- Same live-DB gotcha as always — `ad.manage_groups` patched directly into
+  `role_permissions` for role_id 3 (admin) and 2 (helpdesk_l2), and
+  `semaphore.rename_group_template_id` into `app_settings` (value `39`).
+
 ## Unrelated infra incident on the same host — Sophos WAN/WireGuard outage, resolved 2026-08-20
 Not about this app, but worth keeping here since it's the same host
 (saa-docker) and touches the `wgdashboard` container that lives alongside
