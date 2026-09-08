@@ -393,6 +393,37 @@ async def ad_create_group(
     )
 
 
+@router.get("/ad/groups/member-suggest")
+async def ad_group_member_suggest(
+    q: str,
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("ad.manage_groups")),
+):
+    """Live autocomplete for the Add Member modal's username field —
+    reuses search_accounts() (the same substring search AD Accounts uses)
+    rather than a separate lookup shape. Gated on ad.manage_groups since
+    that's the only place this is used from, same convention as the other
+    small suggest/check endpoints in this router."""
+    q = q.strip()
+    if not q:
+        return JSONResponse({"candidates": []})
+    store = await load_settings(db)
+    try:
+        conn = _open_conn(store)
+    except AdNotConfigured:
+        return JSONResponse({"candidates": []})
+    try:
+        results = ldap_client.search_accounts(conn, store.get("ad.base_dn"), q, limit=8)
+    finally:
+        conn.unbind()
+    candidates = [
+        {"sam": r["sam"], "display_name": r["display_name"], "kind": r["kind"]}
+        for r in results
+        if r["kind"] in ("user", "computer")
+    ]
+    return JSONResponse({"candidates": candidates})
+
+
 @router.get("/ad/groups/{sam}", response_class=HTMLResponse)
 async def ad_group_detail(
     request: Request,
