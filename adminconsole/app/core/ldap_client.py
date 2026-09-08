@@ -285,7 +285,7 @@ GROUP_TYPES: dict[str, int] = {
 # slow and mostly useless in a UI. Caps what group_detail shows/resolves;
 # the group's own `member` attribute is untouched, this only limits what
 # one page load renders.
-MEMBER_DISPLAY_LIMIT = 200
+MEMBER_DISPLAY_LIMIT = 1000
 
 
 def search_groups(conn: Connection, base_dn: str, query: str, *, limit: int = 50) -> list[dict]:
