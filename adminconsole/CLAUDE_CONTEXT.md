@@ -738,6 +738,29 @@ than adding a second permission key alongside it.
   `role_permissions` for role_id 3 (admin) and 2 (helpdesk_l2), and
   `semaphore.rename_group_template_id` into `app_settings` (value `39`).
 
+**Create Group: displayName/mail/proxyAddresses (2026-09-08).** Same
+convention as Create User's proxyAddresses — `SMTP:{name}@saa.sc`
+(primary) + `smtp:{name}@scaasey.mail.onmicrosoft.com` (secondary), plus
+`mail={name}@saa.sc` and `displayName` defaulting to the typed group name.
+All four fields are auto-filled client-side as the admin types the group
+name (`create_group.html`'s `<script>`, same "auto-fill until manually
+edited" pattern as Create User's logon-name field) but are plain visible/
+editable text inputs, not hidden — Alex explicitly asked for them visible
+and editable. `groupType` default changed to Distribution (was Security)
+per Alex's request the same day. Needed a **second** delegation grant
+beyond the original Manage Groups round
+(`SAA/playbooks/admin_grant_group_mail_proxy_adminconsole.yml`:
+`WP;mail;group`, `WP;proxyAddresses;group`, both rc=0) — the existing
+`WP;mail;user`/`WP;proxyAddresses;user` grants from Create User don't
+cover the `group` object class at all (write-property ACEs are strictly
+per object class). **Confirmed live** end-to-end against a real disposable
+group (`zzz-test-group-proxy`) — all three attributes plus
+`displayName`/`mail` verified present via a direct LDAP read afterward,
+no fallback needed (this is a plain attribute write on the group object,
+same risk tier as the membership/create writes that already worked via
+LDAPS directly). Test group cleaned up the same way as before
+(`admin_cleanup_test_group.yml`).
+
 ## Unrelated infra incident on the same host — Sophos WAN/WireGuard outage, resolved 2026-08-20
 Not about this app, but worth keeping here since it's the same host
 (saa-docker) and touches the `wgdashboard` container that lives alongside
