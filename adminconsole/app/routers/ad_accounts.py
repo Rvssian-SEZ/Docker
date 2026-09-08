@@ -331,6 +331,10 @@ async def ad_create_group(
     group_scope: str = Form(...),
     group_type: str = Form(...),
     description: str = Form(""),
+    display_name: str = Form(""),
+    mail: str = Form(""),
+    proxy_smtp_primary: str = Form(""),
+    proxy_smtp_secondary: str = Form(""),
     db: AsyncSession = Depends(get_db),
     user: CurrentUser = Depends(require("ad.manage_groups")),
 ):
@@ -354,12 +358,21 @@ async def ad_create_group(
         _check_scope(store, ou_dn, user)
         if ldap_client.get_group(conn, store.get("ad.base_dn"), name) is not None:
             return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"A group named '{name}' already exists.", "back_url": "/ad/groups", "back_label": "Back to Groups"})
-        attrs: dict[str, str | int] = {
+        attrs: dict[str, str | int | list[str]] = {
             "sAMAccountName": name,
             "groupType": ldap_client.GROUP_TYPES[type_key],
+            "displayName": display_name.strip() or name,
         }
         if description.strip():
             attrs["description"] = description.strip()
+        if mail.strip():
+            attrs["mail"] = mail.strip()
+        # Primary (uppercase SMTP) + secondary (lowercase smtp) proxy
+        # addresses, same convention as Create User — auto-populated in
+        # the UI from the group name but editable there before submit.
+        proxy_addresses = [p.strip() for p in (proxy_smtp_primary, proxy_smtp_secondary) if p.strip()]
+        if proxy_addresses:
+            attrs["proxyAddresses"] = proxy_addresses
         ldap_client.create_group(conn, dn, attrs)
     except ScopeDenied as exc:
         return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": exc.message, "back_url": "/ad/groups", "back_label": "Back to Groups"})
