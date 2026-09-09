@@ -796,6 +796,27 @@ available to all three roles including Helpdesk L1.
   including Domain Admins/Enterprise Admins/Schema Admins) before this was
   called done — every group resolved correctly.
 
+**Add/Remove membership from this view (2026-09-09).** The view stays
+open to everyone via `ad.search`, but "Add to Group"/"Remove" now appear
+too, gated on `ad.manage_groups` (checked both server-side on the new
+routes and hidden client-side in the template). `POST
+/ad/{sam}/groups/add` and `POST /ad/{sam}/groups/remove` are the same
+`add_group_member()`/`remove_group_member()` calls group_detail.html's
+Add Member/Remove already use — just reached from the account side
+(account fixed, group chosen) instead of the group side (group fixed,
+account chosen). Logged under the identical `add_group_member`/
+`remove_group_member` audit actions (`target_type="ad_group"`,
+`target_id`=the group) regardless of which page triggered the change, so
+there's one consistent audit trail either way. `GET
+/ad/groups/name-suggest` backs a live group-name autocomplete on the "Add
+to Group" field, mirroring `member-suggest`'s shape but searching groups
+instead of accounts — registered before `/ad/groups/{sam}` for the same
+routing reason. `_check_scope()` is checked against the *group's* DN only
+(not the account), same convention as every other group-membership route.
+**Confirmed live** end-to-end (add -> shows up via `resolve_groups_by_dn`
+-> remove -> confirmed gone) against a real disposable test group
+(`zzz-test-account-groups`, cleaned up afterward).
+
 ## Unrelated infra incident on the same host — Sophos WAN/WireGuard outage, resolved 2026-08-20
 Not about this app, but worth keeping here since it's the same host
 (saa-docker) and touches the `wgdashboard` container that lives alongside
