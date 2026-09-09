@@ -29,8 +29,13 @@ defmodule Vdlarr.Pages.JobTableLive do
         <:col :let={task} label="Status">
           {job_state_to_label(task.job.state)}
         </:col>
-        <:col :let={task} label="Attempt No.">
-          {task.job.attempt}
+        <:col :let={task} label="Progress">
+          <.download_progress_bar
+            :if={download_task?(task)}
+            progress={@progress[task.media_item_id]}
+            status_line={@status_lines[task.media_item_id]}
+          />
+          <span :if={!download_task?(task)}>Attempt {task.job.attempt}</span>
         </:col>
         <:col :let={task} label="Started At">
           {format_datetime(task.job.attempted_at)}
@@ -42,12 +47,36 @@ defmodule Vdlarr.Pages.JobTableLive do
 
   def mount(_params, _session, socket) do
     VdlarrWeb.Endpoint.subscribe("job:state")
+    VdlarrWeb.Endpoint.subscribe("downloads:progress")
+    VdlarrWeb.Endpoint.subscribe("downloads:status")
 
-    {:ok, assign(socket, tasks: get_tasks())}
+    {:ok, assign(socket, tasks: get_tasks(), progress: %{}, status_lines: %{})}
   end
 
-  def handle_info(%{topic: "job:state", event: "change"}, socket) do
-    {:noreply, assign(socket, tasks: get_tasks())}
+  def handle_info(%{topic: "job:state", event: "change"}, %{assigns: assigns} = socket) do
+    tasks = get_tasks()
+    visible_ids = MapSet.new(tasks, & &1.media_item_id)
+
+    pruned_progress = Map.filter(assigns.progress, fn {id, _} -> MapSet.member?(visible_ids, id) end)
+    pruned_status_lines = Map.filter(assigns.status_lines, fn {id, _} -> MapSet.member?(visible_ids, id) end)
+
+    {:noreply, assign(socket, tasks: tasks, progress: pruned_progress, status_lines: pruned_status_lines)}
+  end
+
+  def handle_info(%{topic: "downloads:progress", event: "progress", payload: payload}, socket) do
+    progress = Map.put(socket.assigns.progress, payload.media_item_id, payload.progress)
+
+    {:noreply, assign(socket, :progress, progress)}
+  end
+
+  def handle_info(%{topic: "downloads:status", event: "status", payload: payload}, socket) do
+    status_lines = Map.put(socket.assigns.status_lines, payload.media_item_id, payload.line)
+
+    {:noreply, assign(socket, :status_lines, status_lines)}
+  end
+
+  defp download_task?(%Task{job: %Oban.Job{worker: worker}}) do
+    String.ends_with?(worker, "MediaDownloadWorker")
   end
 
   # Includes not just the currently-executing job but everything still waiting to
