@@ -761,6 +761,41 @@ same risk tier as the membership/create writes that already worked via
 LDAPS directly). Test group cleaned up the same way as before
 (`admin_cleanup_test_group.yml`).
 
+**Add Member autocomplete (2026-09-08).** `GET /ad/groups/member-suggest`
+reuses `search_accounts()` (same substring search as AD Accounts) to back
+a live, debounced dropdown on the Add Member modal's username field —
+registered before `/ad/groups/{sam}` so it doesn't get swallowed by that
+path-param route. Gated on `ad.manage_groups` since it's only used from
+there.
+
+**Member display cap raised 200 -> 1000 (2026-09-08)** — Alex's request,
+`MEMBER_DISPLAY_LIMIT` in `ldap_client.py`. Still a display-only cap, not
+touching what's actually in the group's `member` attribute.
+
+### View group membership for a user (2026-09-09)
+A "Groups" button on **user** rows only (not computer, per what was
+literally asked) in AD Accounts search results — `GET /ad/{sam}/groups`,
+gated on `ad.search` (not `ad.manage_groups`) since this is purely
+read-only/informational, same tier as the search page itself and
+available to all three roles including Helpdesk L1.
+
+- **`ldap_client.resolve_groups_by_dn()`**: the reverse direction of
+  `resolve_members()` — reads the account's `memberOf` back-link
+  attribute (already present in `find_user()`'s `ALL_ATTRIBUTES` fetch, no
+  new read needed there) and resolves those group DNs to name/sam/
+  description via the same one-shot batched-OR-filter shape. No display
+  cap here (unlike `resolve_members()`) — an account being in hundreds of
+  groups is not a realistic case the way a group having thousands of
+  members is.
+- **Primary group (`primaryGroupID`, almost always "Domain Users") is
+  deliberately NOT shown** — that's a RID that has to be combined with the
+  domain SID to resolve to an actual group, a different mechanism from the
+  `memberOf` back-link this reads, and out of scope for what was asked.
+  Noted on the page itself so it doesn't look like an omission.
+- **Confirmed live** against a real account (`asedgwick`, 21 groups
+  including Domain Admins/Enterprise Admins/Schema Admins) before this was
+  called done — every group resolved correctly.
+
 ## Unrelated infra incident on the same host — Sophos WAN/WireGuard outage, resolved 2026-08-20
 Not about this app, but worth keeping here since it's the same host
 (saa-docker) and touches the `wgdashboard` container that lives alongside
