@@ -424,6 +424,32 @@ async def ad_group_member_suggest(
     return JSONResponse({"candidates": candidates})
 
 
+@router.get("/ad/groups/name-suggest")
+async def ad_group_name_suggest(
+    q: str,
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("ad.manage_groups")),
+):
+    """Live autocomplete for the account-groups view's "Add to group"
+    field — reuses search_groups(), the mirror of member-suggest above
+    (which searches accounts) but for groups. Registered before
+    /ad/groups/{sam} for the same reason member-suggest is."""
+    q = q.strip()
+    if not q:
+        return JSONResponse({"candidates": []})
+    store = await load_settings(db)
+    try:
+        conn = _open_conn(store)
+    except AdNotConfigured:
+        return JSONResponse({"candidates": []})
+    try:
+        results = ldap_client.search_groups(conn, store.get("ad.base_dn"), q, limit=8)
+    finally:
+        conn.unbind()
+    candidates = [{"sam": r["sam"], "name": r["name"], "description": r["description"]} for r in results]
+    return JSONResponse({"candidates": candidates})
+
+
 @router.get("/ad/groups/{sam}", response_class=HTMLResponse)
 async def ad_group_detail(
     request: Request,
@@ -617,6 +643,100 @@ async def ad_account_groups(
     return templates.TemplateResponse(
         request, "ad/account_groups.html", {"user": user, "sam": sam, "groups": groups},
     )
+
+
+@router.post("/ad/{sam}/groups/add")
+async def ad_account_add_to_group(
+    request: Request,
+    sam: str,
+    reason: str = Form(...),
+    group_sam: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("ad.manage_groups")),
+):
+    """Adds THIS account to a group, from the account-groups view —
+    same underlying add_group_member() as the group-detail page's Add
+    Member, just reached from the opposite direction (account first,
+    group second). Logged identically (target_type="ad_group",
+    target_id=the group) so both surfaces feed one consistent audit
+    trail regardless of which page triggered the change."""
+    back = {"back_url": f"/ad/{sam}/groups", "back_label": f"Back to {sam}'s groups"}
+    if not reason.strip():
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "A reason/ticket-ref is required.", **back})
+    group_sam = group_sam.strip()
+    if not group_sam:
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "A group to add to is required.", **back})
+    store = await load_settings(db)
+    try:
+        conn = _open_conn(store)
+    except AdNotConfigured:
+        return templates.TemplateResponse(request, "ad/not_configured.html", {"user": user}, status_code=200)
+    try:
+        found = ldap_client.find_user(conn, store.get("ad.base_dn"), sam)
+        if found is None:
+            return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"No account found for '{sam}'."})
+        group = ldap_client.get_group(conn, store.get("ad.base_dn"), group_sam)
+        if group is None:
+            return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"No group found for '{group_sam}'.", **back})
+        _check_scope(store, group["dn"], user)
+        ldap_client.add_group_member(conn, group["dn"], found["dn"])
+    except ScopeDenied as exc:
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": exc.message, **back})
+    except ldap_client.LdapError as exc:
+        await _log_and_alert(request, user, action="add_group_member_failed", target_id=group_sam, reason=reason, detail=f"member={sam}: {exc}", target_type="ad_group")
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": str(exc), **back})
+    finally:
+        conn.unbind()
+
+    await _log_and_alert(request, user, action="add_group_member", target_id=group_sam, reason=reason, detail=f"Added {sam}", target_type="ad_group")
+    if user.is_breakglass:
+        pending = getattr(request.state, "breakglass_alert_pending", None)
+        if pending:
+            await alert(db, subject="SAA Admin Console: break-glass add_group_member", body=pending)
+    return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": True, "message": f"'{sam}' added to {group_sam}.", **back})
+
+
+@router.post("/ad/{sam}/groups/remove")
+async def ad_account_remove_from_group(
+    request: Request,
+    sam: str,
+    reason: str = Form(...),
+    group_dn: str = Form(...),
+    group_label: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("ad.manage_groups")),
+):
+    """Removes THIS account from a group — same underlying
+    remove_group_member() as group-detail's Remove, reached from the
+    account side."""
+    back = {"back_url": f"/ad/{sam}/groups", "back_label": f"Back to {sam}'s groups"}
+    if not reason.strip():
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "A reason/ticket-ref is required.", **back})
+    store = await load_settings(db)
+    try:
+        conn = _open_conn(store)
+    except AdNotConfigured:
+        return templates.TemplateResponse(request, "ad/not_configured.html", {"user": user}, status_code=200)
+    try:
+        found = ldap_client.find_user(conn, store.get("ad.base_dn"), sam)
+        if found is None:
+            return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"No account found for '{sam}'."})
+        _check_scope(store, group_dn, user)
+        ldap_client.remove_group_member(conn, group_dn, found["dn"])
+    except ScopeDenied as exc:
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": exc.message, **back})
+    except ldap_client.LdapError as exc:
+        await _log_and_alert(request, user, action="remove_group_member_failed", target_id=group_label or group_dn, reason=reason, detail=f"member={sam}: {exc}", target_type="ad_group")
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": str(exc), **back})
+    finally:
+        conn.unbind()
+
+    await _log_and_alert(request, user, action="remove_group_member", target_id=group_label or group_dn, reason=reason, detail=f"Removed {sam}", target_type="ad_group")
+    if user.is_breakglass:
+        pending = getattr(request.state, "breakglass_alert_pending", None)
+        if pending:
+            await alert(db, subject="SAA Admin Console: break-glass remove_group_member", body=pending)
+    return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": True, "message": f"'{sam}' removed from {group_label or group_dn}.", **back})
 
 
 @router.get("/ad/new-password")

@@ -1,23 +1,117 @@
 {% extends "base.html" %}
 {% block content %}
-<h1 class="h3 mb-4"><i class="bi bi-people me-2"></i>Group membership: {{ sam }}</h1>
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h1 class="h3 mb-0"><i class="bi bi-people me-2"></i>Group membership: {{ sam }}</h1>
+  {% if user.can('ad.manage_groups') %}
+  <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#addToGroupModal">Add to Group</button>
+  {% endif %}
+</div>
 
 <div class="table-responsive">
 <table class="table table-sm align-middle">
-  <thead><tr><th>Name</th><th>Username</th><th>Description</th></tr></thead>
+  <thead><tr><th>Name</th><th>Username</th><th>Description</th><th></th></tr></thead>
   <tbody>
   {% for g in groups %}
     <tr>
       <td>{{ g.name or '—' }}</td>
       <td>{{ g.sam }}</td>
       <td>{{ g.description or '—' }}</td>
+      <td class="text-end">
+        {% if user.can('ad.manage_groups') %}
+        <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#removeGroupModal{{ loop.index }}">Remove</button>
+        {% endif %}
+      </td>
     </tr>
   {% else %}
-    <tr><td colspan="3" class="text-secondary">Not a member of any group (aside from its primary group, usually "Domain Users" — not shown here).</td></tr>
+    <tr><td colspan="4" class="text-secondary">Not a member of any group (aside from its primary group, usually "Domain Users" — not shown here).</td></tr>
   {% endfor %}
   </tbody>
 </table>
 </div>
 
 <a href="/ad" class="btn btn-sm btn-outline-light"><i class="bi bi-arrow-left me-1"></i>Back to AD Accounts</a>
+
+{% if user.can('ad.manage_groups') %}
+<div class="modal fade" id="addToGroupModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/ad/{{ sam }}/groups/add">
+    <div class="modal-header"><h5 class="modal-title">Add {{ sam }} to a group</h5></div>
+    <div class="modal-body">
+      <div class="mb-2 position-relative">
+        <label class="form-label">Group name (sAMAccountName)</label>
+        <input name="group_sam" id="groupSam" class="form-control" required autofocus autocomplete="off">
+        <div id="groupSuggestions" class="list-group position-absolute w-100" style="z-index: 1060;"></div>
+      </div>
+      <label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required>
+    </div>
+    <div class="modal-footer"><button class="btn btn-success">Add</button></div>
+  </form>
+</div></div></div>
+
+{% for g in groups %}
+<div class="modal fade" id="removeGroupModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/ad/{{ sam }}/groups/remove">
+    <input type="hidden" name="group_dn" value="{{ g.dn }}">
+    <input type="hidden" name="group_label" value="{{ g.sam }}">
+    <div class="modal-header"><h5 class="modal-title text-danger">Remove from group</h5></div>
+    <div class="modal-body">
+      <p>Are you sure you want to remove <strong>{{ sam }}</strong> from <strong>{{ g.name }}</strong>?</p>
+      <label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required>
+    </div>
+    <div class="modal-footer"><button class="btn btn-danger">Remove</button></div>
+  </form>
+</div></div></div>
+{% endfor %}
+
+<script>
+(function () {
+  const input = document.getElementById("groupSam");
+  const suggestions = document.getElementById("groupSuggestions");
+  let debounceTimer = null;
+  let suppressNext = false;
+
+  input.addEventListener("input", function () {
+    if (suppressNext) { suppressNext = false; return; }
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(fetchSuggestions, 250);
+  });
+
+  input.addEventListener("blur", function () {
+    setTimeout(function () { suggestions.innerHTML = ""; }, 150);
+  });
+
+  function fetchSuggestions() {
+    const q = input.value.trim();
+    if (!q) { suggestions.innerHTML = ""; return; }
+    fetch("/ad/groups/name-suggest?q=" + encodeURIComponent(q))
+      .then(r => r.json())
+      .then(data => {
+        const candidates = data.candidates || [];
+        if (!candidates.length) { suggestions.innerHTML = ""; return; }
+        suggestions.innerHTML = candidates.map(c =>
+          `<button type="button" class="list-group-item list-group-item-action py-1 px-2 suggestion-item" data-sam="${c.sam}">` +
+          `<strong>${c.sam}</strong>${c.name && c.name !== c.sam ? " — " + c.name : ""}</button>`
+        ).join("");
+        suggestions.querySelectorAll(".suggestion-item").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            suppressNext = true;
+            input.value = btn.dataset.sam;
+            suggestions.innerHTML = "";
+          });
+        });
+      })
+      .catch(() => { suggestions.innerHTML = ""; });
+  }
+})();
+
+document.querySelectorAll(".modal form").forEach(function (form) {
+  form.addEventListener("submit", function () {
+    var btn = form.querySelector("button[type=submit], .modal-footer button");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Working...";
+    }
+  });
+});
+</script>
+{% endif %}
 {% endblock %}
