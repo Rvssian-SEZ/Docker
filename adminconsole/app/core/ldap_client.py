@@ -373,6 +373,42 @@ def resolve_members(conn: Connection, base_dn: str, member_dns: list[str]) -> tu
     return resolved, total
 
 
+def resolve_groups_by_dn(conn: Connection, base_dn: str, group_dns: list[str]) -> list[dict]:
+    """Resolves a list of group DNs (as found in a user/computer's
+    `memberOf`) to display info — the reverse direction of
+    resolve_members(). Same one-shot batched-OR-filter shape; no display
+    cap here since memberOf lists are realistically small (an account
+    being in hundreds of groups is not a case this needs to optimize for
+    the way a group having thousands of members is).
+
+    Deliberately does NOT include the account's *primary* group (almost
+    always "Domain Users") — that's tracked via primaryGroupID (a RID
+    that has to be combined with the domain SID to resolve), a separate
+    mechanism from the memberOf back-link this reads, and out of scope
+    for what was asked."""
+    if not group_dns:
+        return []
+    filt = "(|" + "".join(f"(distinguishedName={_escape(dn)})" for dn in group_dns) + ")"
+    conn.search(
+        search_base=base_dn,
+        search_filter=filt,
+        search_scope=SUBTREE,
+        attributes=["cn", "sAMAccountName", "description"],
+    )
+    by_dn = {}
+    for entry in conn.entries:
+        attrs = entry.entry_attributes_as_dict
+        by_dn[entry.entry_dn] = {
+            "dn": entry.entry_dn,
+            "sam": (attrs.get("sAMAccountName") or [""])[0],
+            "name": (attrs.get("cn") or [""])[0],
+            "description": (attrs.get("description") or [""])[0],
+        }
+    resolved = [by_dn.get(dn, {"dn": dn, "sam": dn, "name": dn, "description": ""}) for dn in group_dns]
+    resolved.sort(key=lambda g: g["name"].lower())
+    return resolved
+
+
 def add_group_member(conn: Connection, group_dn: str, member_dn: str) -> None:
     ok = conn.modify(group_dn, {"member": [(MODIFY_ADD, [member_dn])]})
     if not ok:

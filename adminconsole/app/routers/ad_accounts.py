@@ -587,6 +587,38 @@ async def ad_group_rename(
     )
 
 
+@router.get("/ad/{sam}/groups", response_class=HTMLResponse)
+async def ad_account_groups(
+    request: Request,
+    sam: str,
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("ad.search")),
+):
+    """Read-only: what groups is this account a member of — gated on
+    ad.search (same tier as the search page itself, available to all
+    three roles) rather than ad.manage_groups, since that permission
+    gates group WRITES and this is purely informational, same as the
+    search results it's launched from."""
+    store = await load_settings(db)
+    if not (store.get("ad.ldaps_url") and store.get("ad.bind_dn") and store.get("ad.base_dn")):
+        return templates.TemplateResponse(request, "ad/not_configured.html", {"user": user}, status_code=200)
+    try:
+        conn = _open_conn(store)
+    except AdNotConfigured:
+        return templates.TemplateResponse(request, "ad/not_configured.html", {"user": user}, status_code=200)
+    try:
+        found = ldap_client.find_user(conn, store.get("ad.base_dn"), sam)
+        if found is None:
+            return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"No account found for '{sam}'."})
+        group_dns = found["attributes"].get("memberOf", [])
+        groups = ldap_client.resolve_groups_by_dn(conn, store.get("ad.base_dn"), group_dns)
+    finally:
+        conn.unbind()
+    return templates.TemplateResponse(
+        request, "ad/account_groups.html", {"user": user, "sam": sam, "groups": groups},
+    )
+
+
 @router.get("/ad/new-password")
 async def ad_new_password_suggestion(user: CurrentUser = Depends(require("ad.reset_password"))):
     """Shared with the Reset Password modal's regenerate button — gated on

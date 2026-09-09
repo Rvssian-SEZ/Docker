@@ -52,6 +52,7 @@
           {% if user.can('ad.move_object') %}
           <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#moveModal{{ loop.index }}">Move</button>
           {% endif %}
+          <a href="/ad/{{ r.sam }}/groups" class="btn btn-sm btn-outline-light">Groups</a>
         {% else %}
           <span class="text-secondary small">No actions (not a user account)</span>
         {% endif %}

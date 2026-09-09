@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-4"><i class="bi bi-people me-2"></i>Group membership: {{ sam }}</h1>
+
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <thead><tr><th>Name</th><th>Username</th><th>Description</th></tr></thead>
+  <tbody>
+  {% for g in groups %}
+    <tr>
+      <td>{{ g.name or '—' }}</td>
+      <td>{{ g.sam }}</td>
+      <td>{{ g.description or '—' }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="3" class="text-secondary">Not a member of any group (aside from its primary group, usually "Domain Users" — not shown here).</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<a href="/ad" class="btn btn-sm btn-outline-light"><i class="bi bi-arrow-left me-1"></i>Back to AD Accounts</a>
+{% endblock %}
