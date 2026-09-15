@@ -817,6 +817,162 @@ routing reason. `_check_scope()` is checked against the *group's* DN only
 -> remove -> confirmed gone) against a real disposable test group
 (`zzz-test-account-groups`, cleaned up afterward).
 
+## Offboarding (2026-09-15)
+New top-level tab (`ad.offboard`, Admin + Helpdesk L2 — same tier as
+Create User/Delete Computer/Move/Manage Groups) implementing the
+offboarding process worked out with Alex over several turns (see session
+transcript for the full 12-step process this only partially automates —
+steps 5/8 in particular hit a real Entra/Exchange app-registration
+sync-lag wall that was still unresolved as of this write-up, see
+"Offboarding — Exchange Online automation, blocked on Entra sync lag"
+below).
+
+**What "Start Offboarding" actually does** (`POST /offboarding/start`,
+`app/routers/offboarding.py`) — steps 1/2/4 of the process, bundled into
+one action:
+- **Step 1 (disable)** — `ldap_client.set_enabled(..., enabled=False)`.
+- **Step 2 (reset password)** — a random `user_provisioning.generate_password()`
+  value nobody is ever shown or logged (the account is disabled — nothing
+  depends on this being usable, it exists purely to invalidate whatever
+  the departing user knew).
+- **Step 4 (remove every group membership)** — reads the account's
+  `memberOf`, resolves it via `resolve_groups_by_dn()` (already built for
+  the account-groups view), then calls `remove_group_member()` once per
+  group.
+- **Each sub-step is independently fault-tolerant** — same partial-
+  failure philosophy as Create User's own multi-step LDAP sequence. A
+  failed disable doesn't stop the password reset from being attempted,
+  and one group's removal failing (e.g. a protected/AdminSDHolder group)
+  doesn't stop the others — every outcome (`disable_ok`, `reset_password_ok`,
+  per-group `removed`/`error`) is recorded on the `OffboardingRecord` row
+  and surfaced in the result message, never silently swallowed.
+- **The pre-removal group list is a permanent snapshot**
+  (`removed_groups_json`, JSON: `sam`/`name`/`dn`/`removed`/`error` per
+  group) — this is the answer to Alex's "adminconsole must take a note
+  what groups the user was in" requirement. The account's *live* memberOf
+  can't answer that later once it's empty (or the account's deleted), so
+  this has to be captured at the moment of removal, not derived after the
+  fact.
+- `_check_scope()` applies to the target account's DN, same OU-scoping
+  convention as every other AD write in this router.
+- Refuses to start a second active offboarding for the same `sam` while
+  one is already open (queries for an existing `completed_at IS NULL`
+  row first) — prevents a duplicate run re-triggering group removal on an
+  account that's already been stripped.
+
+**Steps 5/8 (mailbox -> Shared, remove licenses) are NOT automated** —
+they're one-click admin-ticked checkboxes on each record
+(`mailbox_converted`/`licenses_removed`, with `_by`/`_at` set on check,
+cleared on uncheck) recording that an admin did those manually in
+Exchange Online/Entra. This app cannot verify either actually happened — this pairing is still
+pending a working Exchange Online app-registration (see next section). No `reason`
+required for these two toggles (same unreasoned-audit-row precedent as
+`settings_change` — a checkbox flip isn't an AD write and isn't
+sensitive enough to demand a ticket ref).
+
+**The 6-month deletion clock** — `OffboardingRecord.delete_eligible_at`
+is a computed property (`models.add_months(initiated_at, 6)`, calendar-
+accurate month arithmetic with day-clamping for short months, not a fixed
+182-day span) and `is_overdue` is `now >= delete_eligible_at and not
+completed`. `offboarding/index.html` renders an overdue row with Bootstrap's
+`table-danger` class — the exact "highlighted so an admin knows to delete
+the user" behavior Alex asked for. Step 12 (the actual deletion) stays
+manual by Alex's explicit wording ("admins will manually delete the
+user") — this app never deletes a user account itself, anywhere.
+
+**"Mark Deleted / Complete"** (`POST /offboarding/{id}/complete`, reason
+required) sets `completed_at`/`completed_by`/`completed_reason`, which is
+what moves a record from the active list into `/offboarding?history=1`.
+Deliberately allowed at any time, not gated on `is_overdue` actually being
+true — Alex's answer to the "how does a record get closed out" question
+was to add this button, not to hard-lock early completion; the modal
+shows a soft warning (not a block) if the 6-month date hasn't passed yet.
+This is consistent with the app's general posture elsewhere (trust the
+operator, audit everything, don't hard-block a legitimate override).
+
+**Reused `ad_accounts.py`'s private helpers directly** (`_open_conn`,
+`_check_scope`, `_client_ip`, `_log_and_alert`, `AdNotConfigured`,
+`ScopeDenied`) via a cross-router import rather than extracting them to a
+shared module first — a deliberate, documented tradeoff: this is the
+first and only other place they're needed, and refactoring `_check_scope`
+out of `ad_accounts.py` would have meant touching ~38 call sites in an
+already-proven-live file for one new caller. No other router in this
+codebase imports from another router today; if a third caller ever needs
+these, that's the point to actually extract them into e.g.
+`app/core/ad_session.py`.
+
+**Confirmed live end-to-end before deploy** — created a disposable test
+user (`zzz-test-offboard`) plus two disposable test groups
+(`zzz-test-offboard-g1`/`g2`), added the user to both, then ran the exact
+disable/reset/remove-membership sequence used by `offboarding_start`
+directly against real AD: verified the account ended up disabled,
+`memberOf` ended up empty, and both group removals reported success.
+Cleaned up via a new generalized `admin_cleanup_test_objects.yml`
+(Semaphore repo) — takes a comma-separated list of sAMAccountNames and
+removes each regardless of object class (user/group/computer), rather
+than the narrower group-only `admin_cleanup_test_group.yml` used for
+earlier test cleanups.
+
+Live-DB gotcha, same as every permission added this session — `ad.offboard`
+had to be patched directly into `role_permissions` for role_id 3 (admin)
+and 2 (helpdesk_l2) after deploy; the `offboarding_records` table itself
+came up automatically via `alembic upgrade head` (already wired into the
+container's startup command), no manual table-creation needed this time.
+
+### Offboarding — Exchange Online automation, blocked on Entra sync lag (as of 2026-09-15)
+Steps 5 (mailbox -> Shared) and 8 (remove licenses) were scoped out during
+planning but NOT built — automating them hit a real, still-unresolved
+Microsoft-side blocker before any adminconsole code was written for them.
+Reusing the existing Graph app registration
+(`graph.client_id` in Settings, App ID `09b0a813-3024-4e54-bbdb-1a22fbff29dc`,
+tenant `90e4e6ce-7703-4051-94da-96ed6e731150`, initial domain
+`scaasey.onmicrosoft.com` — confirmed via `GET /organization`'s
+`verifiedDomains`, NOT `scaasey.mail.onmicrosoft.com`, which is a separate
+mail-routing-only domain):
+- **License removal** is a plain Graph call
+  (`POST /users/{id}/assignLicense` with the account's current
+  `assignedLicenses` as `removeLicenses`) — just needs
+  `User.ReadWrite.All` added to the app registration. Not yet added
+  (nothing automated needed it yet) but no known obstacle.
+- **Mailbox -> Shared conversion has no Graph API at all** — `Set-Mailbox
+  -Type Shared` only exists in Exchange Online PowerShell. Automating it
+  needs: a certificate uploaded to the app registration (client secrets
+  aren't accepted for Exchange Online app-only auth), the
+  `Exchange.ManageAsApp` **Office 365 Exchange Online** API permission
+  (a different API surface from Microsoft Graph) granted+consented, AND
+  a `New-ManagementRoleAssignment -App <id> -Role "Mail Recipients"` run
+  by an actual admin to bind the app to real Exchange rights (granting
+  the permission alone grants nothing).
+- **Confirmed live, all done**: cert generated (20-year self-signed,
+  `CN=AdminConsole-EXO-AppOnly`) and uploaded to the app registration;
+  `Exchange.ManageAsApp` granted and admin-consented (twice — the first
+  admin-consent attempt hit `AADSTS500113: No reply address is registered
+  for the application`, fixed by adding a harmless `https://localhost`
+  Web redirect URI under the app's Authentication blade, since this app
+  had only ever been used for client-credentials Graph calls and had zero
+  redirect URIs).
+- **Still blocked**: `New-ManagementRoleAssignment -App` (tried both the
+  App/Client ID and the Enterprise Application's Object ID) consistently
+  fails with `Couldn't find a service principal with the following
+  identity`. This is a known Entra-ID-to-Exchange-Online directory sync
+  lag for a service principal that's never been used for Exchange
+  management before, not a configuration mistake — Microsoft's own
+  guidance says this can take anywhere from under an hour up to ~24
+  hours to clear. **Next step for whoever picks this up**: retry
+  `New-ManagementRoleAssignment -App "09b0a813-3024-4e54-bbdb-1a22fbff29dc"
+  -Role "Mail Recipients"` after waiting; if still failing after ~24h,
+  open a Microsoft support ticket referencing this exact symptom. Once
+  that succeeds, `Connect-ExchangeOnline -AppId ... -CertificateThumbprint
+  ... -Organization "scaasey.onmicrosoft.com"` should work (note: the
+  *initial* domain is required for `-Organization`, not the GUID tenant
+  ID and not the `.mail.onmicrosoft.com` routing domain — both were tried
+  and rejected first).
+- Once that connects, the actual automation (a Semaphore/Ansible playbook
+  running `Set-Mailbox -Type Shared` + the license-removal Graph call,
+  wired into the two checkboxes on the Offboarding tab so they become
+  real actions instead of manual attestations) is still unbuilt — nothing
+  to do here until the RBAC binding actually succeeds.
+
 ## Unrelated infra incident on the same host — Sophos WAN/WireGuard outage, resolved 2026-08-20
 Not about this app, but worth keeping here since it's the same host
 (saa-docker) and touches the `wgdashboard` container that lives alongside
