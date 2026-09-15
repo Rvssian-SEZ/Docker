@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h1 class="h3 mb-0"><i class="bi bi-box-arrow-right me-2"></i>Offboarding</h1>
+  {% if not history %}
+  <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#startOffboardingModal">Start Offboarding</button>
+  {% endif %}
+</div>
+<p class="mb-4">
+  {% if history %}
+  <a href="/offboarding"><i class="bi bi-arrow-left me-1"></i>Back to active offboarding</a>
+  {% else %}
+  <a href="/offboarding?history=1">View completed history</a>
+  {% endif %}
+</p>
+
+{% if not history %}
+<p class="text-secondary small">
+  Starting offboarding automatically disables the account, resets its password to a random value nobody is shown, and removes it from every group it was a member of (the groups it was in are recorded below, permanently). Converting the mailbox to Shared and removing licenses (Exchange Online / Entra) are NOT automated here — tick them off once done manually. A row turns red once 6 months have passed since offboarding started, as the reminder to actually delete the AD account.
+</p>
+{% endif %}
+
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <thead>
+    <tr>
+      <th>User</th>
+      <th>Started</th>
+      <th>Steps 1/2</th>
+      <th>Groups removed</th>
+      {% if not history %}
+      <th>Mailbox -> Shared</th>
+      <th>Licenses removed</th>
+      <th>Delete-eligible</th>
+      <th></th>
+      {% else %}
+      <th>Completed</th>
+      {% endif %}
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in records %}
+    <tr{% if not history and r.is_overdue %} class="table-danger"{% endif %}>
+      <td>{{ r.display_name or '—' }}<div class="text-secondary small">{{ r.sam }}</div></td>
+      <td>{{ r.initiated_at.strftime('%Y-%m-%d') }}<div class="text-secondary small">by {{ r.initiated_by }}</div></td>
+      <td>
+        <span class="badge {{ 'text-bg-success' if r.disable_ok else 'text-bg-danger' }}">Disable</span>
+        <span class="badge {{ 'text-bg-success' if r.reset_password_ok else 'text-bg-danger' }}">Reset PW</span>
+      </td>
+      <td>
+        {% set groups = groups_by_id[r.id] %}
+        {% set removed_count = groups | selectattr('removed') | list | length %}
+        <details>
+          <summary>{{ removed_count }}/{{ groups|length }} removed</summary>
+          <ul class="small mb-0">
+            {% for g in groups %}
+            <li class="{{ '' if g.removed else 'text-danger' }}">{{ g.name or g.sam }}{% if not g.removed %} — FAILED: {{ g.error }}{% endif %}</li>
+            {% endfor %}
+          </ul>
+        </details>
+      </td>
+      {% if not history %}
+      <td>
+        <form method="post" action="/offboarding/{{ r.id }}/mailbox-converted" class="d-inline">
+          <button type="submit" class="btn btn-sm {{ 'btn-success' if r.mailbox_converted else 'btn-outline-secondary' }}">
+            {% if r.mailbox_converted %}<i class="bi bi-check-square me-1"></i>Done{% else %}<i class="bi bi-square me-1"></i>Not done{% endif %}
+          </button>
+        </form>
+        {% if r.mailbox_converted %}<div class="text-secondary small">{{ r.mailbox_converted_by }}</div>{% endif %}
+      </td>
+      <td>
+        <form method="post" action="/offboarding/{{ r.id }}/licenses-removed" class="d-inline">
+          <button type="submit" class="btn btn-sm {{ 'btn-success' if r.licenses_removed else 'btn-outline-secondary' }}">
+            {% if r.licenses_removed %}<i class="bi bi-check-square me-1"></i>Done{% else %}<i class="bi bi-square me-1"></i>Not done{% endif %}
+          </button>
+        </form>
+        {% if r.licenses_removed %}<div class="text-secondary small">{{ r.licenses_removed_by }}</div>{% endif %}
+      </td>
+      <td>
+        {{ r.delete_eligible_at.strftime('%Y-%m-%d') }}
+        {% if r.is_overdue %}<div class="small fw-bold">OVERDUE — delete now</div>{% endif %}
+      </td>
+      <td class="text-end">
+        <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#completeModal{{ loop.index }}">Mark Deleted / Complete</button>
+      </td>
+      {% else %}
+      <td>{{ r.completed_at.strftime('%Y-%m-%d') }}<div class="text-secondary small">by {{ r.completed_by }} — {{ r.completed_reason }}</div></td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="8" class="text-secondary">{% if history %}No completed offboarding records.{% else %}No active offboarding records.{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if not history %}
+<div class="modal fade" id="startOffboardingModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/offboarding/start">
+    <div class="modal-header"><h5 class="modal-title">Start offboarding</h5></div>
+    <div class="modal-body">
+      <div class="mb-2"><label class="form-label">Username (sAMAccountName)</label><input name="sam" class="form-control" required autofocus></div>
+      <div class="alert alert-warning small">This immediately disables the account, resets its password, and removes it from every AD group it belongs to. This cannot be undone from this app.</div>
+      <label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required>
+    </div>
+    <div class="modal-footer"><button class="btn btn-warning">Start Offboarding</button></div>
+  </form>
+</div></div></div>
+
+{% for r in records %}
+<div class="modal fade" id="completeModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/offboarding/{{ r.id }}/complete">
+    <div class="modal-header"><h5 class="modal-title text-danger">Mark {{ r.sam }} deleted / complete</h5></div>
+    <div class="modal-body">
+      <p>Confirms the AD account for <strong>{{ r.sam }}</strong> has actually been deleted, and archives this offboarding record.</p>
+      {% if not r.is_overdue %}
+      <div class="alert alert-warning small">The 6-month deletion-eligible date ({{ r.delete_eligible_at.strftime('%Y-%m-%d') }}) hasn't passed yet. You can still complete this now if there's a reason to.</div>
+      {% endif %}
+      <label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required>
+    </div>
+    <div class="modal-footer"><button class="btn btn-danger">Mark Complete</button></div>
+  </form>
+</div></div></div>
+{% endfor %}
+
+<script>
+document.querySelectorAll(".modal form").forEach(function (form) {
+  form.addEventListener("submit", function () {
+    var btn = form.querySelector("button[type=submit], .modal-footer button");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Working...";
+    }
+  });
+});
+</script>
+{% endif %}
+{% endblock %}

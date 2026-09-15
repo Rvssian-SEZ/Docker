@@ -8,6 +8,7 @@ here ("Break-glass is separate, not a role" — spec) — see
 app/core/breakglass.py for its own standalone credential store.
 """
 
+import calendar
 import enum
 from datetime import datetime, timezone
 
@@ -19,6 +20,18 @@ from app.core.db import Base
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def add_months(dt: datetime, months: int) -> datetime:
+    """Calendar-accurate month addition (not a fixed 30/31-day span) — used
+    for the offboarding 6-month deletion-eligible date. Clamps the day if
+    the target month is shorter (e.g. Aug 31 + 6mo -> Feb 28/29, not an
+    OverflowError)."""
+    month_index = dt.month - 1 + months
+    year = dt.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(dt.day, calendar.monthrange(year, month)[1])
+    return dt.replace(year=year, month=month, day=day)
 
 
 class RoleName(str, enum.Enum):
@@ -101,6 +114,69 @@ class BreakGlassCredential(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class OffboardingRecord(Base):
+    """Tracks an in-progress (or completed) user offboarding — see
+    app/routers/offboarding.py. One row per "Start Offboarding" run.
+
+    Steps 1/2/4 (disable, reset password, remove all group memberships)
+    are performed automatically when the record is created — disable_ok/
+    reset_password_ok capture whether each sub-step actually succeeded
+    (a partial failure doesn't abort the whole bundle, same tolerant
+    pattern as Create User's own multi-step LDAP sequence), and
+    removed_groups_json is a permanent snapshot of exactly which groups
+    the account was in at that moment and whether each removal succeeded
+    — the account's live AD group membership can't answer that later once
+    it's been reset for a different purpose or the account is deleted.
+
+    Steps 5/8 (mailbox -> shared, license removal) are Exchange Online/
+    Entra actions this app has no automation for yet (see
+    CLAUDE_CONTEXT.md "Offboarding") — mailbox_converted/licenses_removed
+    are admin-ticked checkboxes recording that those were done manually
+    elsewhere, not something this app verifies.
+
+    completed_at being set is what moves a record out of the active list
+    into history — set only when an admin clicks "Mark Deleted /
+    Complete" after actually deleting the AD account by hand (step 12,
+    also manual, also not something this app automates)."""
+
+    __tablename__ = "offboarding_records"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sam: Mapped[str] = mapped_column(String(150), index=True)
+    display_name: Mapped[str | None] = mapped_column(String(255))
+    dn: Mapped[str] = mapped_column(String(500))
+    initiated_by: Mapped[str] = mapped_column(String(150))
+    initiated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    reason: Mapped[str] = mapped_column(Text)
+
+    disable_ok: Mapped[bool] = mapped_column(Boolean, default=False)
+    reset_password_ok: Mapped[bool] = mapped_column(Boolean, default=False)
+    # JSON list of {"sam", "name", "dn", "removed": bool, "error": str|None} —
+    # see resolve_groups_by_dn()'s shape in ldap_client.py, extended with
+    # the per-group removal outcome.
+    removed_groups_json: Mapped[str] = mapped_column(Text, default="[]")
+
+    mailbox_converted: Mapped[bool] = mapped_column(Boolean, default=False)
+    mailbox_converted_by: Mapped[str | None] = mapped_column(String(150))
+    mailbox_converted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    licenses_removed: Mapped[bool] = mapped_column(Boolean, default=False)
+    licenses_removed_by: Mapped[str | None] = mapped_column(String(150))
+    licenses_removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    completed_by: Mapped[str | None] = mapped_column(String(150))
+    completed_reason: Mapped[str | None] = mapped_column(Text)
+
+    @property
+    def delete_eligible_at(self) -> datetime:
+        return add_months(self.initiated_at, 6)
+
+    @property
+    def is_overdue(self) -> bool:
+        return self.completed_at is None and utcnow() >= self.delete_eligible_at
 
 
 class AppSetting(Base):

@@ -28,6 +28,9 @@
       {% if user and user.can('ad.manage_groups') %}
       <li><a href="/ad/groups" class="nav-link"><i class="bi bi-people me-2"></i>Groups</a></li>
       {% endif %}
+      {% if user and user.can('ad.offboard') %}
+      <li><a href="/offboarding" class="nav-link"><i class="bi bi-box-arrow-right me-2"></i>Offboarding</a></li>
+      {% endif %}
       {% if user and user.can('reports.view') %}
       <li><a href="/reports" class="nav-link"><i class="bi bi-bar-chart me-2"></i>Reporting</a></li>
       {% endif %}

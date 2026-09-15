@@ -8,8 +8,9 @@ starting table for Helpdesk L2):
   Helpdesk L1 — unlock, reset password (standard-user OU only). Does NOT
       get ad.create_user (Alex, 2026-08-24 — account creation is L2+),
       ad.delete_computer (Alex, 2026-09-07 — same reasoning, delete is L2+),
-      ad.move_object (Alex, 2026-09-07 — same reasoning, move is L2+), or
-      ad.manage_groups (Alex, 2026-09-07 — same reasoning, groups is L2+).
+      ad.move_object (Alex, 2026-09-07 — same reasoning, move is L2+),
+      ad.manage_groups (Alex, 2026-09-07 — same reasoning, groups is L2+),
+      or ad.offboard (Alex, 2026-09-15 — same reasoning, offboarding is L2+).
   Helpdesk L2 — everything Admin has EXCEPT settings.manage (the Settings
       tab, incl. Graph/Authentik/AD/break-glass-alerting/Automation
       credentials).
@@ -49,6 +50,11 @@ PERMISSIONS: dict[str, list[str]] = {
         # by anyone holding this permission; see CLAUDE_CONTEXT.md "Manage
         # Groups" for the tradeoff this accepts).
         "ad.manage_groups",
+        # Admin + Helpdesk L2 only (Alex, 2026-09-15) — see DEFAULTS below.
+        # Bundles disable + reset password + remove-all-group-memberships
+        # into one action, plus tracks the 6-month deletion clock — see
+        # app/routers/offboarding.py and CLAUDE_CONTEXT.md "Offboarding".
+        "ad.offboard",
     ],
     "Reporting": [
         "reports.view",
