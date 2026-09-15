@@ -22,6 +22,18 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _as_aware_utc(dt: datetime) -> datetime:
+    """SQLite doesn't actually persist tzinfo despite DateTime(timezone=True)
+    — a row written with an aware datetime.now(timezone.utc) comes back
+    naive after a fresh SELECT (confirmed live 2026-09-15, see
+    OffboardingRecord.is_overdue), which raised "can't compare offset-naive
+    and offset-aware datetimes" the moment a reloaded record's
+    delete_eligible_at was compared against utcnow(). Every datetime this
+    app writes to this column is already UTC (utcnow()), so a naive value
+    read back is safely assumed to already be UTC, not local time."""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
 def add_months(dt: datetime, months: int) -> datetime:
     """Calendar-accurate month addition (not a fixed 30/31-day span) — used
     for the offboarding 6-month deletion-eligible date. Clamps the day if
@@ -172,7 +184,7 @@ class OffboardingRecord(Base):
 
     @property
     def delete_eligible_at(self) -> datetime:
-        return add_months(self.initiated_at, 6)
+        return add_months(_as_aware_utc(self.initiated_at), 6)
 
     @property
     def is_overdue(self) -> bool:
