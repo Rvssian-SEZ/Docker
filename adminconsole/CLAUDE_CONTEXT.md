@@ -875,20 +875,60 @@ is a computed property (`models.add_months(initiated_at, 6)`, calendar-
 accurate month arithmetic with day-clamping for short months, not a fixed
 182-day span) and `is_overdue` is `now >= delete_eligible_at and not
 completed`. `offboarding/index.html` renders an overdue row with Bootstrap's
-`table-danger` class — the exact "highlighted so an admin knows to delete
-the user" behavior Alex asked for. Step 12 (the actual deletion) stays
-manual by Alex's explicit wording ("admins will manually delete the
-user") — this app never deletes a user account itself, anywhere.
+`table-danger` class.
 
-**"Mark Deleted / Complete"** (`POST /offboarding/{id}/complete`, reason
-required) sets `completed_at`/`completed_by`/`completed_reason`, which is
-what moves a record from the active list into `/offboarding?history=1`.
-Deliberately allowed at any time, not gated on `is_overdue` actually being
-true — Alex's answer to the "how does a record get closed out" question
-was to add this button, not to hard-lock early completion; the modal
-shows a soft warning (not a block) if the 6-month date hasn't passed yet.
-This is consistent with the app's general posture elsewhere (trust the
-operator, audit everything, don't hard-block a legitimate override).
+**Bug found + fixed live, 2026-09-15**: `is_overdue`'s Python-side
+`utcnow() >= delete_eligible_at` comparison crashed with `can't compare
+offset-naive and offset-aware datetimes` for any record that had actually
+been persisted and reloaded — SQLite doesn't preserve tzinfo across a
+write/read round-trip despite `DateTime(timezone=True)`, so
+`initiated_at` came back naive even though it was written as
+`datetime.now(timezone.utc)`. This meant the entire `/offboarding` page
+500'd the moment any record existed (not just an edge case — every page
+load hit it). No other place in this codebase does a Python-side
+comparison against a freshly-loaded `DateTime(timezone=True)` column
+(`query_audit`'s `since`/`until` filters compare inside SQL, which is
+unaffected), so this bug was new/isolated to this feature. Fixed via
+`models._as_aware_utc()`, which treats a naive datetime read back from
+this column as already-UTC (true for every value this app ever writes to
+it) before comparing. Confirmed fixed against a real SQLite round-trip,
+not just re-tested with never-persisted in-memory objects (which is
+exactly why the original pre-deploy render test didn't catch it — it
+only ever exercised freshly-constructed Python objects that stayed
+aware the whole time).
+
+**"Mark Deleted / Complete" actually deletes the AD account (reversed,
+2026-09-15)** — originally spec'd as "admin deletes manually, this app
+just records it," Alex asked for this to be flipped: the button
+(`POST /offboarding/{id}/complete`, reason required) is disabled in the
+template — not hidden, `disabled` with a `title` tooltip listing what's
+missing — unless `mailbox_converted AND licenses_removed AND is_overdue`
+are ALL true, and its confirmation modal isn't even rendered for a record
+that doesn't meet all three (so there's no DOM element to trigger even
+via devtools). The same three-condition check is enforced **server-side**
+in the route itself before anything happens — a raw POST bypassing the
+disabled button is refused with the same missing-condition message,
+never silently allowed through. On success it calls
+`semaphore_client.trigger_delete_user()` (goes straight to
+Ansible@SAA.SC, same "known to always be blocked via LDAPS" reasoning as
+Move/Rename Group — the domain-wide Delete Child Deny has no
+object-class qualifier, so it blocks a user delete exactly the same way;
+`SAA/playbooks/admin_delete_user.yml`, persistent Semaphore template id
+45 "Delete User (offboarding completion)",
+`semaphore.delete_user_template_id` in Settings -> Automation) — only
+setting `completed_at`/`completed_by`/`completed_reason` (which is what
+moves the record into `/offboarding?history=1`) if that actually
+succeeds. A failed deletion leaves the record active with an
+`offboarding_completed_failed` audit row, never silently marked done.
+Also refuses outright if the record is already completed (no
+double-delete via a resubmitted form). **Confirmed live end-to-end**
+against a disposable test user (`zzz-test-delete-user`) via the real
+Semaphore template — `STATUS=deleted`, `failed=0`, and a follow-up
+`find_user()` confirmed the account was genuinely gone — plus a separate
+route-level test with the Semaphore call mocked out, verifying the gating
+logic itself (blocks with the right reasons when any condition is unmet,
+calls Semaphore with the correct sam when all three are met, refuses
+re-completion of an already-completed record).
 
 **Reused `ad_accounts.py`'s private helpers directly** (`_open_conn`,
 `_check_scope`, `_client_ip`, `_log_and_alert`, `AdNotConfigured`,
