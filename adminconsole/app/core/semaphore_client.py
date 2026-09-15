@@ -266,3 +266,49 @@ async def trigger_rename_group(store: SettingsStore, *, target_sam: str, new_nam
             if status in ("error", "stopped"):
                 raise SemaphoreError(f"Rename failed (Semaphore task #{task_id}, status={status}).")
         raise SemaphoreError(f"Rename timed out (Semaphore task #{task_id}).")
+
+
+async def trigger_delete_user(store: SettingsStore, *, target_sam: str) -> None:
+    """Deletes an AD user object as part of Offboarding's "Mark Deleted /
+    Complete" action. Goes straight to Ansible@SAA.SC — same "known to
+    always be blocked" reasoning as trigger_move_object()/
+    trigger_rename_group(), since the domain-wide "Deny Everyone: Delete
+    Child" ACE has no object-class qualifier and blocks a user delete
+    exactly the same way it blocks Delete Computer. Uses the separate
+    delete_user_template_id (Ansible@SAA.SC, not svc-adminconsole). The
+    playbook re-checks the target is a user object before deleting
+    anything, on top of the app's own check in offboarding.py."""
+    base_url = store.get("semaphore.url").rstrip("/")
+    username = store.get("semaphore.username")
+    password = store.get_secret("semaphore.password")
+    project_id = store.get_int("semaphore.project_id")
+    template_id = store.get_int("semaphore.delete_user_template_id")
+    if not (base_url and username and password and project_id and template_id):
+        raise SemaphoreError("Delete-user fallback is not configured (Settings -> Automation).")
+
+    async with httpx.AsyncClient(base_url=base_url, timeout=15) as client:
+        login_resp = await client.post("/api/auth/login", json={"auth": username, "password": password})
+        if login_resp.status_code != 204:
+            raise SemaphoreError("Semaphore login failed — check semaphore.username/password in Settings.")
+
+        task_resp = await client.post(
+            f"/api/project/{project_id}/tasks",
+            json={
+                "template_id": template_id,
+                "project_id": project_id,
+                "environment": '{"target_sam": "%s"}' % target_sam,
+            },
+        )
+        if task_resp.status_code != 201:
+            raise SemaphoreError(f"Semaphore task creation failed: {task_resp.status_code}")
+        task_id = task_resp.json()["id"]
+
+        for _ in range(60):
+            await asyncio.sleep(1)
+            status_resp = await client.get(f"/api/project/{project_id}/tasks/{task_id}")
+            status = status_resp.json().get("status")
+            if status == "success":
+                return
+            if status in ("error", "stopped"):
+                raise SemaphoreError(f"User deletion failed (Semaphore task #{task_id}, status={status}).")
+        raise SemaphoreError(f"User deletion timed out (Semaphore task #{task_id}).")

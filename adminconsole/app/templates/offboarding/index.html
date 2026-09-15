@@ -16,7 +16,7 @@
 
 {% if not history %}
 <p class="text-secondary small">
-  Starting offboarding automatically disables the account, resets its password to a random value nobody is shown, and removes it from every group it was a member of (the groups it was in are recorded below, permanently). Converting the mailbox to Shared and removing licenses (Exchange Online / Entra) are NOT automated here — tick them off once done manually. A row turns red once 6 months have passed since offboarding started, as the reminder to actually delete the AD account.
+  Starting offboarding automatically disables the account, resets its password to a random value nobody is shown, and removes it from every group it was a member of (the groups it was in are recorded below, permanently). Converting the mailbox to Shared and removing licenses (Exchange Online / Entra) are NOT automated here — tick them off once done manually. A row turns red once 6 months have passed since offboarding started. "Mark Deleted / Complete" actually deletes the AD account — it only becomes clickable once both checkboxes are ticked AND the 6-month date has passed.
 </p>
 {% endif %}
 
@@ -81,7 +81,16 @@
         {% if r.is_overdue %}<div class="small fw-bold">OVERDUE — delete now</div>{% endif %}
       </td>
       <td class="text-end">
+        {% set can_delete = r.mailbox_converted and r.licenses_removed and r.is_overdue %}
+        {% if can_delete %}
         <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#completeModal{{ loop.index }}">Mark Deleted / Complete</button>
+        {% else %}
+        {% set reasons = [] %}
+        {% if not r.mailbox_converted %}{% set _ = reasons.append('mailbox not converted') %}{% endif %}
+        {% if not r.licenses_removed %}{% set _ = reasons.append('licenses not removed') %}{% endif %}
+        {% if not r.is_overdue %}{% set _ = reasons.append('delete-eligible date not reached') %}{% endif %}
+        <button class="btn btn-sm btn-outline-danger" disabled title="Blocked: {{ reasons|join(', ') }}">Mark Deleted / Complete</button>
+        {% endif %}
       </td>
       {% else %}
       <td>{{ r.completed_at.strftime('%Y-%m-%d') }}<div class="text-secondary small">by {{ r.completed_by }} — {{ r.completed_reason }}</div></td>
@@ -112,19 +121,18 @@
 </div></div></div>
 
 {% for r in records %}
+{% if r.mailbox_converted and r.licenses_removed and r.is_overdue %}
 <div class="modal fade" id="completeModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
   <form method="post" action="/offboarding/{{ r.id }}/complete">
-    <div class="modal-header"><h5 class="modal-title text-danger">Mark {{ r.sam }} deleted / complete</h5></div>
+    <div class="modal-header"><h5 class="modal-title text-danger">Delete {{ r.sam }} from Active Directory</h5></div>
     <div class="modal-body">
-      <p>Confirms the AD account for <strong>{{ r.sam }}</strong> has actually been deleted, and archives this offboarding record.</p>
-      {% if not r.is_overdue %}
-      <div class="alert alert-warning small">The 6-month deletion-eligible date ({{ r.delete_eligible_at.strftime('%Y-%m-%d') }}) hasn't passed yet. You can still complete this now if there's a reason to.</div>
-      {% endif %}
+      <p>This permanently deletes the AD account for <strong>{{ r.sam }}</strong> and archives this offboarding record. This cannot be undone from this app.</p>
       <label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required>
     </div>
-    <div class="modal-footer"><button class="btn btn-danger">Mark Complete</button></div>
+    <div class="modal-footer"><button class="btn btn-danger">Delete {{ r.sam }}</button></div>
   </form>
 </div></div></div>
+{% endif %}
 {% endfor %}
 
 <script>

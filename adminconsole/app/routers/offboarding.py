@@ -4,7 +4,13 @@ Exchange Online/Entra steps this app can't automate yet (mailbox -> shared,
 license removal) as admin-ticked checkboxes, and tracks a 6-month
 deletion-eligible clock so an overdue account is impossible to miss on
 this page — see CLAUDE_CONTEXT.md "Offboarding" for the full process this
-implements and why steps 5/8/12 stay manual.
+implements.
+
+"Mark Deleted / Complete" (step 12) actually deletes the AD account via
+Semaphore/Ansible@SAA.SC — gated server-side on mailbox_converted AND
+licenses_removed AND the 6-month window having passed, all three, not
+just hidden behind a disabled button (Alex, 2026-09-15 — reversed from
+the original "admin deletes manually, this just records it" design).
 
 Deliberately reuses ad_accounts.py's connection/scope helpers
 (_open_conn/_check_scope/_client_ip/_log_and_alert, AdNotConfigured/
@@ -20,7 +26,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import ldap_client, user_provisioning
+from app.core import ldap_client, semaphore_client, user_provisioning
 from app.core.alerting import alert
 from app.core.auth import CurrentUser, require
 from app.core.db import get_db
@@ -265,26 +271,52 @@ async def offboarding_complete(
     db: AsyncSession = Depends(get_db),
     user: CurrentUser = Depends(require("ad.offboard")),
 ):
-    """Marks the record complete/archived — used once an admin has
-    actually deleted the AD account by hand (step 12; this app doesn't
-    perform the deletion itself, per Alex's explicit "manually" wording).
-    Allowed at any time, not gated on the 6-month window having actually
-    elapsed — the window is a reminder, not a hard lock, consistent with
-    this app's general "trust the operator, audit everything" posture
-    rather than blocking a legitimate early close-out with no override."""
+    """Actually deletes the AD user account and archives the record —
+    reversed from the original "admin deletes manually, this just
+    records it" design (Alex, 2026-09-15: gate this on all three
+    conditions and have it perform the deletion itself). Gated
+    server-side, not just via the disabled button in the template —
+    mailbox_converted AND licenses_removed AND is_overdue must ALL be
+    true, or this refuses outright before touching AD. Deletion itself
+    goes straight to Ansible@SAA.SC via semaphore_client.trigger_delete_user()
+    — same "known to always be blocked via LDAPS" reasoning as Move/Rename
+    Group, since the domain-wide Delete Child Deny has no object-class
+    qualifier."""
     back = {"back_url": "/offboarding", "back_label": "Back to Offboarding"}
     if not reason.strip():
         return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "A reason/ticket-ref is required.", **back})
     record = await _get_record_or_404(db, record_id)
     if record is None:
         return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "Offboarding record not found.", **back})
+    if record.completed_at is not None:
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"'{record.sam}' is already marked complete.", **back})
+    missing = []
+    if not record.mailbox_converted:
+        missing.append("mailbox not yet converted to Shared")
+    if not record.licenses_removed:
+        missing.append("licenses not yet removed")
+    if not record.is_overdue:
+        missing.append(f"delete-eligible date ({record.delete_eligible_at:%Y-%m-%d}) hasn't passed yet")
+    if missing:
+        return templates.TemplateResponse(
+            request, "ad/action_result.html",
+            {"user": user, "ok": False, "message": f"Cannot delete '{record.sam}' yet: {'; '.join(missing)}.", **back},
+        )
+
+    store = await load_settings(db)
+    try:
+        await semaphore_client.trigger_delete_user(store, target_sam=record.sam)
+    except semaphore_client.SemaphoreError as exc:
+        await _log_and_alert(request, user, action="offboarding_completed_failed", target_id=record.sam, reason=reason, detail=str(exc))
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"AD account deletion failed: {exc}", **back})
+
     record.completed_at = utcnow()
     record.completed_by = user.username
     record.completed_reason = reason
     await db.commit()
-    await _log_and_alert(request, user, action="offboarding_completed", target_id=record.sam, reason=reason)
+    await _log_and_alert(request, user, action="offboarding_completed", target_id=record.sam, reason=reason, detail="AD account deleted via Semaphore (Ansible@SAA.SC)")
     if user.is_breakglass:
         pending = getattr(request.state, "breakglass_alert_pending", None)
         if pending:
             await alert(db, subject="SAA Admin Console: break-glass offboarding_completed", body=pending)
-    return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": True, "message": f"Offboarding for '{record.sam}' marked complete.", **back})
+    return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": True, "message": f"'{record.sam}' deleted from Active Directory and offboarding marked complete.", **back})
