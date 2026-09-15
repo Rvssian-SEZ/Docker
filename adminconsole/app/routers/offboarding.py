@@ -16,7 +16,7 @@ in particular must never drift out of sync between the two call sites.
 import json
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +31,32 @@ from app.routers.ad_accounts import AdNotConfigured, ScopeDenied, _check_scope, 
 from app.templating import templates
 
 router = APIRouter()
+
+
+@router.get("/offboarding/user-suggest")
+async def offboarding_user_suggest(
+    q: str,
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("ad.offboard")),
+):
+    """Live autocomplete for the Start Offboarding modal's username field
+    — same search_accounts()-backed shape as ad_accounts.py's
+    member-suggest/name-suggest, filtered to user objects only (a
+    computer account isn't something this feature ever applies to)."""
+    q = q.strip()
+    if not q:
+        return JSONResponse({"candidates": []})
+    store = await load_settings(db)
+    try:
+        conn = _open_conn(store)
+    except AdNotConfigured:
+        return JSONResponse({"candidates": []})
+    try:
+        results = ldap_client.search_accounts(conn, store.get("ad.base_dn"), q, limit=8)
+    finally:
+        conn.unbind()
+    candidates = [{"sam": r["sam"], "display_name": r["display_name"]} for r in results if r["kind"] == "user"]
+    return JSONResponse({"candidates": candidates})
 
 
 @router.get("/offboarding", response_class=HTMLResponse)

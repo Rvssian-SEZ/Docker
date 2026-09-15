@@ -99,7 +99,11 @@
   <form method="post" action="/offboarding/start">
     <div class="modal-header"><h5 class="modal-title">Start offboarding</h5></div>
     <div class="modal-body">
-      <div class="mb-2"><label class="form-label">Username (sAMAccountName)</label><input name="sam" class="form-control" required autofocus></div>
+      <div class="mb-2 position-relative">
+        <label class="form-label">Username (sAMAccountName)</label>
+        <input name="sam" id="offboardSam" class="form-control" required autofocus autocomplete="off">
+        <div id="offboardSamSuggestions" class="list-group position-absolute w-100" style="z-index: 1060;"></div>
+      </div>
       <div class="alert alert-warning small">This immediately disables the account, resets its password, and removes it from every AD group it belongs to. This cannot be undone from this app.</div>
       <label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required>
     </div>
@@ -124,6 +128,46 @@
 {% endfor %}
 
 <script>
+(function () {
+  const input = document.getElementById("offboardSam");
+  const suggestions = document.getElementById("offboardSamSuggestions");
+  let debounceTimer = null;
+  let suppressNext = false;
+
+  input.addEventListener("input", function () {
+    if (suppressNext) { suppressNext = false; return; }
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(fetchSuggestions, 250);
+  });
+
+  input.addEventListener("blur", function () {
+    setTimeout(function () { suggestions.innerHTML = ""; }, 150);
+  });
+
+  function fetchSuggestions() {
+    const q = input.value.trim();
+    if (!q) { suggestions.innerHTML = ""; return; }
+    fetch("/offboarding/user-suggest?q=" + encodeURIComponent(q))
+      .then(r => r.json())
+      .then(data => {
+        const candidates = data.candidates || [];
+        if (!candidates.length) { suggestions.innerHTML = ""; return; }
+        suggestions.innerHTML = candidates.map(c =>
+          `<button type="button" class="list-group-item list-group-item-action py-1 px-2 suggestion-item" data-sam="${c.sam}">` +
+          `<strong>${c.sam}</strong>${c.display_name ? " — " + c.display_name : ""}</button>`
+        ).join("");
+        suggestions.querySelectorAll(".suggestion-item").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            suppressNext = true;
+            input.value = btn.dataset.sam;
+            suggestions.innerHTML = "";
+          });
+        });
+      })
+      .catch(() => { suggestions.innerHTML = ""; });
+  }
+})();
+
 document.querySelectorAll(".modal form").forEach(function (form) {
   form.addEventListener("submit", function () {
     var btn = form.querySelector("button[type=submit], .modal-footer button");
