@@ -116,15 +116,6 @@ defmodule Vdlarr.Media.MediaQuery do
     )
   end
 
-  def deletable_based_on_source_cutoff do
-    dynamic(
-      [mi, source],
-      ^downloaded() and
-        not (^upload_date_after_source_cutoff()) and
-        not (^culling_prevented())
-    )
-  end
-
   def pending do
     dynamic(
       [mi],
