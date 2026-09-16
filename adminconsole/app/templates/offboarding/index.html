@@ -10,7 +10,7 @@
   {% if history %}
   <a href="/offboarding"><i class="bi bi-arrow-left me-1"></i>Back to active offboarding</a>
   {% else %}
-  <a href="/offboarding?history=1">View completed history</a>
+  <a href="/offboarding?history=1">View history (completed / cancelled)</a>
   {% endif %}
 </p>
 
@@ -34,7 +34,7 @@
       <th>Delete-eligible</th>
       <th></th>
       {% else %}
-      <th>Completed</th>
+      <th>Status</th>
       {% endif %}
     </tr>
   </thead>
@@ -91,9 +91,18 @@
         {% if not r.is_overdue %}{% set _ = reasons.append('delete-eligible date not reached') %}{% endif %}
         <button class="btn btn-sm btn-outline-danger" disabled title="Blocked: {{ reasons|join(', ') }}">Mark Deleted / Complete</button>
         {% endif %}
+        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#cancelModal{{ loop.index }}">Cancel</button>
       </td>
       {% else %}
-      <td>{{ r.completed_at.strftime('%Y-%m-%d') }}<div class="text-secondary small">by {{ r.completed_by }} — {{ r.completed_reason }}</div></td>
+      <td>
+        {% if r.status == 'completed' %}
+        <span class="badge text-bg-danger">Deleted / Completed</span>
+        <div class="text-secondary small">{{ r.completed_at.strftime('%Y-%m-%d') }} by {{ r.completed_by }} — {{ r.completed_reason }}</div>
+        {% else %}
+        <span class="badge text-bg-secondary">Cancelled</span>
+        <div class="text-secondary small">{{ r.cancelled_at.strftime('%Y-%m-%d') }} by {{ r.cancelled_by }} — {{ r.cancelled_reason }}</div>
+        {% endif %}
+      </td>
       {% endif %}
     </tr>
   {% else %}
@@ -133,6 +142,17 @@
   </form>
 </div></div></div>
 {% endif %}
+
+<div class="modal fade" id="cancelModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/offboarding/{{ r.id }}/cancel">
+    <div class="modal-header"><h5 class="modal-title">Cancel offboarding for {{ r.sam }}</h5></div>
+    <div class="modal-body">
+      <p>This only stops tracking <strong>{{ r.sam }}</strong>'s offboarding — it does <strong>not</strong> re-enable the account, restore its password, or re-add it to any of the groups it was removed from. The account stays exactly as offboarding left it.</p>
+      <label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required>
+    </div>
+    <div class="modal-footer"><button class="btn btn-secondary">Cancel Offboarding</button></div>
+  </form>
+</div></div></div>
 {% endfor %}
 
 <script>

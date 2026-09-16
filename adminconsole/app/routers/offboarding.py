@@ -23,6 +23,7 @@ import json
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -73,9 +74,20 @@ async def offboarding_index(
     user: CurrentUser = Depends(require("ad.offboard")),
 ):
     if history:
-        stmt = select(OffboardingRecord).where(OffboardingRecord.completed_at.is_not(None)).order_by(OffboardingRecord.completed_at.desc())
+        # Completed and cancelled both leave the active list — shown
+        # together here, distinguished by the Status column, ordered by
+        # whichever close-out timestamp is actually set.
+        stmt = (
+            select(OffboardingRecord)
+            .where(sa.or_(OffboardingRecord.completed_at.is_not(None), OffboardingRecord.cancelled_at.is_not(None)))
+            .order_by(sa.func.coalesce(OffboardingRecord.completed_at, OffboardingRecord.cancelled_at).desc())
+        )
     else:
-        stmt = select(OffboardingRecord).where(OffboardingRecord.completed_at.is_(None)).order_by(OffboardingRecord.initiated_at.asc())
+        stmt = (
+            select(OffboardingRecord)
+            .where(OffboardingRecord.completed_at.is_(None), OffboardingRecord.cancelled_at.is_(None))
+            .order_by(OffboardingRecord.initiated_at.asc())
+        )
     records = list((await db.execute(stmt)).scalars())
     groups_by_id = {r.id: json.loads(r.removed_groups_json) for r in records}
     return templates.TemplateResponse(
@@ -103,7 +115,11 @@ async def offboarding_start(
 
     existing = (
         await db.execute(
-            select(OffboardingRecord).where(OffboardingRecord.sam == sam, OffboardingRecord.completed_at.is_(None))
+            select(OffboardingRecord).where(
+                OffboardingRecord.sam == sam,
+                OffboardingRecord.completed_at.is_(None),
+                OffboardingRecord.cancelled_at.is_(None),
+            )
         )
     ).scalar_one_or_none()
     if existing is not None:
@@ -263,6 +279,45 @@ async def offboarding_toggle_licenses(
     return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": True, "message": f"Licenses-removed marked {'done' if record.licenses_removed else 'not done'} for {record.sam}.", "back_url": "/offboarding", "back_label": "Back to Offboarding"})
 
 
+@router.post("/offboarding/{record_id}/cancel")
+async def offboarding_cancel(
+    request: Request,
+    record_id: int,
+    reason: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("ad.offboard")),
+):
+    """Stops tracking an offboarding record — deliberately NOT a reversal
+    of steps 1/2/4 (Alex, 2026-09-16). The AD account is left exactly as
+    offboarding left it: still disabled, password still reset, still
+    removed from every group. This only marks the record cancelled so it
+    drops off the active list; if the account needs to be re-enabled or
+    re-added to groups, that's a separate, deliberate action an admin
+    takes elsewhere in this app (Enable, Add to Group), not something
+    this button attempts automatically."""
+    back = {"back_url": "/offboarding", "back_label": "Back to Offboarding"}
+    if not reason.strip():
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "A reason/ticket-ref is required.", **back})
+    record = await _get_record_or_404(db, record_id)
+    if record is None:
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "Offboarding record not found.", **back})
+    if record.status != "active":
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"'{record.sam}' is already {record.status}.", **back})
+    record.cancelled_at = utcnow()
+    record.cancelled_by = user.username
+    record.cancelled_reason = reason
+    await db.commit()
+    await _log_and_alert(request, user, action="offboarding_cancelled", target_id=record.sam, reason=reason)
+    if user.is_breakglass:
+        pending = getattr(request.state, "breakglass_alert_pending", None)
+        if pending:
+            await alert(db, subject="SAA Admin Console: break-glass offboarding_cancelled", body=pending)
+    return templates.TemplateResponse(
+        request, "ad/action_result.html",
+        {"user": user, "ok": True, "message": f"Offboarding for '{record.sam}' cancelled. The AD account was NOT changed — it remains disabled, password-reset, and stripped of its prior groups exactly as offboarding left it.", **back},
+    )
+
+
 @router.post("/offboarding/{record_id}/complete")
 async def offboarding_complete(
     request: Request,
@@ -288,8 +343,8 @@ async def offboarding_complete(
     record = await _get_record_or_404(db, record_id)
     if record is None:
         return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "Offboarding record not found.", **back})
-    if record.completed_at is not None:
-        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"'{record.sam}' is already marked complete.", **back})
+    if record.status != "active":
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": f"'{record.sam}' is already {record.status}.", **back})
     missing = []
     if not record.mailbox_converted:
         missing.append("mailbox not yet converted to Shared")

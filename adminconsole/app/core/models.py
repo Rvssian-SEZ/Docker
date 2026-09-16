@@ -182,13 +182,31 @@ class OffboardingRecord(Base):
     completed_by: Mapped[str | None] = mapped_column(String(150))
     completed_reason: Mapped[str | None] = mapped_column(Text)
 
+    # Cancel (Alex, 2026-09-16) is deliberately NOT a reversal of steps
+    # 1/2/4 — it only stops tracking the record. The account stays exactly
+    # as offboarding left it (disabled, password reset, groups removed);
+    # nothing in AD is undone. Mutually exclusive with completed_at (a
+    # record is either completed or cancelled, never both — the route
+    # enforces this).
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    cancelled_by: Mapped[str | None] = mapped_column(String(150))
+    cancelled_reason: Mapped[str | None] = mapped_column(Text)
+
+    @property
+    def status(self) -> str:
+        if self.cancelled_at is not None:
+            return "cancelled"
+        if self.completed_at is not None:
+            return "completed"
+        return "active"
+
     @property
     def delete_eligible_at(self) -> datetime:
         return add_months(_as_aware_utc(self.initiated_at), 6)
 
     @property
     def is_overdue(self) -> bool:
-        return self.completed_at is None and utcnow() >= self.delete_eligible_at
+        return self.status == "active" and utcnow() >= self.delete_eligible_at
 
 
 class AppSetting(Base):
