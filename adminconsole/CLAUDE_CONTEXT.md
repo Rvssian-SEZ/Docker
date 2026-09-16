@@ -930,6 +930,47 @@ logic itself (blocks with the right reasons when any condition is unmet,
 calls Semaphore with the correct sam when all three are met, refuses
 re-completion of an already-completed record).
 
+### Cancel (2026-09-16)
+A "Cancel" button on every active record, alongside "Mark Deleted /
+Complete" — `POST /offboarding/{id}/cancel`, same `ad.offboard`
+permission and required-reason convention as everything else here.
+**Deliberately NOT a reversal of steps 1/2/4** (Alex's explicit choice,
+asked directly rather than assumed): cancelling only sets
+`cancelled_at`/`cancelled_by`/`cancelled_reason` and drops the record out
+of the active list — it does not re-enable the account, does not restore
+its password, and does not re-add it to any group it was removed from.
+The AD account is left exactly as offboarding left it; if a cancelled
+offboarding genuinely needs to be undone in AD, that's a separate,
+deliberate action taken elsewhere in this app (Enable, Add to Group), not
+something this button attempts automatically — reversing group removal
+in particular would mean blindly replaying the `removed_groups_json`
+snapshot even though some of those removals may have already failed the
+first time, or group membership may have changed since.
+
+- **New `OffboardingRecord.status` property** (`"active"` /
+  `"completed"` / `"cancelled"`, based on which of `completed_at`/
+  `cancelled_at` is set — the two are mutually exclusive, enforced by
+  both `offboarding_complete` and `offboarding_cancel` refusing to act on
+  a record whose `status` isn't already `"active"`) replaces the old
+  bare `completed_at is None` checks throughout the router, so a
+  cancelled record is treated the same as a completed one everywhere
+  that matters: excluded from the active list, excluded from blocking a
+  fresh "Start Offboarding" on the same `sam`, and excluded from
+  `is_overdue` (a cancelled record should never show the red
+  "OVERDUE" state).
+- **History view now shows both statuses together**, distinguished by a
+  Status column (`Deleted / Completed` vs `Cancelled`, each with its own
+  by/reason), ordered by `coalesce(completed_at, cancelled_at)` — one
+  unified history rather than fragmenting into separate completed/
+  cancelled tabs.
+- **Confirmed against a real SQLite round-trip** (not just in-memory
+  objects, same discipline as the earlier `is_overdue` tzinfo bug): cancel
+  succeeds and the record disappears from the active list while appearing
+  correctly in history with its reason; re-cancelling an already-cancelled
+  record is refused; attempting to complete (delete) an already-cancelled
+  record is refused with the Semaphore delete call never made (verified
+  via a mock that raises if called).
+
 **Reused `ad_accounts.py`'s private helpers directly** (`_open_conn`,
 `_check_scope`, `_client_ip`, `_log_and_alert`, `AdNotConfigured`,
 `ScopeDenied`) via a cross-router import rather than extracting them to a
