@@ -17,14 +17,77 @@ defmodule Coffer.Inventory do
 
   # --- Items --------------------------------------------------------
 
-  def list_items do
+  @doc """
+  Lists items, optionally narrowed by `filters` — a map with any of
+  `:search` (matches `name`, case-insensitive substring), `:tracking_type`,
+  `:category`, `:location`, `:source`, and `:low_stock_only` (boolean-ish —
+  truthy string or `true`). Nil/""/falsy values mean "no filter", so params
+  straight off a filter form can be passed through unchanged.
+  """
+  def list_items(filters \\ %{}) do
     Item
+    |> filter_by(:search, filters[:search])
+    |> filter_by(:tracking_type, filters[:tracking_type])
+    |> filter_by(:category, filters[:category])
+    |> filter_by(:location, filters[:location])
+    |> filter_by(:source, filters[:source])
+    |> filter_low_stock(filters[:low_stock_only])
     |> order_by(asc: :name)
     |> preload(:created_by)
     |> Repo.all()
   end
 
+  defp filter_by(query, _field, value) when value in [nil, ""], do: query
+
+  defp filter_by(query, :search, value),
+    do: where(query, [i], ilike(i.name, ^"%#{value}%"))
+
+  defp filter_by(query, :tracking_type, value),
+    do: where(query, [i], i.tracking_type == ^String.to_existing_atom(value))
+
+  defp filter_by(query, :category, value), do: where(query, [i], i.category == ^value)
+  defp filter_by(query, :location, value), do: where(query, [i], i.location == ^value)
+
+  defp filter_by(query, :source, value),
+    do: where(query, [i], i.source == ^String.to_existing_atom(value))
+
+  defp filter_low_stock(query, value) when value in [true, "true"] do
+    where(
+      query,
+      [i],
+      i.tracking_type == :consumable and not is_nil(i.reorder_threshold) and
+        i.quantity_on_hand <= i.reorder_threshold
+    )
+  end
+
+  defp filter_low_stock(query, _value), do: query
+
+  @doc "Distinct, non-empty category values in use, for a filter dropdown."
+  def distinct_categories do
+    Item
+    |> where([i], not is_nil(i.category) and i.category != "")
+    |> distinct(true)
+    |> select([i], i.category)
+    |> order_by([i], i.category)
+    |> Repo.all()
+  end
+
+  @doc "Distinct, non-empty location values in use, for a filter dropdown."
+  def distinct_locations do
+    Item
+    |> where([i], not is_nil(i.location) and i.location != "")
+    |> distinct(true)
+    |> select([i], i.location)
+    |> order_by([i], i.location)
+    |> Repo.all()
+  end
+
+  @doc "Whether any item currently comes from Snipe-IT — drives the edit-gets-overwritten warning banner."
+  def any_snipeit_items?, do: Repo.exists?(where(Item, source: :snipeit))
+
   def get_item!(id), do: Repo.get!(Item, id) |> Repo.preload(:created_by)
+
+  def get_item_by_external_id(external_id), do: Repo.get_by(Item, external_id: external_id)
 
   def change_item(%Item{} = item, attrs \\ %{}), do: Item.changeset(item, attrs)
 
@@ -59,6 +122,52 @@ defmodule Coffer.Inventory do
     end)
     |> Repo.transaction()
     |> unwrap(:item)
+  end
+
+  @doc "Only used by `Coffer.SnipeIt` — creates a new item sourced from Snipe-IT."
+  def sync_create_item(attrs, %User{} = actor) do
+    changeset =
+      %Item{}
+      |> Item.snipeit_create_changeset(attrs)
+      |> Ecto.Changeset.put_change(:created_by_id, actor.id)
+
+    Ecto.Multi.new()
+    |> Ecto.Multi.insert(:item, changeset)
+    |> Ecto.Multi.run(:audit, fn _repo, %{item: i} ->
+      AuditLog.record(actor.id, :create, "InventoryItem", i.id, %{after: serialize_item(i)})
+    end)
+    |> Repo.transaction()
+    |> unwrap(:item)
+  end
+
+  @doc """
+  Only used by `Coffer.SnipeIt` — updates the non-quantity fields of an
+  already-synced item. Skips the audit-log write entirely when nothing
+  actually changed, so a routine re-sync of thousands of untouched Snipe-IT
+  rows doesn't flood the audit log with no-op entries.
+  """
+  def sync_update_item(%Item{} = item, attrs, %User{} = actor) do
+    before = serialize_item(item)
+    changeset = Item.snipeit_update_changeset(item, attrs)
+    meaningful_changes = Map.delete(changeset.changes, :external_updated_at)
+
+    if meaningful_changes == %{} do
+      # Still persist a bumped external_updated_at (if any) so the next
+      # sync's diff is against current data, but nothing worth an audit
+      # entry actually changed — skip it rather than logging a no-op.
+      Repo.update(changeset)
+    else
+      Ecto.Multi.new()
+      |> Ecto.Multi.update(:item, changeset)
+      |> Ecto.Multi.run(:audit, fn _repo, %{item: i} ->
+        AuditLog.record(actor.id, :update, "InventoryItem", i.id, %{
+          before: before,
+          after: serialize_item(i)
+        })
+      end)
+      |> Repo.transaction()
+      |> unwrap(:item)
+    end
   end
 
   def delete_item(%Item{} = item, %User{} = actor) do
@@ -258,7 +367,10 @@ defmodule Coffer.Inventory do
       reorder_threshold: i.reorder_threshold,
       unit_cost: i.unit_cost && Decimal.to_string(i.unit_cost),
       location: i.location,
-      active: i.active
+      active: i.active,
+      source: i.source,
+      external_id: i.external_id,
+      assigned_to: i.assigned_to
     }
   end
 

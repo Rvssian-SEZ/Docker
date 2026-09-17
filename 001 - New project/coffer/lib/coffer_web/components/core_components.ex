@@ -166,7 +166,10 @@ defmodule CofferWeb.CoreComponents do
   attr :id, :any, default: nil
   attr :name, :any
   attr :label, :string, default: nil
-  attr :value, :any
+
+  attr :value, :any,
+    default: nil,
+    doc: "for a raw name=/type= input with no field= — omit to leave it blank"
 
   attr :type, :string,
     default: "text",
@@ -195,7 +198,11 @@ defmodule CofferWeb.CoreComponents do
     |> assign(field: nil, id: assigns.id || field.id)
     |> assign(:errors, Enum.map(errors, &translate_error(&1)))
     |> assign_new(:name, fn -> if assigns.multiple, do: field.name <> "[]", else: field.name end)
-    |> assign_new(:value, fn -> field.value end)
+    # A field= always wins over whatever :value's own attr default is — was
+    # `assign_new/3` before :value had a default, which silently stopped
+    # working the moment it got one (assign_new only fires on a genuinely
+    # *absent* key, and a defaulted attr is never absent).
+    |> assign(:value, field.value)
     |> input()
   end
 
@@ -539,12 +546,13 @@ defmodule CofferWeb.CoreComponents do
   """
   attr :title, :string, required: true
   attr :cancel_href, :string, required: true
+  attr :class, :any, default: nil, doc: "overrides the modal-box width, e.g. \"max-w-2xl\""
   slot :inner_block, required: true
 
   def modal_form(assigns) do
     ~H"""
     <div class="modal modal-open">
-      <div class="modal-box">
+      <div class={["modal-box", @class]}>
         <h2 class="text-lg font-semibold">{@title}</h2>
         {render_slot(@inner_block)}
       </div>

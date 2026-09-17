@@ -3,6 +3,7 @@ defmodule Coffer.Inventory.Item do
   import Ecto.Changeset
 
   @tracking_types [:consumable, :checkoutable]
+  @sources [:manual, :snipeit]
 
   schema "inventory_items" do
     field :name, :string
@@ -14,6 +15,18 @@ defmodule Coffer.Inventory.Item do
     field :unit_cost, :decimal
     field :location, :string
     field :active, :boolean, default: true
+
+    # Set only via Coffer.SnipeIt's sync — `source` stays :manual (the
+    # default) for everything created through the normal item form, and
+    # `external_id`/`external_updated_at` stay nil for those rows.
+    field :source, Ecto.Enum, values: @sources, default: :manual
+    field :external_id, :string
+    field :external_updated_at, :utc_datetime
+    # Snipe-IT's own notion of who/where a hardware asset is currently
+    # checked out to — display-only, sync-owned, has nothing to do with
+    # Coffer's own `checkouts` table (which only ever governs items created
+    # in Coffer, never a Snipe-IT-sourced one).
+    field :assigned_to, :string
 
     belongs_to :created_by, Coffer.Accounts.User
 
@@ -61,5 +74,30 @@ defmodule Coffer.Inventory.Item do
     item
     |> cast(%{quantity_on_hand: quantity_on_hand}, [:quantity_on_hand])
     |> validate_number(:quantity_on_hand, greater_than_or_equal_to: 0)
+  end
+
+  @doc """
+  Only used by `Coffer.SnipeIt` — creates a new item sourced from Snipe-IT,
+  including the starting `quantity_on_hand` (like `create_changeset/2`) plus
+  the external-origin fields the regular form never touches.
+  """
+  def snipeit_create_changeset(item, attrs) do
+    item
+    |> create_changeset(attrs)
+    |> cast(attrs, [:source, :external_id, :external_updated_at, :assigned_to])
+    |> validate_required([:source, :external_id])
+    |> unique_constraint(:external_id, name: :inventory_items_snipeit_external_id_index)
+  end
+
+  @doc """
+  Only used by `Coffer.SnipeIt` — updates the non-quantity fields of an
+  already-synced item on a re-sync (quantity changes go through
+  `Coffer.Inventory`'s issue/receive/adjust functions instead, same as any
+  other stock movement, so they stay in the audit trail).
+  """
+  def snipeit_update_changeset(item, attrs) do
+    item
+    |> changeset(attrs)
+    |> cast(attrs, [:external_updated_at, :assigned_to])
   end
 end

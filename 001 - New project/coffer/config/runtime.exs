@@ -31,6 +31,14 @@ config :coffer, :oidc,
 
 config :coffer, :base_currency_code, System.get_env("BASE_CURRENCY", "SCR")
 
+# Optional — the "Sync from Snipe-IT" button on the Inventory page no-ops
+# with a clear error until both are set. Point this at whichever Snipe-IT
+# instance is current (homelab test now, production later) purely via
+# these two env vars — no code change needed to switch.
+config :coffer, :snipeit,
+  url: System.get_env("SNIPEIT_URL"),
+  api_token: System.get_env("SNIPEIT_API_TOKEN")
+
 # `/app/storage` matches the Docker volume mount (spec §10/§11); the
 # dev/test default keeps local `mix compile`/`mix test` working without
 # that volume, since STORAGE_PATH is unset outside the container.

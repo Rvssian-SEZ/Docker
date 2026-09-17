@@ -17,6 +17,8 @@ services:
       - OIDC_REDIRECT_URI
       - BASE_CURRENCY=SCR
       - STORAGE_PATH=/app/storage
+      - SNIPEIT_URL
+      - SNIPEIT_API_TOKEN
     volumes:
       - app_storage:/app/storage
     ports:

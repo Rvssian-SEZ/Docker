@@ -8,7 +8,21 @@ defmodule CofferWeb.InventoryLive.Index do
   @impl true
   def mount(_params, _session, socket) do
     if Policy.can?(socket.assigns.current_user, :view, :inventory_item) do
-      {:ok, assign(socket, :items, Inventory.list_items())}
+      filters = %{
+        "search" => "",
+        "tracking_type" => "",
+        "category" => "",
+        "location" => "",
+        "source" => "",
+        "low_stock_only" => ""
+      }
+
+      {:ok,
+       socket
+       |> assign(:filters, filters)
+       |> assign(:categories, Inventory.distinct_categories())
+       |> assign(:locations, Inventory.distinct_locations())
+       |> refresh_items()}
     else
       {:ok,
        socket
@@ -88,6 +102,44 @@ defmodule CofferWeb.InventoryLive.Index do
     end
   end
 
+  def handle_event("filter", params, socket) do
+    filters = %{
+      "search" => params["search"] || "",
+      "tracking_type" => params["tracking_type"] || "",
+      "category" => params["category"] || "",
+      "location" => params["location"] || "",
+      "source" => params["source"] || "",
+      "low_stock_only" => params["low_stock_only"] || ""
+    }
+
+    {:noreply, socket |> assign(:filters, filters) |> refresh_items()}
+  end
+
+  def handle_event("sync_snipeit", _params, socket) do
+    if Policy.can?(socket.assigns.current_user, :create, :inventory_item) do
+      case Coffer.SnipeIt.sync_inventory(socket.assigns.current_user) do
+        {:ok, result} ->
+          {:noreply,
+           socket
+           |> put_flash(:info, sync_summary(result))
+           |> refresh_items()}
+
+        {:error, :not_configured} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "Snipe-IT isn't configured (SNIPEIT_URL / SNIPEIT_API_TOKEN not set)."
+           )}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Snipe-IT sync failed: #{inspect(reason)}")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "You're not authorized to sync from Snipe-IT.")}
+    end
+  end
+
   def handle_event("delete", %{"id" => id}, socket) do
     if Policy.can?(socket.assigns.current_user, :delete, :inventory_item) do
       item = Inventory.get_item!(id)
@@ -97,7 +149,7 @@ defmodule CofferWeb.InventoryLive.Index do
           {:noreply,
            socket
            |> put_flash(:info, "Item deleted.")
-           |> assign(:items, Inventory.list_items())}
+           |> refresh_items()}
 
         {:error, _changeset} ->
           {:noreply, put_flash(socket, :error, "Could not delete item.")}
@@ -247,6 +299,22 @@ defmodule CofferWeb.InventoryLive.Index do
     end
   end
 
+  defp refresh_items(socket) do
+    filters =
+      Map.new(socket.assigns.filters, fn {k, v} -> {String.to_existing_atom(k), v} end)
+
+    socket
+    |> assign(:items, Inventory.list_items(filters))
+    |> assign(:has_snipeit_items, Inventory.any_snipeit_items?())
+  end
+
+  defp sync_summary(%Coffer.SnipeIt.Result{} = r) do
+    base =
+      "Synced from Snipe-IT: #{r.created} created, #{r.updated} updated, #{r.unchanged} unchanged."
+
+    if r.errors == [], do: base, else: base <> " #{length(r.errors)} failed — see server logs."
+  end
+
   defp error_summary(changeset) do
     changeset
     |> Ecto.Changeset.traverse_errors(fn {msg, _opts} -> msg end)
@@ -263,6 +331,16 @@ defmodule CofferWeb.InventoryLive.Index do
   def render(assigns) do
     ~H"""
     <div class="mx-auto max-w-4xl py-12">
+      <div :if={@has_snipeit_items} role="alert" class="alert alert-error mb-4">
+        <.icon name="hero-exclamation-triangle" class="size-5 shrink-0" />
+        <p>
+          Items synced from Snipe-IT (marked with the
+          <span class="badge badge-ghost badge-sm align-middle">Snipe-IT</span>
+          badge) are overwritten by the source system on every sync — any changes you make to
+          them here in Coffer will be lost the next time someone clicks "Sync from Snipe-IT."
+        </p>
+      </div>
+
       <.header>
         Inventory
         <:actions>
@@ -270,6 +348,15 @@ defmodule CofferWeb.InventoryLive.Index do
           <.link href={~p"/inventory/checkouts/export.csv"} class="btn btn-outline">
             Export checkouts CSV
           </.link>
+          <button
+            :if={Policy.can?(@current_user, :create, :inventory_item)}
+            type="button"
+            phx-click="sync_snipeit"
+            phx-disable-with="Syncing..."
+            class="btn btn-outline"
+          >
+            Sync from Snipe-IT
+          </button>
           <.link
             :if={Policy.can?(@current_user, :create, :inventory_item)}
             href={~p"/inventory/new"}
@@ -280,51 +367,16 @@ defmodule CofferWeb.InventoryLive.Index do
         </:actions>
       </.header>
 
-      <.table id="inventory-items" rows={@items}>
-        <:col :let={i} label="Name">
-          <div class="flex flex-wrap items-center gap-2">
-            <span>{i.name}</span>
-            <span :if={low_stock?(i)} class="badge badge-error badge-sm whitespace-nowrap">
-              low stock
-            </span>
-          </div>
-        </:col>
-        <:col :let={i} label="Type">{i.tracking_type}</:col>
-        <:col :let={i} label="Category">{i.category}</:col>
-        <:col :let={i} label="On hand">{i.quantity_on_hand}</:col>
-        <:col :let={i} label="Available">
-          {if i.tracking_type == :checkoutable, do: Inventory.available(i), else: "—"}
-        </:col>
-        <:col :let={i} label="Location">{i.location}</:col>
-        <:action :let={i}>
-          <.link
-            :if={Policy.can?(@current_user, :update, :inventory_item)}
-            href={~p"/inventory/#{i.id}/edit"}
-            class="link"
-          >
-            Edit
-          </.link>
-        </:action>
-        <:action :let={i}>
-          <.link
-            :if={Policy.can?(@current_user, :delete, :inventory_item)}
-            phx-click="delete"
-            phx-value-id={i.id}
-            data-confirm="Delete this item? This does not delete its transaction/checkout history."
-            class="link link-error"
-          >
-            Delete
-          </.link>
-        </:action>
-      </.table>
-
-      <.link href={~p"/"} class="link mt-6 inline-block">&larr; Back</.link>
-
-      <div
+      <.modal_form
         :if={@live_action in [:new, :edit]}
-        class="mt-8 max-w-sm rounded-box border border-base-300 p-6"
+        title={@page_title}
+        cancel_href={~p"/inventory"}
+        class="max-w-2xl"
       >
-        <h2 class="text-lg font-semibold">{@page_title}</h2>
+        <p :if={@live_action == :edit and @item.assigned_to} class="mt-1 text-sm text-base-content/60">
+          Assigned to <span class="font-medium text-base-content">{@item.assigned_to}</span>
+          (from Snipe-IT)
+        </p>
 
         <.form for={@form} id="item-form" phx-change="validate" phx-submit="save" class="mt-4">
           <.input field={@form[:name]} label="Name" />
@@ -451,7 +503,125 @@ defmodule CofferWeb.InventoryLive.Index do
             </.form>
           </div>
         </div>
-      </div>
+      </.modal_form>
+
+      <form phx-change="filter" class="mt-4 flex flex-wrap items-end gap-3">
+        <fieldset class="fieldset">
+          <label class="mb-1 text-sm">Search</label>
+          <input
+            type="text"
+            name="search"
+            value={@filters["search"]}
+            placeholder="Name..."
+            phx-debounce="300"
+            class="input input-bordered"
+          />
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <label class="mb-1 text-sm">Type</label>
+          <select name="tracking_type" class="select select-bordered">
+            <option value="" selected={@filters["tracking_type"] == ""}>All</option>
+            <option
+              :for={t <- Item.tracking_types()}
+              value={t}
+              selected={@filters["tracking_type"] == to_string(t)}
+            >
+              {Phoenix.Naming.humanize(t)}
+            </option>
+          </select>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <label class="mb-1 text-sm">Category</label>
+          <select name="category" class="select select-bordered">
+            <option value="" selected={@filters["category"] == ""}>All</option>
+            <option :for={c <- @categories} value={c} selected={@filters["category"] == c}>
+              {c}
+            </option>
+          </select>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <label class="mb-1 text-sm">Location</label>
+          <select name="location" class="select select-bordered">
+            <option value="" selected={@filters["location"] == ""}>All</option>
+            <option :for={l <- @locations} value={l} selected={@filters["location"] == l}>
+              {l}
+            </option>
+          </select>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <label class="mb-1 text-sm">Source</label>
+          <select name="source" class="select select-bordered">
+            <option value="" selected={@filters["source"] == ""}>All</option>
+            <option value="manual" selected={@filters["source"] == "manual"}>Manual</option>
+            <option value="snipeit" selected={@filters["source"] == "snipeit"}>Snipe-IT</option>
+          </select>
+        </fieldset>
+
+        <label class="fieldset flex-row items-center gap-2 pb-2">
+          <input
+            type="checkbox"
+            name="low_stock_only"
+            value="true"
+            checked={@filters["low_stock_only"] == "true"}
+            class="checkbox"
+          />
+          <span class="text-sm">Low stock only</span>
+        </label>
+      </form>
+
+      <p class="mt-2 text-sm text-base-content/60">{length(@items)} item(s)</p>
+
+      <.table id="inventory-items" rows={@items}>
+        <:col :let={i} label="Name">
+          <div class="flex flex-wrap items-center gap-2">
+            <span>{i.name}</span>
+            <span
+              :if={i.source == :snipeit}
+              class="badge badge-ghost badge-sm whitespace-nowrap"
+              title="Synced from Snipe-IT — edits here get overwritten by the next sync"
+            >
+              Snipe-IT
+            </span>
+            <span :if={low_stock?(i)} class="badge badge-error badge-sm whitespace-nowrap">
+              low stock
+            </span>
+          </div>
+        </:col>
+        <:col :let={i} label="Type">{i.tracking_type}</:col>
+        <:col :let={i} label="Category">{i.category}</:col>
+        <:col :let={i} label="On hand">{i.quantity_on_hand}</:col>
+        <:col :let={i} label="Available">
+          {if i.tracking_type == :checkoutable, do: Inventory.available(i), else: "—"}
+        </:col>
+        <:col :let={i} label="Location">{i.location}</:col>
+        <:col :let={i} label="Assigned to">{i.assigned_to || "—"}</:col>
+        <:action :let={i}>
+          <.link
+            :if={Policy.can?(@current_user, :update, :inventory_item)}
+            href={~p"/inventory/#{i.id}/edit"}
+            class="link"
+          >
+            Edit
+          </.link>
+        </:action>
+        <:action :let={i}>
+          <.link
+            :if={Policy.can?(@current_user, :delete, :inventory_item)}
+            phx-click="delete"
+            phx-value-id={i.id}
+            data-confirm="Delete this item? This does not delete its transaction/checkout history."
+            class="link link-error"
+          >
+            Delete
+          </.link>
+        </:action>
+      </.table>
+
+      <.link href={~p"/"} class="link mt-6 inline-block">&larr; Back</.link>
     </div>
     """
   end
