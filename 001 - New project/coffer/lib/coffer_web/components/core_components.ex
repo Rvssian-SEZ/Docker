@@ -426,6 +426,37 @@ defmodule CofferWeb.CoreComponents do
   end
 
   @doc """
+  Renders a clickable app-launcher tile, used on the home page's module grid.
+
+  ## Examples
+
+      <.app_tile navigate={~p"/ledger"} icon="hero-banknotes" title="Ledger">
+        Income and expense transactions.
+      </.app_tile>
+  """
+  attr :navigate, :string, required: true
+  attr :icon, :string, required: true
+  attr :title, :string, required: true
+  slot :inner_block, required: true
+
+  def app_tile(assigns) do
+    ~H"""
+    <.link
+      navigate={@navigate}
+      class="group flex items-start gap-4 rounded-box border border-base-300 p-5 transition-colors hover:border-primary/50 hover:bg-base-200/50"
+    >
+      <div class="flex size-11 shrink-0 items-center justify-center rounded-box bg-primary/10 text-primary">
+        <.icon name={@icon} class="size-6" />
+      </div>
+      <div>
+        <h2 class="font-semibold group-hover:text-primary">{@title}</h2>
+        <p class="mt-0.5 text-sm text-base-content/60">{render_slot(@inner_block)}</p>
+      </div>
+    </.link>
+    """
+  end
+
+  @doc """
   Renders a [Heroicon](https://heroicons.com).
 
   Heroicons come in three styles – outline, solid, and mini.

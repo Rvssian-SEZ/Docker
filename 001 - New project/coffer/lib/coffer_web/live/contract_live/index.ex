@@ -310,7 +310,7 @@ defmodule CofferWeb.ContractLive.Index do
                 phx-click="delete_attachment"
                 phx-value-id={a.id}
                 data-confirm={"Remove \"#{a.original_filename}\"?"}
-                class="link text-error text-sm"
+                class="link link-error text-sm"
               >
                 Remove
               </button>

@@ -166,7 +166,7 @@ defmodule CofferWeb.CurrencyLive.Rates do
             phx-click="delete"
             phx-value-id={r.id}
             data-confirm="Delete this exchange rate? This does not reopen any other rate period automatically."
-            class="link text-error"
+            class="link link-error"
           >
             Delete
           </button>

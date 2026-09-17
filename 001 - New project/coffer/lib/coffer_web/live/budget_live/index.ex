@@ -289,7 +289,7 @@ defmodule CofferWeb.BudgetLive.Index do
               phx-click="delete_category"
               phx-value-id={c.id}
               data-confirm={"Delete category \"#{c.name}\"?"}
-              class="link text-error text-sm"
+              class="link link-error text-sm"
             >
               Delete
             </button>

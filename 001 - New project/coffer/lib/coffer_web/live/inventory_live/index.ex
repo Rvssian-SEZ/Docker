@@ -344,32 +344,24 @@ defmodule CofferWeb.InventoryLive.Index do
         >
           <h3 class="font-semibold">Move stock</h3>
 
-          <.form for={@stock_form} id="stock-form" phx-submit="stock_move" class="mt-4 space-y-2">
-            <select name="stock[type]" class="select select-bordered w-full">
-              <option value="issue">Issue</option>
-              <option value="receive">Receive</option>
-              <option value="adjustment">Adjustment (add)</option>
-            </select>
-            <input
-              type="number"
-              name="stock[quantity]"
-              placeholder="Quantity"
-              class="input input-bordered w-full"
+          <.form for={@stock_form} id="stock-form" phx-submit="stock_move" class="mt-4">
+            <.input
+              type="select"
+              name="stock[type]"
+              label="Type"
+              options={[
+                {"Issue", "issue"},
+                {"Receive", "receive"},
+                {"Adjustment (add)", "adjustment"}
+              ]}
             />
-            <input type="date" name="stock[date]" class="input input-bordered w-full" />
-            <input
-              type="text"
-              name="stock[issued_to]"
-              placeholder="Issued to (issue only)"
-              class="input input-bordered w-full"
-            />
-            <input
-              type="text"
-              name="stock[notes]"
-              placeholder="Notes"
-              class="input input-bordered w-full"
-            />
-            <.button phx-disable-with="Saving...">Record</.button>
+            <.input type="number" name="stock[quantity]" label="Quantity" />
+            <.input type="date" name="stock[date]" label="Date" />
+            <.input type="text" name="stock[issued_to]" label="Issued to (issue only)" />
+            <.input type="text" name="stock[notes]" label="Notes" />
+            <footer class="mt-4 flex justify-end">
+              <.button phx-disable-with="Saving...">Record</.button>
+            </footer>
           </.form>
 
           <h4 class="mt-6 text-sm font-semibold">History</h4>
@@ -388,21 +380,17 @@ defmodule CofferWeb.InventoryLive.Index do
         >
           <h3 class="font-semibold">Checkouts</h3>
 
-          <.form for={@checkout_form} id="checkout-form" phx-submit="checkout" class="mt-4 space-y-2">
-            <input
-              type="text"
-              name="checkout[checked_out_to]"
-              placeholder="Checked out to"
-              class="input input-bordered w-full"
-            />
-            <input type="date" name="checkout[due_back_at]" class="input input-bordered w-full" />
-            <input
+          <.form for={@checkout_form} id="checkout-form" phx-submit="checkout" class="mt-4">
+            <.input type="text" name="checkout[checked_out_to]" label="Checked out to" />
+            <.input type="date" name="checkout[due_back_at]" label="Due back (optional)" />
+            <.input
               type="text"
               name="checkout[condition_notes_out]"
-              placeholder="Condition notes"
-              class="input input-bordered w-full"
+              label="Condition notes (optional)"
             />
-            <.button phx-disable-with="Saving...">Check out</.button>
+            <footer class="mt-4 flex justify-end">
+              <.button phx-disable-with="Saving...">Check out</.button>
+            </footer>
           </.form>
 
           <h4 class="mt-6 text-sm font-semibold">History</h4>
@@ -424,21 +412,22 @@ defmodule CofferWeb.InventoryLive.Index do
           </.table>
 
           <div :if={@checkin_id} class="mt-4 rounded-box border border-base-300 p-4">
-            <.form for={@checkin_form} id="checkin-form" phx-submit="check_in" class="space-y-2">
-              <input
+            <.form for={@checkin_form} id="checkin-form" phx-submit="check_in">
+              <.input
                 type="text"
                 name="checkin[condition_notes_in]"
-                placeholder="Condition notes"
-                class="input input-bordered w-full"
+                label="Condition notes (optional)"
               />
-              <select name="checkin[status]" class="select select-bordered w-full">
-                <option value="returned">Returned</option>
-                <option value="lost">Lost</option>
-              </select>
-              <div class="flex justify-end gap-2">
+              <.input
+                type="select"
+                name="checkin[status]"
+                label="Status"
+                options={[{"Returned", "returned"}, {"Lost", "lost"}]}
+              />
+              <footer class="mt-4 flex justify-end gap-2">
                 <.link phx-click="cancel_check_in" class="btn btn-ghost">Cancel</.link>
                 <.button phx-disable-with="Saving...">Confirm check-in</.button>
-              </div>
+              </footer>
             </.form>
           </div>
         </div>

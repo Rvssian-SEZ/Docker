@@ -60,7 +60,7 @@ defmodule CofferWeb.Layouts do
       |> assign_new(:inner_content, fn -> nil end)
 
     ~H"""
-    <header class="navbar px-4 sm:px-6 lg:px-8">
+    <header class="navbar border-b border-base-300 px-4 sm:px-6 lg:px-8">
       <div class="flex-1">
         <a href="/" class="flex-1 flex w-fit items-center gap-2">
           <span class="text-lg font-semibold">Coffer</span>
