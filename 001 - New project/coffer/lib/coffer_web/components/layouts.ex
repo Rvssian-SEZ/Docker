@@ -60,42 +60,119 @@ defmodule CofferWeb.Layouts do
       |> assign_new(:inner_content, fn -> nil end)
 
     ~H"""
-    <header class="navbar border-b border-base-300 px-4 sm:px-6 lg:px-8">
-      <div class="flex-1">
-        <a href="/" class="flex-1 flex w-fit items-center gap-2">
-          <span class="text-lg font-semibold">Coffer</span>
-        </a>
-      </div>
-      <div class="flex-none">
-        <ul class="flex flex-column px-1 space-x-2 items-center">
-          <li :if={@current_user}>
-            <.notification_bell
-              current_user={@current_user}
-              unread_count={@unread_count}
-              recent_notifications={@recent_notifications}
-            />
-          </li>
-          <li>
-            <.theme_toggle />
-          </li>
-          <li :if={@current_user}>
-            <a href={~p"/auth/logout"} class="btn btn-ghost">Sign out</a>
-          </li>
-        </ul>
-      </div>
-    </header>
+    <div class="flex min-h-screen">
+      <.sidebar :if={@current_user} current_user={@current_user} />
 
-    <main class="px-4 py-8 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-6xl space-y-4">
-        <%= if @inner_block do %>
-          {render_slot(@inner_block)}
-        <% else %>
-          {@inner_content}
-        <% end %>
+      <div class="flex min-w-0 flex-1 flex-col">
+        <header class="navbar border-b border-base-300 px-4 sm:px-6 lg:px-8">
+          <div class="flex-1">
+            <a :if={!@current_user} href="/" class="flex-1 flex w-fit items-center gap-2">
+              <span class="text-lg font-semibold">Coffer</span>
+            </a>
+          </div>
+          <div class="flex-none">
+            <ul class="flex flex-column px-1 space-x-2 items-center">
+              <li :if={@current_user}>
+                <.notification_bell
+                  current_user={@current_user}
+                  unread_count={@unread_count}
+                  recent_notifications={@recent_notifications}
+                />
+              </li>
+              <li>
+                <.theme_toggle />
+              </li>
+              <li :if={@current_user}>
+                <a href={~p"/auth/logout"} class="btn btn-ghost">Sign out</a>
+              </li>
+            </ul>
+          </div>
+        </header>
+
+        <main class="px-4 py-8 sm:px-6 lg:px-8">
+          <div class="mx-auto max-w-6xl space-y-4">
+            <%= if @inner_block do %>
+              {render_slot(@inner_block)}
+            <% else %>
+              {@inner_content}
+            <% end %>
+          </div>
+        </main>
       </div>
-    </main>
+    </div>
 
     <.flash_group flash={@flash} />
+    """
+  end
+
+  @doc false
+  attr :current_user, :map, required: true
+
+  def sidebar(assigns) do
+    ~H"""
+    <aside
+      id="app-sidebar"
+      class="flex w-56 shrink-0 flex-col border-r border-base-300 bg-base-100 transition-[width] duration-150"
+    >
+      <div class="flex items-center justify-between px-4 py-4">
+        <a href="/" class="sidebar-heading text-lg font-semibold whitespace-nowrap">Coffer</a>
+        <button
+          phx-click={Phoenix.LiveView.JS.dispatch("phx:toggle-sidebar")}
+          class="btn btn-ghost btn-sm btn-square"
+          aria-label="Toggle sidebar"
+        >
+          <.icon name="hero-chevron-left" class="sidebar-collapse-icon size-4 transition-transform" />
+        </button>
+      </div>
+
+      <nav class="flex-1 space-y-1 overflow-y-auto px-2 pb-4">
+        <.sidebar_link navigate={~p"/dashboard"} icon="hero-chart-bar" label="Dashboard" />
+        <.sidebar_link navigate={~p"/ledger"} icon="hero-banknotes" label="Ledger" />
+        <.sidebar_link navigate={~p"/budgets"} icon="hero-wallet" label="Budgets" />
+        <.sidebar_link
+          navigate={~p"/vendors"}
+          icon="hero-building-storefront"
+          label="Vendors"
+        />
+        <.sidebar_link navigate={~p"/contracts"} icon="hero-document-text" label="Contracts" />
+        <.sidebar_link navigate={~p"/inventory"} icon="hero-archive-box" label="Inventory" />
+        <.sidebar_link
+          navigate={~p"/admin/currencies"}
+          icon="hero-currency-dollar"
+          label="Currencies"
+        />
+        <.sidebar_link navigate={~p"/notifications"} icon="hero-bell" label="Notifications" />
+        <.sidebar_link
+          :if={@current_user.role in [:admin, :staff]}
+          navigate={~p"/admin/audit-log"}
+          icon="hero-shield-check"
+          label="Audit log"
+        />
+        <.sidebar_link
+          :if={@current_user.role == :admin}
+          navigate={~p"/admin/role_mappings"}
+          icon="hero-users"
+          label="Role mappings"
+        />
+      </nav>
+    </aside>
+    """
+  end
+
+  attr :navigate, :string, required: true
+  attr :icon, :string, required: true
+  attr :label, :string, required: true
+
+  defp sidebar_link(assigns) do
+    ~H"""
+    <.link
+      navigate={@navigate}
+      class="flex items-center gap-3 rounded-box px-2.5 py-2 text-sm hover:bg-base-200"
+      title={@label}
+    >
+      <.icon name={@icon} class="size-5 shrink-0" />
+      <span class="sidebar-label whitespace-nowrap">{@label}</span>
+    </.link>
     """
   end
 

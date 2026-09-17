@@ -35,7 +35,29 @@
           }
         });
       })();
+
+      // Same pattern as the theme script above: apply the saved sidebar
+      // state before first paint (avoids a flash of the wrong width), and
+      // let the sidebar's own toggle button flip it via a dispatched event
+      // rather than a server round-trip — it's pure presentation state.
+      (() => {
+        const apply = (collapsed) => {
+          document.documentElement.setAttribute("data-sidebar", collapsed ? "collapsed" : "expanded");
+        };
+        apply(localStorage.getItem("phx:sidebar") === "collapsed");
+        window.addEventListener("phx:toggle-sidebar", () => {
+          const collapsed = document.documentElement.getAttribute("data-sidebar") !== "collapsed";
+          localStorage.setItem("phx:sidebar", collapsed ? "collapsed" : "expanded");
+          apply(collapsed);
+        });
+      })();
     </script>
+    <style>
+      html[data-sidebar="collapsed"] #app-sidebar { width: 4.5rem; }
+      html[data-sidebar="collapsed"] #app-sidebar .sidebar-label,
+      html[data-sidebar="collapsed"] #app-sidebar .sidebar-heading { display: none; }
+      html[data-sidebar="collapsed"] #app-sidebar .sidebar-collapse-icon { transform: rotate(180deg); }
+    </style>
   </head>
   <body>
     {@inner_content}
