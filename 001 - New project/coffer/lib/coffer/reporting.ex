@@ -108,19 +108,46 @@ defmodule Coffer.Reporting do
     end)
   end
 
-  @doc "Expense `amount_base` grouped by the envelope's category (unenveloped/uncategorized spend grouped under \"Uncategorized\")."
+  @doc """
+  Expense `amount_base` grouped by the envelope's category, rolled up the
+  hierarchy — a parent category's total includes its own directly-tagged
+  spend plus every descendant category's spend (unenveloped/uncategorized
+  spend is grouped separately under "Uncategorized", not part of the tree).
+  """
   def spend_by_category(filters) do
-    categories_by_id = Map.new(Budgets.list_categories(), &{&1.id, &1.name})
+    categories = Budgets.list_categories()
 
-    filters
-    |> filtered_query()
-    |> where([t], t.direction == :expense)
-    |> group_by([envelope: e], e.category_id)
-    |> select([t, envelope: e], {e.category_id, sum(t.amount_base)})
-    |> Repo.all()
-    |> Enum.map(fn {category_id, total} ->
-      %{category: Map.get(categories_by_id, category_id, "Uncategorized"), total: total}
-    end)
+    raw_by_category_id =
+      filters
+      |> filtered_query()
+      |> where([t], t.direction == :expense)
+      |> group_by([envelope: e], e.category_id)
+      |> select([t, envelope: e], {e.category_id, sum(t.amount_base)})
+      |> Repo.all()
+      |> Map.new()
+
+    rolled_up =
+      categories
+      |> Enum.map(fn category ->
+        total =
+          category.id
+          |> Budgets.category_and_descendant_ids(categories)
+          |> Enum.reduce(Decimal.new(0), fn id, acc ->
+            Decimal.add(acc, Map.get(raw_by_category_id, id, Decimal.new(0)))
+          end)
+
+        %{category: Budgets.category_path_label(category, categories), total: total}
+      end)
+      |> Enum.reject(&Decimal.eq?(&1.total, 0))
+
+    uncategorized_total = Map.get(raw_by_category_id, nil, Decimal.new(0))
+
+    uncategorized =
+      if Decimal.eq?(uncategorized_total, 0),
+        do: [],
+        else: [%{category: "Uncategorized", total: uncategorized_total}]
+
+    (rolled_up ++ uncategorized)
     |> Enum.sort_by(& &1.total, {:desc, Decimal})
   end
 
@@ -159,7 +186,9 @@ defmodule Coffer.Reporting do
   defp filter_in(query, ids, :vendor_id), do: where(query, [t], t.vendor_id in ^ids)
 
   defp filter_category(query, []), do: query
-  defp filter_category(query, ids), do: where(query, [envelope: e], e.category_id in ^ids)
+
+  defp filter_category(query, ids),
+    do: where(query, [envelope: e], e.category_id in ^expand_category_ids(ids))
 
   defp filter_eq(query, nil, _field), do: query
   defp filter_eq(query, value, :currency_id), do: where(query, [t], t.currency_id == ^value)
@@ -182,8 +211,18 @@ defmodule Coffer.Reporting do
   defp maybe_filter_by_category(envelopes, nil), do: envelopes
   defp maybe_filter_by_category(envelopes, []), do: envelopes
 
-  defp maybe_filter_by_category(envelopes, category_ids),
-    do: Enum.filter(envelopes, &(&1.category_id in category_ids))
+  defp maybe_filter_by_category(envelopes, category_ids) do
+    expanded = expand_category_ids(category_ids)
+    Enum.filter(envelopes, &(&1.category_id in expanded))
+  end
+
+  # Selecting a parent category in a filter should include its
+  # subcategories' spend too, consistent with how `spend_by_category/1`
+  # rolls child totals up into their parent.
+  defp expand_category_ids(ids) do
+    categories = Budgets.list_categories()
+    ids |> Enum.flat_map(&Budgets.category_and_descendant_ids(&1, categories)) |> Enum.uniq()
+  end
 
   defp zero_if_nil(nil), do: Decimal.new(0)
   defp zero_if_nil(%Decimal{} = value), do: value

@@ -55,14 +55,6 @@ defmodule CofferWeb.DashboardLive do
   defp currency_code(currencies, id),
     do: Enum.find_value(currencies, "", &(&1.id == id && &1.code))
 
-  defp envelope_filter_label(_envelopes, []), do: "All envelopes"
-
-  defp envelope_filter_label(envelopes, [id]) do
-    Enum.find_value(envelopes, "1 selected", &(&1.id == id && &1.name))
-  end
-
-  defp envelope_filter_label(_envelopes, ids), do: "#{length(ids)} selected"
-
   @impl true
   def render(assigns) do
     ~H"""
@@ -92,48 +84,26 @@ defmodule CofferWeb.DashboardLive do
       >
         <.input type="date" name="date_from" label="From" value={@filters.date_from} />
         <.input type="date" name="date_to" label="To" value={@filters.date_to} />
-        <div class="fieldset mb-2">
-          <label>
-            <span class="label mb-1">Envelope</span>
-            <details class="dropdown w-full">
-              <summary class="select w-full">
-                {envelope_filter_label(@envelopes, @filters.envelope_ids)}
-              </summary>
-              <ul class="dropdown-content menu z-10 max-h-64 w-full flex-nowrap overflow-y-auto rounded-box bg-base-100 p-2 shadow">
-                <li :for={e <- @envelopes}>
-                  <label class="flex cursor-pointer items-center gap-2">
-                    <input
-                      type="checkbox"
-                      name="envelope_ids[]"
-                      value={e.id}
-                      checked={e.id in @filters.envelope_ids}
-                      class="checkbox checkbox-sm"
-                    />
-                    {e.name} (FY{e.fiscal_year})
-                  </label>
-                </li>
-                <li :if={@envelopes == []} class="px-2 py-1 text-sm text-base-content/60">
-                  No envelopes yet.
-                </li>
-              </ul>
-            </details>
-          </label>
-        </div>
-        <.input
-          type="select"
-          name="category_ids[]"
-          label="Category"
-          multiple
-          value={@filters.category_ids}
-          options={Enum.map(@categories, &{&1.name, &1.id})}
+        <.multi_select_dropdown
+          label="Envelope"
+          name="envelope_ids[]"
+          options={Enum.map(@envelopes, &{"#{&1.name} (FY#{&1.fiscal_year})", &1.id})}
+          selected={@filters.envelope_ids}
+          empty_message="No envelopes yet."
         />
-        <.input
-          type="select"
-          name="vendor_ids[]"
+        <.multi_select_dropdown
+          label="Category"
+          name="category_ids[]"
+          options={Enum.map(@categories, &{Budgets.category_path_label(&1, @categories), &1.id})}
+          selected={@filters.category_ids}
+          empty_message="No categories yet."
+        />
+        <.multi_select_dropdown
           label="Vendor"
-          multiple
-          value={@filters.vendor_ids}
+          name="vendor_ids[]"
           options={Enum.map(@vendors, &{&1.name, &1.id})}
+          selected={@filters.vendor_ids}
+          empty_message="No vendors yet."
         />
         <.input
           type="select"

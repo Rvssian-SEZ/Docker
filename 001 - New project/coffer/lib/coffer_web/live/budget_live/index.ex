@@ -12,7 +12,7 @@ defmodule CofferWeb.BudgetLive.Index do
       {:ok,
        socket
        |> assign(:envelopes, Budgets.list_envelopes())
-       |> assign(:categories, Budgets.list_categories())
+       |> assign_categories()
        |> assign(:category_form, to_form(Budgets.change_category(%Category{})))}
     else
       {:ok,
@@ -118,7 +118,7 @@ defmodule CofferWeb.BudgetLive.Index do
           {:noreply,
            socket
            |> put_flash(:info, "Category added.")
-           |> assign(:categories, Budgets.list_categories())
+           |> assign_categories()
            |> assign(:category_form, to_form(Budgets.change_category(%Category{})))}
 
         {:error, changeset} ->
@@ -138,7 +138,7 @@ defmodule CofferWeb.BudgetLive.Index do
           {:noreply,
            socket
            |> put_flash(:info, "Category deleted.")
-           |> assign(:categories, Budgets.list_categories())}
+           |> assign_categories()}
 
         {:error, _changeset} ->
           {:noreply, put_flash(socket, :error, "Could not delete category.")}
@@ -184,6 +184,18 @@ defmodule CofferWeb.BudgetLive.Index do
     else
       {:noreply, put_flash(socket, :error, "You're not authorized to start a new fiscal year.")}
     end
+  end
+
+  defp assign_categories(socket) do
+    categories = Budgets.list_categories()
+
+    socket
+    |> assign(:categories, categories)
+    |> assign(:category_tree, Budgets.list_categories_tree())
+    |> assign(
+      :category_options,
+      Enum.map(categories, &{Budgets.category_path_label(&1, categories), &1.id})
+    )
   end
 
   defp save_envelope(socket, :edit, params) do
@@ -269,12 +281,11 @@ defmodule CofferWeb.BudgetLive.Index do
 
       <.link href={~p"/"} class="link mt-6 inline-block">&larr; Back</.link>
 
-      <div
+      <.modal_form
         :if={@live_action in [:new, :edit]}
-        class="mt-8 max-w-sm rounded-box border border-base-300 p-6"
+        title={@page_title}
+        cancel_href={~p"/budgets"}
       >
-        <h2 class="text-lg font-semibold">{@page_title}</h2>
-
         <.form for={@form} id="envelope-form" phx-change="validate" phx-submit="save" class="mt-4">
           <.input field={@form[:name]} label="Name" />
           <.input field={@form[:description]} type="textarea" label="Description" />
@@ -284,7 +295,7 @@ defmodule CofferWeb.BudgetLive.Index do
             field={@form[:category_id]}
             type="select"
             label="Category"
-            options={Enum.map(@categories, &{&1.name, &1.id})}
+            options={@category_options}
           />
           <.input field={@form[:active]} type="checkbox" label="Active" />
           <footer class="mt-4 flex justify-end gap-2">
@@ -292,19 +303,22 @@ defmodule CofferWeb.BudgetLive.Index do
             <.button phx-disable-with="Saving...">Save</.button>
           </footer>
         </.form>
-      </div>
+      </.modal_form>
 
       <div class="mt-12 max-w-sm">
         <h2 class="text-lg font-semibold">Categories</h2>
 
         <ul class="mt-2 space-y-1">
-          <li :for={c <- @categories} class="flex items-center justify-between">
-            <span>{c.name}</span>
+          <li :for={c <- @category_tree} class="flex items-center justify-between">
+            <span style={"padding-left: #{c.depth * 1.25}rem"}>
+              <span :if={c.depth > 0} class="text-base-content/40">&#8627;</span>
+              {c.name}
+            </span>
             <button
               :if={Policy.can?(@current_user, :delete, :budget_category)}
               phx-click="delete_category"
               phx-value-id={c.id}
-              data-confirm={"Delete category \"#{c.name}\"?"}
+              data-confirm={"Delete category \"#{c.name}\"? Any subcategories become top-level."}
               class="link link-error text-sm"
             >
               Delete
@@ -318,10 +332,19 @@ defmodule CofferWeb.BudgetLive.Index do
           id="category-form"
           phx-change="validate_category"
           phx-submit="save_category"
-          class="mt-4 flex items-end gap-2"
+          class="mt-4 space-y-2"
         >
           <.input field={@category_form[:name]} label="New category" />
-          <.button phx-disable-with="Adding...">Add</.button>
+          <.input
+            field={@category_form[:parent_id]}
+            type="select"
+            label="Parent (optional)"
+            prompt="None (top-level)"
+            options={@category_options}
+          />
+          <footer class="flex justify-end">
+            <.button phx-disable-with="Adding...">Add</.button>
+          </footer>
         </.form>
       </div>
     </div>

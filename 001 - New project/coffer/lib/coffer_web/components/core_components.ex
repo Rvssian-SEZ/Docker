@@ -457,6 +457,103 @@ defmodule CofferWeb.CoreComponents do
   end
 
   @doc """
+  A closed-by-default multi-select filter, styled to match the height/width
+  of a normal `<.input type="select">` — a real `<select multiple>` renders
+  as a several-rows-tall listbox by default, which breaks any grid layout
+  it sits in next to single-line fields (this is the fix for that: found on
+  the Dashboard's filter row, where Category/Vendor's native multi-selects
+  were visually merging into their neighbors).
+
+  ## Examples
+
+      <.multi_select_dropdown
+        label="Vendor"
+        name="vendor_ids[]"
+        options={Enum.map(@vendors, &{&1.name, &1.id})}
+        selected={@filters.vendor_ids}
+      />
+  """
+  attr :label, :string, required: true
+  attr :name, :string, required: true
+  attr :options, :list, required: true
+  attr :selected, :list, required: true
+  attr :empty_message, :string, default: "Nothing to select."
+
+  def multi_select_dropdown(assigns) do
+    ~H"""
+    <div class="fieldset mb-2">
+      <label>
+        <span class="label mb-1">{@label}</span>
+        <details class="dropdown w-full">
+          <summary class="select w-full">
+            {multi_select_summary(@options, @selected)}
+          </summary>
+          <ul class="dropdown-content menu z-10 max-h-64 w-full flex-nowrap overflow-y-auto rounded-box bg-base-100 p-2 shadow">
+            <li :for={{option_label, value} <- @options}>
+              <label class="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  name={@name}
+                  value={value}
+                  checked={to_string(value) in Enum.map(@selected, &to_string/1)}
+                  class="checkbox checkbox-sm"
+                />
+                {option_label}
+              </label>
+            </li>
+            <li :if={@options == []} class="px-2 py-1 text-sm text-base-content/60">
+              {@empty_message}
+            </li>
+          </ul>
+        </details>
+      </label>
+    </div>
+    """
+  end
+
+  defp multi_select_summary(_options, []), do: "All"
+
+  defp multi_select_summary(options, [value]) do
+    Enum.find_value(options, "1 selected", fn {label, v} ->
+      to_string(v) == to_string(value) && label
+    end)
+  end
+
+  defp multi_select_summary(_options, selected), do: "#{length(selected)} selected"
+
+  @doc """
+  A create/edit form rendered as a modal dialog instead of inline at the
+  bottom of the page. Relies on LiveView's own conditional rendering for
+  show/hide (wrap the call in `:if={@live_action in [:new, :edit]}` the same
+  way the inline-form pattern already did elsewhere) rather than JS show/hide
+  commands — there's nothing to animate open/closed since the DOM node is
+  simply mounted or not.
+
+  ## Examples
+
+      <.modal_form :if={@live_action in [:new, :edit]} title={@page_title} cancel_href={~p"/budgets"}>
+        <.form for={@form} ...>...</.form>
+      </.modal_form>
+  """
+  attr :title, :string, required: true
+  attr :cancel_href, :string, required: true
+  slot :inner_block, required: true
+
+  def modal_form(assigns) do
+    ~H"""
+    <div class="modal modal-open">
+      <div class="modal-box">
+        <h2 class="text-lg font-semibold">{@title}</h2>
+        {render_slot(@inner_block)}
+      </div>
+      <.link href={@cancel_href} class="modal-backdrop" aria-label="Close">
+        <span class="sr-only">Close</span>
+      </.link>
+    </div>
+    """
+  end
+
+  @doc """
   Renders a [Heroicon](https://heroicons.com).
 
   Heroicons come in three styles – outline, solid, and mini.

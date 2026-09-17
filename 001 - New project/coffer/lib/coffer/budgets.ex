@@ -17,6 +17,59 @@ defmodule Coffer.Budgets do
   def list_categories, do: Repo.all(from c in Category, order_by: c.name)
   def get_category!(id), do: Repo.get!(Category, id)
 
+  @doc """
+  Categories ordered depth-first (each category immediately followed by its
+  own descendants) with a `:depth` field (0 for top-level) — the order and
+  depth a UI needs to render an indented tree from a flat `Enum.map`, without
+  the template itself needing to know anything about the hierarchy.
+  """
+  def list_categories_tree do
+    categories = list_categories()
+    children_by_parent = Enum.group_by(categories, & &1.parent_id)
+
+    children_by_parent
+    |> Map.get(nil, [])
+    |> Enum.flat_map(&flatten_subtree(&1, children_by_parent, 0))
+  end
+
+  defp flatten_subtree(category, children_by_parent, depth) do
+    node = Map.put(category, :depth, depth)
+    children = Map.get(children_by_parent, category.id, [])
+    [node | Enum.flat_map(children, &flatten_subtree(&1, children_by_parent, depth + 1))]
+  end
+
+  @doc "A category's name prefixed with its ancestors, e.g. \"Operations > Office Supplies\"."
+  def category_path_label(%Category{} = category, categories \\ list_categories()) do
+    by_id = Map.new(categories, &{&1.id, &1})
+    build_path_label(category, by_id, [category.name])
+  end
+
+  defp build_path_label(%Category{parent_id: nil}, _by_id, acc), do: Enum.join(acc, " > ")
+
+  defp build_path_label(%Category{parent_id: parent_id}, by_id, acc) do
+    case Map.get(by_id, parent_id) do
+      nil -> Enum.join(acc, " > ")
+      parent -> build_path_label(parent, by_id, [parent.name | acc])
+    end
+  end
+
+  @doc """
+  `category_id` plus every id in its subtree — for rolling a parent
+  category's reported spend up to include its descendants' spend (see
+  `Coffer.Reporting.spend_by_category/1`).
+  """
+  def category_and_descendant_ids(category_id, categories \\ list_categories()) do
+    children_by_parent = Enum.group_by(categories, & &1.parent_id)
+    collect_descendant_ids([category_id], children_by_parent, [category_id])
+  end
+
+  defp collect_descendant_ids([], _children_by_parent, acc), do: acc
+
+  defp collect_descendant_ids([id | rest], children_by_parent, acc) do
+    child_ids = children_by_parent |> Map.get(id, []) |> Enum.map(& &1.id)
+    collect_descendant_ids(child_ids ++ rest, children_by_parent, child_ids ++ acc)
+  end
+
   def change_category(%Category{} = category, attrs \\ %{}),
     do: Category.changeset(category, attrs)
 
@@ -213,7 +266,7 @@ defmodule Coffer.Budgets do
     |> Repo.one()
   end
 
-  defp serialize_category(%Category{} = c), do: %{id: c.id, name: c.name}
+  defp serialize_category(%Category{} = c), do: %{id: c.id, name: c.name, parent_id: c.parent_id}
 
   defp serialize_envelope(%Envelope{} = e) do
     %{
