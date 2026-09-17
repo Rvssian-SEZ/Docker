@@ -88,13 +88,20 @@ if config_env() == :prod do
   host = System.get_env("PHX_HOST") || "example.com"
   port = String.to_integer(System.get_env("PORT", "4000"))
 
+  # `url:` is what the app uses to build absolute URLs (OIDC redirect_uri,
+  # etc.) — independent from `http:` below, which is the actual socket the
+  # container listens on. A deployment fronted by a TLS-terminating reverse
+  # proxy (e.g. SAA's NPM) sets URL_SCHEME=https and URL_PORT=443 while the
+  # container itself still just listens on plain HTTP internally; a bare
+  # deployment with no proxy (e.g. the homelab test env, spec §11) leaves
+  # both unset and gets plain HTTP on the same port it listens on.
+  url_scheme = System.get_env("URL_SCHEME", "http")
+  url_port = String.to_integer(System.get_env("URL_PORT", Integer.to_string(port)))
+
   config :coffer, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
-  # Test/staging (spec §11) is plain HTTP with no reverse-proxy TLS
-  # termination yet — promoting to a hardened prod compose with TLS is a
-  # config change, not a rebuild, per the spec.
   config :coffer, CofferWeb.Endpoint,
-    url: [host: host, port: port, scheme: "http"],
+    url: [host: host, port: url_port, scheme: url_scheme],
     http: [
       # Enable IPv6 and bind on all interfaces.
       # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
