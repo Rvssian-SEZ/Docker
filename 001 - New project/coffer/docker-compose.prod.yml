@@ -1,0 +1,39 @@
+# Hardened overlay for a promoted (non-test/staging) deployment — layer this
+# on top of the base compose file rather than editing it directly, per spec
+# §11: promoting to prod should be "a config change, not a rebuild."
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# TLS termination is NOT handled here — that's the job of whatever reverse
+# proxy sits in front (e.g. SAA's NPM setup), which only needs URL_SCHEME=https
+# and URL_PORT=443 set in .env; no compose change is needed for that part,
+# see .env.example.
+#
+# Resource limits below are conservative starting points, not measured — tune
+# per host after watching real usage (`docker stats`).
+services:
+  app:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  db:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

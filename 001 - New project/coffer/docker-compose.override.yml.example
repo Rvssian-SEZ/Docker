@@ -1,0 +1,12 @@
+# Copy this to docker-compose.override.yml for local dev tweaks — that
+# filename is gitignored (like .env) since it's meant to be personal/
+# per-machine, not shared. docker compose picks it up automatically
+# alongside docker-compose.yml, no -f flag needed.
+#
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+services:
+  db:
+    # Expose Postgres to the host so you can `psql` in directly instead of
+    # `docker exec`-ing into the container every time.
+    ports:
+      - "5432:5432"
