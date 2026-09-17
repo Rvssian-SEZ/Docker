@@ -14,7 +14,9 @@ defmodule CofferWeb.BudgetLive.Index do
        |> assign(:envelopes, Budgets.list_envelopes())
        |> assign(:editing_category_id, nil)
        |> assign_categories()
-       |> assign(:category_form, to_form(Budgets.change_category(%Category{})))}
+       |> assign(:category_form, to_form(Budgets.change_category(%Category{})))
+       |> assign(:show_category_quickadd, false)
+       |> assign(:category_quickadd_form, to_form(Budgets.change_category(%Category{})))}
     else
       {:ok,
        socket
@@ -45,6 +47,7 @@ defmodule CofferWeb.BudgetLive.Index do
     |> assign(:page_title, "Edit envelope")
     |> assign(:envelope, envelope)
     |> assign(:form, to_form(Budgets.change_envelope(envelope)))
+    |> reset_category_quickadd()
   end
 
   defp apply_action(socket, :new, _params) do
@@ -54,6 +57,7 @@ defmodule CofferWeb.BudgetLive.Index do
     |> assign(:page_title, "New envelope")
     |> assign(:envelope, envelope)
     |> assign(:form, to_form(Budgets.change_envelope(envelope)))
+    |> reset_category_quickadd()
   end
 
   defp apply_action(socket, :index, _params) do
@@ -163,6 +167,54 @@ defmodule CofferWeb.BudgetLive.Index do
        put_flash(socket, :error, "That category is still used by one or more envelopes.")}
   end
 
+  # Lets a category get created without leaving the envelope popup — the
+  # quickadd form is deliberately a separate `@category_quickadd_form`
+  # rather than reusing `@category_form` (the persistent category-management
+  # form below the envelope table), since both can be on screen at once and
+  # sharing state between them would cross-contaminate whatever the user was
+  # typing in either one.
+  def handle_event("toggle_category_quickadd", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:show_category_quickadd, not socket.assigns.show_category_quickadd)
+     |> assign(:category_quickadd_form, to_form(Budgets.change_category(%Category{})))}
+  end
+
+  def handle_event("validate_category_quickadd", %{"category" => params}, socket) do
+    form =
+      %Category{}
+      |> Budgets.change_category(params)
+      |> Map.put(:action, :validate)
+      |> to_form()
+
+    {:noreply, assign(socket, :category_quickadd_form, form)}
+  end
+
+  def handle_event("quickadd_category", %{"category" => params}, socket) do
+    if Policy.can?(socket.assigns.current_user, :create, :budget_category) do
+      case Budgets.create_category(params, socket.assigns.current_user) do
+        {:ok, category} ->
+          envelope_form =
+            socket.assigns.form.source
+            |> Ecto.Changeset.put_change(:category_id, category.id)
+            |> Map.put(:action, :validate)
+            |> to_form()
+
+          {:noreply,
+           socket
+           |> put_flash(:info, "Category added.")
+           |> assign_categories()
+           |> assign(:form, envelope_form)
+           |> reset_category_quickadd()}
+
+        {:error, changeset} ->
+          {:noreply, assign(socket, :category_quickadd_form, to_form(changeset))}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "You're not authorized to add categories.")}
+    end
+  end
+
   def handle_event("start_new_fy", _params, socket) do
     if Policy.can?(socket.assigns.current_user, :trigger_rollover, :budget_envelope) do
       target_year = FiscalYear.current_year()
@@ -195,6 +247,12 @@ defmodule CofferWeb.BudgetLive.Index do
     else
       {:noreply, put_flash(socket, :error, "You're not authorized to start a new fiscal year.")}
     end
+  end
+
+  defp reset_category_quickadd(socket) do
+    socket
+    |> assign(:show_category_quickadd, false)
+    |> assign(:category_quickadd_form, to_form(Budgets.change_category(%Category{})))
   end
 
   defp category_form_source(socket) do
@@ -364,11 +422,36 @@ defmodule CofferWeb.BudgetLive.Index do
             label="Category"
             options={@category_options}
           />
+          <button type="button" phx-click="toggle_category_quickadd" class="link text-xs">
+            {if @show_category_quickadd, do: "Cancel new category", else: "+ Add a missing category"}
+          </button>
           <.input field={@form[:active]} type="checkbox" label="Active" />
           <footer class="mt-4 flex justify-end gap-2">
             <.link href={~p"/budgets"} class="btn btn-ghost">Cancel</.link>
             <.button phx-disable-with="Saving...">Save</.button>
           </footer>
+        </.form>
+
+        <.form
+          :if={@show_category_quickadd}
+          for={@category_quickadd_form}
+          id="category-quickadd-form"
+          phx-change="validate_category_quickadd"
+          phx-submit="quickadd_category"
+          class="mt-3 space-y-2 rounded-box border border-base-300 bg-base-200/50 p-3"
+        >
+          <p class="text-sm font-medium">New category</p>
+          <.input field={@category_quickadd_form[:name]} label="Name" />
+          <.input
+            field={@category_quickadd_form[:parent_id]}
+            type="select"
+            label="Parent (optional)"
+            prompt="None (top-level)"
+            options={@category_options}
+          />
+          <div class="flex justify-end">
+            <.button phx-disable-with="Adding...">Add category</.button>
+          </div>
         </.form>
       </.modal_form>
 

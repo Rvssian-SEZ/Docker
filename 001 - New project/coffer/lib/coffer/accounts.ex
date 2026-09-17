@@ -13,6 +13,7 @@ defmodule Coffer.Accounts do
 
   def get_user!(id), do: Repo.get!(User, id)
   def get_user_by_authentik_sub(sub), do: Repo.get_by(User, authentik_sub: sub)
+  def list_users, do: Repo.all(from u in User, order_by: u.name)
 
   @doc """
   Upserts a user from OIDC claims and refreshes their role from the current

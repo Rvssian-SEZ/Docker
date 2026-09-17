@@ -560,27 +560,7 @@ defmodule CofferWeb.CoreComponents do
   into an export (CSV/XLSX should stay plain numeric for spreadsheet
   compatibility, see `Coffer.Exports`).
   """
-  def format_money(nil), do: ""
-
-  def format_money(%Decimal{} = amount) do
-    string = amount |> Decimal.round(2) |> Decimal.to_string(:normal)
-
-    {sign, string} =
-      case string do
-        "-" <> rest -> {"-", rest}
-        _ -> {"", string}
-      end
-
-    [int_part, decimal_part] = String.split(string, ".")
-
-    grouped_int =
-      int_part
-      |> String.reverse()
-      |> String.replace(~r/(\d{3})(?=\d)/, "\\1,")
-      |> String.reverse()
-
-    sign <> grouped_int <> "." <> decimal_part
-  end
+  defdelegate format_money(amount), to: Coffer.Money, as: :format
 
   @doc """
   Renders a [Heroicon](https://heroicons.com).
