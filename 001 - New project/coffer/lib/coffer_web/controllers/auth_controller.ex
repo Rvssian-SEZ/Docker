@@ -1,6 +1,8 @@
 defmodule CofferWeb.AuthController do
   use CofferWeb, :controller
 
+  require Logger
+
   alias Assent.Strategy.OIDC
   alias Coffer.Accounts
   alias CofferWeb.OIDCConfig
@@ -12,7 +14,9 @@ defmodule CofferWeb.AuthController do
         |> put_session(:oidc_session_params, session_params)
         |> redirect(external: url)
 
-      {:error, _reason} ->
+      {:error, reason} ->
+        Logger.error("OIDC login/authorize_url failed: #{inspect(reason)}")
+
         conn
         |> put_flash(:error, "Could not start sign-in with Authentik.")
         |> redirect(to: ~p"/auth/login-failed")
@@ -35,7 +39,9 @@ defmodule CofferWeb.AuthController do
       |> configure_session(renew: true)
       |> redirect(to: ~p"/")
     else
-      _error ->
+      error ->
+        Logger.error("OIDC callback failed: #{inspect(error)}")
+
         conn
         |> put_flash(:error, "Sign-in with Authentik failed.")
         |> redirect(to: ~p"/auth/login-failed")
@@ -67,8 +73,15 @@ defmodule CofferWeb.AuthController do
 
   defp merge_userinfo(config, token, claims) do
     case OIDC.fetch_userinfo(config, token) do
-      {:ok, userinfo} -> Map.merge(claims, userinfo)
-      {:error, _reason} -> claims
+      {:ok, userinfo} ->
+        Map.merge(claims, userinfo)
+
+      {:error, reason} ->
+        Logger.warning(
+          "OIDC fetch_userinfo failed, continuing with ID token claims only: #{inspect(reason)}"
+        )
+
+        claims
     end
   end
 end
