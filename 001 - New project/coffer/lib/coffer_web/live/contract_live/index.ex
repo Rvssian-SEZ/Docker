@@ -33,7 +33,17 @@ defmodule CofferWeb.ContractLive.Index do
 
   @impl true
   def handle_params(params, _url, socket) do
-    {:noreply, apply_action(socket, socket.assigns.live_action, params)}
+    action = if socket.assigns.live_action == :new, do: :create, else: :update
+
+    if socket.assigns.live_action in [:new, :edit] and
+         not Policy.can?(socket.assigns.current_user, action, :contract) do
+      {:noreply,
+       socket
+       |> put_flash(:error, "You're not authorized to do that.")
+       |> push_navigate(to: ~p"/contracts")}
+    else
+      {:noreply, apply_action(socket, socket.assigns.live_action, params)}
+    end
   end
 
   defp apply_action(socket, :edit, %{"id" => id}) do
@@ -72,7 +82,13 @@ defmodule CofferWeb.ContractLive.Index do
   end
 
   def handle_event("save", %{"contract" => params}, socket) do
-    save_contract(socket, socket.assigns.live_action, params)
+    action = if socket.assigns.live_action == :new, do: :create, else: :update
+
+    if Policy.can?(socket.assigns.current_user, action, :contract) do
+      save_contract(socket, socket.assigns.live_action, params)
+    else
+      {:noreply, put_flash(socket, :error, "You're not authorized to do that.")}
+    end
   end
 
   def handle_event("delete", %{"id" => id}, socket) do

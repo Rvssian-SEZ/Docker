@@ -19,7 +19,17 @@ defmodule CofferWeb.RoleMappingLive.Index do
 
   @impl true
   def handle_params(params, _url, socket) do
-    {:noreply, apply_action(socket, socket.assigns.live_action, params)}
+    action = if socket.assigns.live_action == :new, do: :create, else: :update
+
+    if socket.assigns.live_action in [:new, :edit] and
+         not Policy.can?(socket.assigns.current_user, action, :role_mapping) do
+      {:noreply,
+       socket
+       |> put_flash(:error, "You're not authorized to do that.")
+       |> push_navigate(to: ~p"/admin/role_mappings")}
+    else
+      {:noreply, apply_action(socket, socket.assigns.live_action, params)}
+    end
   end
 
   defp apply_action(socket, :edit, %{"id" => id}) do
@@ -58,21 +68,31 @@ defmodule CofferWeb.RoleMappingLive.Index do
   end
 
   def handle_event("save", %{"role_mapping" => params}, socket) do
-    save_role_mapping(socket, socket.assigns.live_action, params)
+    action = if socket.assigns.live_action == :new, do: :create, else: :update
+
+    if Policy.can?(socket.assigns.current_user, action, :role_mapping) do
+      save_role_mapping(socket, socket.assigns.live_action, params)
+    else
+      {:noreply, put_flash(socket, :error, "You're not authorized to do that.")}
+    end
   end
 
   def handle_event("delete", %{"id" => id}, socket) do
-    role_mapping = Accounts.get_role_mapping!(id)
+    if Policy.can?(socket.assigns.current_user, :delete, :role_mapping) do
+      role_mapping = Accounts.get_role_mapping!(id)
 
-    case Accounts.delete_role_mapping(role_mapping, socket.assigns.current_user) do
-      {:ok, _role_mapping} ->
-        {:noreply,
-         socket
-         |> put_flash(:info, "Role mapping deleted.")
-         |> assign(:role_mappings, Accounts.list_role_mappings())}
+      case Accounts.delete_role_mapping(role_mapping, socket.assigns.current_user) do
+        {:ok, _role_mapping} ->
+          {:noreply,
+           socket
+           |> put_flash(:info, "Role mapping deleted.")
+           |> assign(:role_mappings, Accounts.list_role_mappings())}
 
-      {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Could not delete role mapping.")}
+        {:error, _changeset} ->
+          {:noreply, put_flash(socket, :error, "Could not delete role mapping.")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "You're not authorized to delete role mappings.")}
     end
   end
 
@@ -116,7 +136,13 @@ defmodule CofferWeb.RoleMappingLive.Index do
           <.link href={~p"/admin/role_mappings/export.csv"} class="btn btn-outline">
             Export CSV
           </.link>
-          <.link href={~p"/admin/role_mappings/new"} class="btn btn-primary">New mapping</.link>
+          <.link
+            :if={Policy.can?(@current_user, :create, :role_mapping)}
+            href={~p"/admin/role_mappings/new"}
+            class="btn btn-primary"
+          >
+            New mapping
+          </.link>
         </:actions>
       </.header>
 
@@ -124,10 +150,17 @@ defmodule CofferWeb.RoleMappingLive.Index do
         <:col :let={rm} label="Authentik group">{rm.authentik_group}</:col>
         <:col :let={rm} label="App role">{rm.app_role}</:col>
         <:action :let={rm}>
-          <.link href={~p"/admin/role_mappings/#{rm.id}/edit"} class="link">Edit</.link>
+          <.link
+            :if={Policy.can?(@current_user, :update, :role_mapping)}
+            href={~p"/admin/role_mappings/#{rm.id}/edit"}
+            class="link"
+          >
+            Edit
+          </.link>
         </:action>
         <:action :let={rm}>
           <.link
+            :if={Policy.can?(@current_user, :delete, :role_mapping)}
             phx-click="delete"
             phx-value-id={rm.id}
             data-confirm="Delete this role mapping?"
