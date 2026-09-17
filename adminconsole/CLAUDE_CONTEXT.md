@@ -537,6 +537,523 @@ deploy, every time, for every role whose `DEFAULTS` you expect it to
 reach — the code change alone is not sufficient for an already-running
 instance.
 
+### Delete Computer (2026-09-07)
+Admin + Helpdesk L2 only (`ad.delete_computer`, same L2-not-L1 pattern as
+`ad.create_user`) — a "Delete" button on computer rows in AD search
+results, gated behind a confirmation modal ("Are you sure you want to
+delete `<computername>`?") plus a required reason/ticket-ref, same modal
+convention as every other destructive action here (Disable, etc.).
+`ad_accounts.py`'s route re-classifies the target from freshly-fetched
+`objectClass` before doing anything (never trusts the UI alone to have
+only shown the button for a computer row) and refuses to proceed if it
+isn't actually a computer object — this route can never be used to delete
+a user account even via a crafted POST.
+
+**LDAPS delegation turned out to be a dead end — confirmed live**:
+granted `svc-adminconsole` a `DC;computer` (Delete Child computer objects)
+dsacls ACE at the domain root, same `/I:S` pattern as every other grant
+(`SAA/playbooks/admin_grant_delete_computer_adminconsole.yml`, Semaphore
+task history under the now-deleted temp template). The grant itself
+succeeded (`rc=0`) but is **not actually effective**: a pre-existing
+domain-wide **`Deny Everyone: DELETE CHILD`** ACE (no object-class
+qualifier — applies to every child object type) sits at the domain root
+and is inherited onto every real container checked
+(`admin_check_delete_computer_acl.yml` against `CN=Computers`,
+`OU=Domain Controllers`, `OU=Servers`, and a test OU) — in every case the
+Deny appears *earlier* in the DACL than svc-adminconsole's new inherited
+Allow. Windows evaluates ACEs top-to-bottom and stops at the first
+matching Deny for a requested right, so this blanket Deny wins regardless
+of the new grant. This is presumably a deliberate hardening control
+against accidental mass object deletion — **do not remove or narrow it**
+without first understanding why it's there; that's a much bigger,
+separate decision than this feature.
+
+**Fix**: same shape as the existing AdminSDHolder-protected-unlock
+fallback (see "Protected Users unlock" above) — `ad_accounts.py`'s delete
+route tries the normal LDAPS delete first, and on
+`insufficientAccessRights` falls back to a Semaphore-triggered
+`Remove-ADComputer` running as `Ansible@SAA.SC`
+(`SAA/playbooks/admin_delete_computer.yml`, persistent Semaphore template
+id 36 "Delete Computer (fallback)", `semaphore.delete_computer_template_id`
+in Settings -> Automation). Unlike the unlock fallback (a rare
+AdminSDHolder edge case), **this fallback is the only path that actually
+works today** — the direct LDAPS grant is real but permanently
+ineffective against the current ACL, so every real delete will hit it.
+The fallback playbook re-checks the target is a computer object itself
+before deleting anything, on top of the app's own check.
+`semaphore_client.trigger_delete_computer()` mirrors
+`trigger_protected_unlock()` exactly (fire the task, poll to a terminal
+state, raise `SemaphoreError` on failure/timeout/misconfiguration).
+
+**Not yet exercised against a real computer object** — deliberately did
+not test-delete a real object in this forest to verify the fallback
+end-to-end (no disposable/test computer object was available); the
+`Remove-ADComputer` call and precheck otherwise mirror the already-proven
+`Unlock-ADAccount` fallback exactly (same accounts, same connection
+method). Verify with a real deletion before relying on this without
+double-checking, same honesty convention as every other AD path in this
+file.
+
+Same live-DB gotcha as above applied here too — `ad.delete_computer`
+patched directly into `role_permissions` for role_id 3 (admin) and 2
+(helpdesk_l2) after deploy, and `semaphore.delete_computer_template_id`
+patched directly into `app_settings` (value `36`) since there was no UI
+form submission involved in setting it up this way.
+
+### Confirmed live 2026-09-07: Delete Computer actually works end-to-end
+First real-object test (target: a disposable test computer object,
+`000-111-222$`) hit `insufficientAccessRights` on the LDAPS attempt
+exactly as predicted above, fell back to the Semaphore path, and
+**succeeded** — confirmed via the audit log (`delete_computer`, detail
+"via Semaphore fallback (Ansible@SAA.SC)"). A near-simultaneous second
+click on the same Delete button ran the whole flow again independently;
+its own LDAPS attempt also correctly hit insufficientAccessRights, but by
+the time *its* Semaphore fallback task got around to the precheck, the
+object was already gone (deleted by the first request 24s earlier) — so
+it correctly failed with "not found" and the user saw that failure
+message despite the delete having actually succeeded. Root cause: nothing
+disabled the button after the first click. **Fixed**: every action form
+on `ad/search.html` now disables its submit button (and shows
+"Working...") on submit — see the `<script>` block at the bottom of that
+file. Not a server-side idempotency fix (two independent requests still
+race exactly as before if someone opens two tabs) — just stops the literal
+double-click case that actually happened.
+
+### Move (OU relocation) (2026-09-07)
+Admin + Helpdesk L2 only (`ad.move_object`, same L2-not-L1 pattern as
+`ad.create_user`/`ad.delete_computer`) — a "Move" button on both computer
+AND user rows (not contact/other) in AD search results, opening a modal
+with a destination-OU dropdown (same `ldap_client.list_ous()` tree Create
+User's OU picker uses) plus a required reason/ticket-ref.
+
+- **One backend check covers both kinds**: the route checks `"user" in
+  object_classes` rather than checking `r.kind` — a computer's objectClass
+  chain includes `"user"` (see `_classify()`'s docstring), so this single
+  check naturally allows both users and computers while still refusing
+  contacts/other, without needing two branches.
+- **OU-scoped on BOTH ends**, not just one — `_check_scope()` is called
+  against the object's *current* DN and again against the *destination*
+  OU. A scoped Helpdesk L2 can't use Move to relocate something out of
+  their delegated OUs to escape oversight, or pull something from outside
+  their scope into it. Admin/break-glass unscoped as usual.
+- **`ous` is only fetched on the search page when there's something to
+  move AND the caller has `ad.move_object`** (`ad_search_page` in
+  `ad_accounts.py`) — avoids an extra LDAP round trip for roles that can't
+  use it, same least-privilege-shaped efficiency choice as everywhere else
+  in this router.
+- **Not rate-limited** — same risk tier as Modify/Enable/Disable (not
+  create_user/reset_password/laps_reveal/delete_computer, which are).
+- **LDAPS `modify_dn` is not attempted at all — goes straight to Semaphore
+  (Alex's explicit choice, 2026-09-07).** First real move hit
+  `insufficientAccessRights` — a cross-OU move needs Delete Child rights
+  on the *source* OU (removing the object from its old parent) as well as
+  Create Child on the destination, and Delete Child is blocked
+  domain-wide by the same "Deny Everyone: Delete Child" ACE that blocks
+  Delete Computer (see that section above). Since this is confirmed to
+  *always* fail (not a rare edge case), the move route skips the doomed
+  LDAPS write attempt entirely and goes directly to a Semaphore-triggered
+  `Move-ADObject` running as `Ansible@SAA.SC`
+  (`SAA/playbooks/admin_move_object.yml`, persistent Semaphore template id
+  37 "Move Object (fallback)" — name kept as "fallback" even though it's
+  now the only path, to match the sibling Delete Computer template's
+  naming; `semaphore.move_object_template_id` in Settings -> Automation).
+  `ldap_client.move_object()` (the `modify_dn` wrapper) was written first,
+  proven to fail live, and then deleted once Alex asked to skip straight
+  to the known-working path rather than pay for a doomed bind+write
+  attempt every time — the object lookup/classification/OU-scope checks
+  right before this still go through LDAPS as normal (only reads, not
+  blocked). `semaphore_client.trigger_move_object()` mirrors
+  `trigger_delete_computer()`/`trigger_protected_unlock()` exactly. Same
+  live-DB gotcha as always — `semaphore.move_object_template_id` patched
+  directly into `app_settings` (value `37`).
+
+### Manage Groups (2026-09-07)
+Admin + Helpdesk L2 only (`ad.manage_groups`) — a "Groups" nav tab below
+Create User: search/list groups, view a group's members, add/remove
+members, create a new group, rename a group. **Explicitly excludes group
+deletion** and **explicitly has no hard-coded privileged-group blocklist**
+(Domain Admins etc. are manageable like any other group) — both were
+Alex's deliberate choices (2026-09-07), not oversights; see the
+AskUserQuestion answers in the session transcript if the tradeoff ever
+needs revisiting. `ad.manage_groups` is a rename of the old
+`ad.group_membership` key, which was reserved/unused in v1 per the
+original spec's explicit exclusion of group membership — Alex asked to
+build it now, so the same slot got activated and renamed to match what it
+actually covers (search/create/rename too, not just membership) rather
+than adding a second permission key alongside it.
+
+- **`ldap_client.search_groups()`/`get_group()`**: same substring-search
+  and single-lookup shape as `search_accounts()`/`find_user()`, scoped to
+  `objectClass=group`.
+- **`resolve_members()`**: one batched LDAP search (a single OR filter of
+  `distinguishedName` equalities for every member DN) rather than one
+  round trip per member. Capped at `MEMBER_DISPLAY_LIMIT = 200` — a group
+  like "Domain Users" can have thousands of members, and resolving/
+  rendering all of them would be slow and not very useful in a UI; the
+  group's own `member` attribute is untouched, only what one page load
+  shows is capped. `group_detail.html` shows a "showing first N of M"
+  banner when truncated.
+- **One scope check, not two** (unlike Move): membership changes modify
+  the *group's own* `member` attribute rather than relocating anything, so
+  `_check_scope()` is only checked against the group's DN — the member
+  being added/removed is not scope-checked, consistent with how every
+  other single-target action here works (reset/modify/enable-disable).
+- **Confirmed live 2026-09-07 — mixed delegation results, same domain-root
+  `/I:S` grant round for all of it**
+  (`SAA/playbooks/admin_grant_manage_groups_adminconsole.yml`: `CC;group`,
+  `WP;member;group`, `WP;sAMAccountName;group`, `WP;displayName;group`,
+  `WP;description;group`, all rc=0):
+  - **Create Group, Add Member, Remove Member all work via LDAPS
+    directly** — tested against a real disposable group
+    (`zzz-test-manage-groups`) end-to-end: `create_group()`,
+    `add_group_member()` (added `asedgwick`), `resolve_members()`
+    (correctly resolved it), `remove_group_member()` — all succeeded with
+    no fallback needed. Makes sense in hindsight: none of these need
+    Create/Delete Child rights on a *container* the way Delete
+    Computer/Move do — Create Group only needs Create Child on the OU
+    being created *into* (not blocked, only Delete Child is), and
+    add/remove-member is a plain attribute write on the group object
+    itself, same risk tier as Modify's telephone/title/etc. writes (which
+    already worked).
+  - **Rename hit `insufficientAccessRights` anyway** — a same-parent
+    `modify_dn` apparently needs a right beyond `WP;sAMAccountName;group`/
+    `WP;displayName;group` (not dug into further — see the "goes straight
+    to Semaphore" pattern below instead of chasing the exact missing ACE).
+    Same fix as Move (Alex's now-established preference, 2026-09-07): skip
+    the LDAPS attempt entirely and go straight to a Semaphore-triggered
+    `Rename-ADObject` + `Set-ADGroup` running as `Ansible@SAA.SC`
+    (`SAA/playbooks/admin_rename_group.yml`, persistent Semaphore template
+    id 39 "Rename Group (fallback)",
+    `semaphore.rename_group_template_id` in Settings -> Automation).
+    `ldap_client.rename_group()` was written, proven to fail live, then
+    deleted — same pattern as `move_object()`. Confirmed live end-to-end
+    via the Semaphore template directly (task #430, `STATUS=renamed`,
+    `failed=0`) against the same disposable test group.
+  - Test group cleaned up afterward via a one-off
+    `admin_cleanup_test_group.yml` run (`Remove-ADGroup`, since the app
+    itself has no delete-group capability by design) — temp template
+    deleted, task history stays in Semaphore for the audit trail per this
+    project's usual convention.
+- Same live-DB gotcha as always — `ad.manage_groups` patched directly into
+  `role_permissions` for role_id 3 (admin) and 2 (helpdesk_l2), and
+  `semaphore.rename_group_template_id` into `app_settings` (value `39`).
+
+**Create Group: displayName/mail/proxyAddresses (2026-09-08).** Same
+convention as Create User's proxyAddresses — `SMTP:{name}@saa.sc`
+(primary) + `smtp:{name}@scaasey.mail.onmicrosoft.com` (secondary), plus
+`mail={name}@saa.sc` and `displayName` defaulting to the typed group name.
+All four fields are auto-filled client-side as the admin types the group
+name (`create_group.html`'s `<script>`, same "auto-fill until manually
+edited" pattern as Create User's logon-name field) but are plain visible/
+editable text inputs, not hidden — Alex explicitly asked for them visible
+and editable. `groupType` default changed to Distribution (was Security)
+per Alex's request the same day. Needed a **second** delegation grant
+beyond the original Manage Groups round
+(`SAA/playbooks/admin_grant_group_mail_proxy_adminconsole.yml`:
+`WP;mail;group`, `WP;proxyAddresses;group`, both rc=0) — the existing
+`WP;mail;user`/`WP;proxyAddresses;user` grants from Create User don't
+cover the `group` object class at all (write-property ACEs are strictly
+per object class). **Confirmed live** end-to-end against a real disposable
+group (`zzz-test-group-proxy`) — all three attributes plus
+`displayName`/`mail` verified present via a direct LDAP read afterward,
+no fallback needed (this is a plain attribute write on the group object,
+same risk tier as the membership/create writes that already worked via
+LDAPS directly). Test group cleaned up the same way as before
+(`admin_cleanup_test_group.yml`).
+
+**Add Member autocomplete (2026-09-08).** `GET /ad/groups/member-suggest`
+reuses `search_accounts()` (same substring search as AD Accounts) to back
+a live, debounced dropdown on the Add Member modal's username field —
+registered before `/ad/groups/{sam}` so it doesn't get swallowed by that
+path-param route. Gated on `ad.manage_groups` since it's only used from
+there.
+
+**Member display cap raised 200 -> 1000 (2026-09-08)** — Alex's request,
+`MEMBER_DISPLAY_LIMIT` in `ldap_client.py`. Still a display-only cap, not
+touching what's actually in the group's `member` attribute.
+
+### View group membership for a user (2026-09-09)
+A "Groups" button on **user** rows only (not computer, per what was
+literally asked) in AD Accounts search results — `GET /ad/{sam}/groups`,
+gated on `ad.search` (not `ad.manage_groups`) since this is purely
+read-only/informational, same tier as the search page itself and
+available to all three roles including Helpdesk L1.
+
+- **`ldap_client.resolve_groups_by_dn()`**: the reverse direction of
+  `resolve_members()` — reads the account's `memberOf` back-link
+  attribute (already present in `find_user()`'s `ALL_ATTRIBUTES` fetch, no
+  new read needed there) and resolves those group DNs to name/sam/
+  description via the same one-shot batched-OR-filter shape. No display
+  cap here (unlike `resolve_members()`) — an account being in hundreds of
+  groups is not a realistic case the way a group having thousands of
+  members is.
+- **Primary group (`primaryGroupID`, almost always "Domain Users") is
+  deliberately NOT shown** — that's a RID that has to be combined with the
+  domain SID to resolve to an actual group, a different mechanism from the
+  `memberOf` back-link this reads, and out of scope for what was asked.
+  Noted on the page itself so it doesn't look like an omission.
+- **Confirmed live** against a real account (`asedgwick`, 21 groups
+  including Domain Admins/Enterprise Admins/Schema Admins) before this was
+  called done — every group resolved correctly.
+
+**Add/Remove membership from this view (2026-09-09).** The view stays
+open to everyone via `ad.search`, but "Add to Group"/"Remove" now appear
+too, gated on `ad.manage_groups` (checked both server-side on the new
+routes and hidden client-side in the template). `POST
+/ad/{sam}/groups/add` and `POST /ad/{sam}/groups/remove` are the same
+`add_group_member()`/`remove_group_member()` calls group_detail.html's
+Add Member/Remove already use — just reached from the account side
+(account fixed, group chosen) instead of the group side (group fixed,
+account chosen). Logged under the identical `add_group_member`/
+`remove_group_member` audit actions (`target_type="ad_group"`,
+`target_id`=the group) regardless of which page triggered the change, so
+there's one consistent audit trail either way. `GET
+/ad/groups/name-suggest` backs a live group-name autocomplete on the "Add
+to Group" field, mirroring `member-suggest`'s shape but searching groups
+instead of accounts — registered before `/ad/groups/{sam}` for the same
+routing reason. `_check_scope()` is checked against the *group's* DN only
+(not the account), same convention as every other group-membership route.
+**Confirmed live** end-to-end (add -> shows up via `resolve_groups_by_dn`
+-> remove -> confirmed gone) against a real disposable test group
+(`zzz-test-account-groups`, cleaned up afterward).
+
+## Offboarding (2026-09-15)
+New top-level tab (`ad.offboard`, Admin + Helpdesk L2 — same tier as
+Create User/Delete Computer/Move/Manage Groups) implementing the
+offboarding process worked out with Alex over several turns (see session
+transcript for the full 12-step process this only partially automates —
+steps 5/8 in particular hit a real Entra/Exchange app-registration
+sync-lag wall that was still unresolved as of this write-up, see
+"Offboarding — Exchange Online automation, blocked on Entra sync lag"
+below).
+
+**What "Start Offboarding" actually does** (`POST /offboarding/start`,
+`app/routers/offboarding.py`) — steps 1/2/4 of the process, bundled into
+one action:
+- **Step 1 (disable)** — `ldap_client.set_enabled(..., enabled=False)`.
+- **Step 2 (reset password)** — a random `user_provisioning.generate_password()`
+  value nobody is ever shown or logged (the account is disabled — nothing
+  depends on this being usable, it exists purely to invalidate whatever
+  the departing user knew).
+- **Step 4 (remove every group membership)** — reads the account's
+  `memberOf`, resolves it via `resolve_groups_by_dn()` (already built for
+  the account-groups view), then calls `remove_group_member()` once per
+  group.
+- **Each sub-step is independently fault-tolerant** — same partial-
+  failure philosophy as Create User's own multi-step LDAP sequence. A
+  failed disable doesn't stop the password reset from being attempted,
+  and one group's removal failing (e.g. a protected/AdminSDHolder group)
+  doesn't stop the others — every outcome (`disable_ok`, `reset_password_ok`,
+  per-group `removed`/`error`) is recorded on the `OffboardingRecord` row
+  and surfaced in the result message, never silently swallowed.
+- **The pre-removal group list is a permanent snapshot**
+  (`removed_groups_json`, JSON: `sam`/`name`/`dn`/`removed`/`error` per
+  group) — this is the answer to Alex's "adminconsole must take a note
+  what groups the user was in" requirement. The account's *live* memberOf
+  can't answer that later once it's empty (or the account's deleted), so
+  this has to be captured at the moment of removal, not derived after the
+  fact.
+- `_check_scope()` applies to the target account's DN, same OU-scoping
+  convention as every other AD write in this router.
+- Refuses to start a second active offboarding for the same `sam` while
+  one is already open (queries for an existing `completed_at IS NULL`
+  row first) — prevents a duplicate run re-triggering group removal on an
+  account that's already been stripped.
+
+**Steps 5/8 (mailbox -> Shared, remove licenses) are NOT automated** —
+they're one-click admin-ticked checkboxes on each record
+(`mailbox_converted`/`licenses_removed`, with `_by`/`_at` set on check,
+cleared on uncheck) recording that an admin did those manually in
+Exchange Online/Entra. This app cannot verify either actually happened — this pairing is still
+pending a working Exchange Online app-registration (see next section). No `reason`
+required for these two toggles (same unreasoned-audit-row precedent as
+`settings_change` — a checkbox flip isn't an AD write and isn't
+sensitive enough to demand a ticket ref).
+
+**The 6-month deletion clock** — `OffboardingRecord.delete_eligible_at`
+is a computed property (`models.add_months(initiated_at, 6)`, calendar-
+accurate month arithmetic with day-clamping for short months, not a fixed
+182-day span) and `is_overdue` is `now >= delete_eligible_at and not
+completed`. `offboarding/index.html` renders an overdue row with Bootstrap's
+`table-danger` class.
+
+**Bug found + fixed live, 2026-09-15**: `is_overdue`'s Python-side
+`utcnow() >= delete_eligible_at` comparison crashed with `can't compare
+offset-naive and offset-aware datetimes` for any record that had actually
+been persisted and reloaded — SQLite doesn't preserve tzinfo across a
+write/read round-trip despite `DateTime(timezone=True)`, so
+`initiated_at` came back naive even though it was written as
+`datetime.now(timezone.utc)`. This meant the entire `/offboarding` page
+500'd the moment any record existed (not just an edge case — every page
+load hit it). No other place in this codebase does a Python-side
+comparison against a freshly-loaded `DateTime(timezone=True)` column
+(`query_audit`'s `since`/`until` filters compare inside SQL, which is
+unaffected), so this bug was new/isolated to this feature. Fixed via
+`models._as_aware_utc()`, which treats a naive datetime read back from
+this column as already-UTC (true for every value this app ever writes to
+it) before comparing. Confirmed fixed against a real SQLite round-trip,
+not just re-tested with never-persisted in-memory objects (which is
+exactly why the original pre-deploy render test didn't catch it — it
+only ever exercised freshly-constructed Python objects that stayed
+aware the whole time).
+
+**"Mark Deleted / Complete" actually deletes the AD account (reversed,
+2026-09-15)** — originally spec'd as "admin deletes manually, this app
+just records it," Alex asked for this to be flipped: the button
+(`POST /offboarding/{id}/complete`, reason required) is disabled in the
+template — not hidden, `disabled` with a `title` tooltip listing what's
+missing — unless `mailbox_converted AND licenses_removed AND is_overdue`
+are ALL true, and its confirmation modal isn't even rendered for a record
+that doesn't meet all three (so there's no DOM element to trigger even
+via devtools). The same three-condition check is enforced **server-side**
+in the route itself before anything happens — a raw POST bypassing the
+disabled button is refused with the same missing-condition message,
+never silently allowed through. On success it calls
+`semaphore_client.trigger_delete_user()` (goes straight to
+Ansible@SAA.SC, same "known to always be blocked via LDAPS" reasoning as
+Move/Rename Group — the domain-wide Delete Child Deny has no
+object-class qualifier, so it blocks a user delete exactly the same way;
+`SAA/playbooks/admin_delete_user.yml`, persistent Semaphore template id
+45 "Delete User (offboarding completion)",
+`semaphore.delete_user_template_id` in Settings -> Automation) — only
+setting `completed_at`/`completed_by`/`completed_reason` (which is what
+moves the record into `/offboarding?history=1`) if that actually
+succeeds. A failed deletion leaves the record active with an
+`offboarding_completed_failed` audit row, never silently marked done.
+Also refuses outright if the record is already completed (no
+double-delete via a resubmitted form). **Confirmed live end-to-end**
+against a disposable test user (`zzz-test-delete-user`) via the real
+Semaphore template — `STATUS=deleted`, `failed=0`, and a follow-up
+`find_user()` confirmed the account was genuinely gone — plus a separate
+route-level test with the Semaphore call mocked out, verifying the gating
+logic itself (blocks with the right reasons when any condition is unmet,
+calls Semaphore with the correct sam when all three are met, refuses
+re-completion of an already-completed record).
+
+### Cancel (2026-09-16)
+A "Cancel" button on every active record, alongside "Mark Deleted /
+Complete" — `POST /offboarding/{id}/cancel`, same `ad.offboard`
+permission and required-reason convention as everything else here.
+**Deliberately NOT a reversal of steps 1/2/4** (Alex's explicit choice,
+asked directly rather than assumed): cancelling only sets
+`cancelled_at`/`cancelled_by`/`cancelled_reason` and drops the record out
+of the active list — it does not re-enable the account, does not restore
+its password, and does not re-add it to any group it was removed from.
+The AD account is left exactly as offboarding left it; if a cancelled
+offboarding genuinely needs to be undone in AD, that's a separate,
+deliberate action taken elsewhere in this app (Enable, Add to Group), not
+something this button attempts automatically — reversing group removal
+in particular would mean blindly replaying the `removed_groups_json`
+snapshot even though some of those removals may have already failed the
+first time, or group membership may have changed since.
+
+- **New `OffboardingRecord.status` property** (`"active"` /
+  `"completed"` / `"cancelled"`, based on which of `completed_at`/
+  `cancelled_at` is set — the two are mutually exclusive, enforced by
+  both `offboarding_complete` and `offboarding_cancel` refusing to act on
+  a record whose `status` isn't already `"active"`) replaces the old
+  bare `completed_at is None` checks throughout the router, so a
+  cancelled record is treated the same as a completed one everywhere
+  that matters: excluded from the active list, excluded from blocking a
+  fresh "Start Offboarding" on the same `sam`, and excluded from
+  `is_overdue` (a cancelled record should never show the red
+  "OVERDUE" state).
+- **History view now shows both statuses together**, distinguished by a
+  Status column (`Deleted / Completed` vs `Cancelled`, each with its own
+  by/reason), ordered by `coalesce(completed_at, cancelled_at)` — one
+  unified history rather than fragmenting into separate completed/
+  cancelled tabs.
+- **Confirmed against a real SQLite round-trip** (not just in-memory
+  objects, same discipline as the earlier `is_overdue` tzinfo bug): cancel
+  succeeds and the record disappears from the active list while appearing
+  correctly in history with its reason; re-cancelling an already-cancelled
+  record is refused; attempting to complete (delete) an already-cancelled
+  record is refused with the Semaphore delete call never made (verified
+  via a mock that raises if called).
+
+**Reused `ad_accounts.py`'s private helpers directly** (`_open_conn`,
+`_check_scope`, `_client_ip`, `_log_and_alert`, `AdNotConfigured`,
+`ScopeDenied`) via a cross-router import rather than extracting them to a
+shared module first — a deliberate, documented tradeoff: this is the
+first and only other place they're needed, and refactoring `_check_scope`
+out of `ad_accounts.py` would have meant touching ~38 call sites in an
+already-proven-live file for one new caller. No other router in this
+codebase imports from another router today; if a third caller ever needs
+these, that's the point to actually extract them into e.g.
+`app/core/ad_session.py`.
+
+**Confirmed live end-to-end before deploy** — created a disposable test
+user (`zzz-test-offboard`) plus two disposable test groups
+(`zzz-test-offboard-g1`/`g2`), added the user to both, then ran the exact
+disable/reset/remove-membership sequence used by `offboarding_start`
+directly against real AD: verified the account ended up disabled,
+`memberOf` ended up empty, and both group removals reported success.
+Cleaned up via a new generalized `admin_cleanup_test_objects.yml`
+(Semaphore repo) — takes a comma-separated list of sAMAccountNames and
+removes each regardless of object class (user/group/computer), rather
+than the narrower group-only `admin_cleanup_test_group.yml` used for
+earlier test cleanups.
+
+Live-DB gotcha, same as every permission added this session — `ad.offboard`
+had to be patched directly into `role_permissions` for role_id 3 (admin)
+and 2 (helpdesk_l2) after deploy; the `offboarding_records` table itself
+came up automatically via `alembic upgrade head` (already wired into the
+container's startup command), no manual table-creation needed this time.
+
+### Offboarding — Exchange Online automation, blocked on Entra sync lag (as of 2026-09-15)
+Steps 5 (mailbox -> Shared) and 8 (remove licenses) were scoped out during
+planning but NOT built — automating them hit a real, still-unresolved
+Microsoft-side blocker before any adminconsole code was written for them.
+Reusing the existing Graph app registration
+(`graph.client_id` in Settings, App ID `09b0a813-3024-4e54-bbdb-1a22fbff29dc`,
+tenant `90e4e6ce-7703-4051-94da-96ed6e731150`, initial domain
+`scaasey.onmicrosoft.com` — confirmed via `GET /organization`'s
+`verifiedDomains`, NOT `scaasey.mail.onmicrosoft.com`, which is a separate
+mail-routing-only domain):
+- **License removal** is a plain Graph call
+  (`POST /users/{id}/assignLicense` with the account's current
+  `assignedLicenses` as `removeLicenses`) — just needs
+  `User.ReadWrite.All` added to the app registration. Not yet added
+  (nothing automated needed it yet) but no known obstacle.
+- **Mailbox -> Shared conversion has no Graph API at all** — `Set-Mailbox
+  -Type Shared` only exists in Exchange Online PowerShell. Automating it
+  needs: a certificate uploaded to the app registration (client secrets
+  aren't accepted for Exchange Online app-only auth), the
+  `Exchange.ManageAsApp` **Office 365 Exchange Online** API permission
+  (a different API surface from Microsoft Graph) granted+consented, AND
+  a `New-ManagementRoleAssignment -App <id> -Role "Mail Recipients"` run
+  by an actual admin to bind the app to real Exchange rights (granting
+  the permission alone grants nothing).
+- **Confirmed live, all done**: cert generated (20-year self-signed,
+  `CN=AdminConsole-EXO-AppOnly`) and uploaded to the app registration;
+  `Exchange.ManageAsApp` granted and admin-consented (twice — the first
+  admin-consent attempt hit `AADSTS500113: No reply address is registered
+  for the application`, fixed by adding a harmless `https://localhost`
+  Web redirect URI under the app's Authentication blade, since this app
+  had only ever been used for client-credentials Graph calls and had zero
+  redirect URIs).
+- **Still blocked**: `New-ManagementRoleAssignment -App` (tried both the
+  App/Client ID and the Enterprise Application's Object ID) consistently
+  fails with `Couldn't find a service principal with the following
+  identity`. This is a known Entra-ID-to-Exchange-Online directory sync
+  lag for a service principal that's never been used for Exchange
+  management before, not a configuration mistake — Microsoft's own
+  guidance says this can take anywhere from under an hour up to ~24
+  hours to clear. **Next step for whoever picks this up**: retry
+  `New-ManagementRoleAssignment -App "09b0a813-3024-4e54-bbdb-1a22fbff29dc"
+  -Role "Mail Recipients"` after waiting; if still failing after ~24h,
+  open a Microsoft support ticket referencing this exact symptom. Once
+  that succeeds, `Connect-ExchangeOnline -AppId ... -CertificateThumbprint
+  ... -Organization "scaasey.onmicrosoft.com"` should work (note: the
+  *initial* domain is required for `-Organization`, not the GUID tenant
+  ID and not the `.mail.onmicrosoft.com` routing domain — both were tried
+  and rejected first).
+- Once that connects, the actual automation (a Semaphore/Ansible playbook
+  running `Set-Mailbox -Type Shared` + the license-removal Graph call,
+  wired into the two checkboxes on the Offboarding tab so they become
+  real actions instead of manual attestations) is still unbuilt — nothing
+  to do here until the RBAC binding actually succeeds.
+
 ## Unrelated infra incident on the same host — Sophos WAN/WireGuard outage, resolved 2026-08-20
 Not about this app, but worth keeping here since it's the same host
 (saa-docker) and touches the `wgdashboard` container that lives alongside

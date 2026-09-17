@@ -6,7 +6,7 @@
 
     <.flash_group flash={@flash} />
 
-    <div class="rounded-sm border border-stroke bg-white px-5 py-8 shadow-default dark:border-strokedark dark:bg-boxdark sm:px-7.5">
+    <div class="rounded-xl border border-white/5 bg-midnight-850 px-5 py-8 shadow-default sm:px-7.5">
       <form method="post" action={~p"/login"}>
         <input type="hidden" name="_csrf_token" value={get_csrf_token()} />
 

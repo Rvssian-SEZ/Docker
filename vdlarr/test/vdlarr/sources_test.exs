@@ -442,6 +442,47 @@ defmodule Vdlarr.SourcesTest do
       refute_enqueued(worker: MediaCollectionIndexingWorker)
       refute_enqueued(worker: SourceMetadataStorageWorker)
     end
+
+    test "delay_automatic_download: true puts a playlist source into manual selection mode" do
+      expect(YtDlpRunnerMock, :run, &playlist_mock/5)
+
+      valid_attrs = %{
+        media_profile_id: media_profile_fixture().id,
+        original_url: "https://www.youtube.com/playlist?list=abc123"
+      }
+
+      assert {:ok, %Source{} = source} = Sources.create_source(valid_attrs, delay_automatic_download: true)
+
+      assert source.selection_mode == :manual
+      refute source.download_media
+    end
+
+    test "delay_automatic_download: true has no effect on a channel source" do
+      expect(YtDlpRunnerMock, :run, &channel_mock/5)
+
+      valid_attrs = %{
+        media_profile_id: media_profile_fixture().id,
+        original_url: "https://www.youtube.com/channel/abc123"
+      }
+
+      assert {:ok, %Source{} = source} = Sources.create_source(valid_attrs, delay_automatic_download: true)
+
+      assert source.selection_mode == :all
+      assert source.download_media
+    end
+
+    test "delay_automatic_download defaults to false" do
+      expect(YtDlpRunnerMock, :run, &playlist_mock/5)
+
+      valid_attrs = %{
+        media_profile_id: media_profile_fixture().id,
+        original_url: "https://www.youtube.com/playlist?list=abc123"
+      }
+
+      assert {:ok, %Source{} = source} = Sources.create_source(valid_attrs)
+
+      assert source.selection_mode == :all
+    end
   end
 
   describe "update_source/3" do
@@ -735,6 +776,46 @@ defmodule Vdlarr.SourcesTest do
 
       refute_enqueued(worker: MediaCollectionIndexingWorker)
       refute_enqueued(worker: SourceMetadataStorageWorker)
+      refute_enqueued(worker: MediaDownloadWorker)
+    end
+  end
+
+  describe "restore_automatic_downloads/1" do
+    test "switches selection_mode back to :all and re-enables download_media" do
+      source = source_fixture(%{collection_type: :playlist, selection_mode: :manual, download_media: false})
+
+      assert {:ok, %Source{} = restored} = Sources.restore_automatic_downloads(source)
+
+      assert restored.selection_mode == :all
+      assert restored.download_media
+    end
+
+    test "clears prevent_download on the source's existing media items" do
+      source = source_fixture(%{collection_type: :playlist, selection_mode: :manual})
+      media_item = media_item_fixture(%{source_id: source.id, prevent_download: true})
+      other_source_item = media_item_fixture(%{prevent_download: true})
+
+      assert {:ok, %Source{}} = Sources.restore_automatic_downloads(source)
+
+      refute Repo.reload(media_item).prevent_download
+      assert Repo.reload(other_source_item).prevent_download
+    end
+
+    test "enqueues pending downloads for the source when enabled" do
+      source = source_fixture(%{collection_type: :playlist, selection_mode: :manual, enabled: true})
+      media_item_fixture(%{source_id: source.id, prevent_download: true, media_filepath: nil})
+
+      assert {:ok, %Source{}} = Sources.restore_automatic_downloads(source)
+
+      assert_enqueued(worker: MediaDownloadWorker)
+    end
+
+    test "does not enqueue downloads for a disabled source" do
+      source = source_fixture(%{collection_type: :playlist, selection_mode: :manual, enabled: false})
+      media_item_fixture(%{source_id: source.id, prevent_download: true, media_filepath: nil})
+
+      assert {:ok, %Source{}} = Sources.restore_automatic_downloads(source)
+
       refute_enqueued(worker: MediaDownloadWorker)
     end
   end

@@ -3,6 +3,7 @@ defmodule VdlarrWeb.SettingControllerTest do
 
   alias Vdlarr.Settings
   alias Vdlarr.Utils.FilesystemUtils
+  alias Vdlarr.YtDlp.UpdateWorker
 
   describe "show settings" do
     test "renders the page", %{conn: conn} do
@@ -21,6 +22,22 @@ defmodule VdlarrWeb.SettingControllerTest do
 
       conn = get(conn, ~p"/settings")
       assert html_response(conn, 200) =~ update_attrs[:apprise_server]
+    end
+
+    test "kicks off a yt-dlp update when the update policy changes", %{conn: conn} do
+      assert [] = all_enqueued(worker: UpdateWorker)
+
+      conn = put(conn, ~p"/settings", setting: %{yt_dlp_update_policy: "nightly"})
+      assert redirected_to(conn) == ~p"/settings"
+
+      assert_enqueued(worker: UpdateWorker, args: %{"apply_policy" => true})
+    end
+
+    test "does not kick off a yt-dlp update when the policy is unchanged", %{conn: conn} do
+      conn = put(conn, ~p"/settings", setting: %{apprise_server: "test://server"})
+      assert redirected_to(conn) == ~p"/settings"
+
+      assert [] = all_enqueued(worker: UpdateWorker)
     end
   end
 

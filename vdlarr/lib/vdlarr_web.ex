@@ -100,6 +100,7 @@ defmodule VdlarrWeb do
       import VdlarrWeb.CustomComponents.TextComponents
       import VdlarrWeb.CustomComponents.TableComponents
       import VdlarrWeb.CustomComponents.ButtonComponents
+      import VdlarrWeb.CustomComponents.DownloadComponents
       import Vdlarr.Utils.StringUtils, only: [double_brace: 1]
 
       alias Vdlarr.Settings

@@ -440,6 +440,58 @@ defmodule Vdlarr.Downloading.MediaDownloadWorkerTest do
     end
   end
 
+  describe "perform/1 when testing the ignore_unavailable_media setting" do
+    test "leaves the item alone when the setting is off", %{media_item: media_item} do
+      Vdlarr.Settings.set(ignore_unavailable_media: false)
+
+      expect(YtDlpRunnerMock, :run, 2, fn
+        _url, :get_downloadable_status, _opts, _ot, _addl -> {:ok, "{}"}
+        _url, :download, _opts, _ot, _addl -> {:error, "ERROR: Private video", 1}
+      end)
+
+      # "Private video" isn't in MediaDownloadWorker's own @non_retryable_errors list, so
+      # with the setting off this falls through to the ordinary retryable-error path.
+      assert {:error, :download_failed} = perform_job(MediaDownloadWorker, %{id: media_item.id})
+      media_item = Repo.reload(media_item)
+
+      refute media_item.prevent_download
+      refute media_item.unavailable_at
+    end
+
+    test "marks the item prevent_download and clears the error when the setting is on and the error matches",
+         %{media_item: media_item} do
+      Vdlarr.Settings.set(ignore_unavailable_media: true)
+
+      expect(YtDlpRunnerMock, :run, 2, fn
+        _url, :get_downloadable_status, _opts, _ot, _addl -> {:ok, "{}"}
+        _url, :download, _opts, _ot, _addl -> {:error, "ERROR: Private video", 1}
+      end)
+
+      assert {:ok, :non_retry} = perform_job(MediaDownloadWorker, %{id: media_item.id})
+      media_item = Repo.reload(media_item)
+
+      assert media_item.prevent_download
+      refute media_item.last_error
+      assert media_item.unavailable_at
+      assert media_item.unavailable_reason == "Private video"
+    end
+
+    test "does not touch the item when the setting is on but the error doesn't match", %{media_item: media_item} do
+      Vdlarr.Settings.set(ignore_unavailable_media: true)
+
+      expect(YtDlpRunnerMock, :run, 2, fn
+        _url, :get_downloadable_status, _opts, _ot, _addl -> {:ok, "{}"}
+        _url, :download, _opts, _ot, _addl -> {:error, "Some transient network error", 1}
+      end)
+
+      assert {:error, :download_failed} = perform_job(MediaDownloadWorker, %{id: media_item.id})
+      media_item = Repo.reload(media_item)
+
+      refute media_item.prevent_download
+      refute media_item.unavailable_at
+    end
+  end
+
   describe "non_retryable_error?/1" do
     test "returns true for known-unrecoverable yt-dlp errors" do
       assert MediaDownloadWorker.non_retryable_error?("ERROR: Video unavailable")

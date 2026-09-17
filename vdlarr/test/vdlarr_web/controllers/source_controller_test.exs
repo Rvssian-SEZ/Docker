@@ -1,6 +1,7 @@
 defmodule VdlarrWeb.SourceControllerTest do
   use VdlarrWeb.ConnCase
 
+  import Ecto.Query, warn: false
   import Vdlarr.MediaFixtures
   import Vdlarr.SourcesFixtures
   import Vdlarr.ProfilesFixtures
@@ -228,6 +229,40 @@ defmodule VdlarrWeb.SourceControllerTest do
       refute source.custom_poster_filepath
       refute source.nfo_filepath
     end
+
+    test "delay_automatic_download puts a playlist source into manual selection mode", %{
+      conn: conn,
+      create_attrs: create_attrs
+    } do
+      expect(YtDlpRunnerMock, :run, 1, &runner_function_mock/5)
+
+      playlist_attrs =
+        Map.merge(create_attrs, %{collection_type: "playlist", delay_automatic_download: "true"})
+
+      conn = post(conn, ~p"/sources", source: playlist_attrs)
+
+      assert %{id: id} = redirected_params(conn)
+      source = Repo.get!(Source, id)
+
+      assert source.selection_mode == :manual
+      refute source.download_media
+    end
+
+    test "without delay_automatic_download, a playlist source downloads normally", %{
+      conn: conn,
+      create_attrs: create_attrs
+    } do
+      expect(YtDlpRunnerMock, :run, 1, &runner_function_mock/5)
+
+      playlist_attrs = Map.merge(create_attrs, %{collection_type: "playlist"})
+
+      conn = post(conn, ~p"/sources", source: playlist_attrs)
+
+      assert %{id: id} = redirected_params(conn)
+      source = Repo.get!(Source, id)
+
+      assert source.selection_mode == :all
+    end
   end
 
   describe "edit source" do
@@ -360,6 +395,93 @@ defmodule VdlarrWeb.SourceControllerTest do
     end
   end
 
+  describe "restore_automatic_downloads" do
+    test "restores selection_mode and clears prevent_download, redirects to the source page", %{conn: conn} do
+      source = source_fixture(%{collection_type: :playlist, selection_mode: :manual, download_media: false})
+      media_item = media_item_fixture(%{source_id: source.id, prevent_download: true})
+
+      conn = post(conn, ~p"/sources/#{source.id}/restore_automatic_downloads")
+
+      assert redirected_to(conn) == ~p"/sources/#{source.id}"
+      assert Repo.reload(source).selection_mode == :all
+      assert Repo.reload(source).download_media
+      refute Repo.reload(media_item).prevent_download
+    end
+  end
+
+  describe "start_all" do
+    test "enables the source and turns downloading on when something is pending", %{conn: conn} do
+      source = source_fixture(%{enabled: false, download_media: false})
+      _media_item = media_item_fixture(source_id: source.id, media_filepath: nil)
+
+      conn = post(conn, ~p"/sources/#{source.id}/start_all")
+
+      assert redirected_to(conn) == ~p"/sources/#{source.id}"
+      source = Repo.reload(source)
+      assert source.enabled
+      assert source.download_media
+    end
+
+    test "does not enable the source when nothing is pending", %{conn: conn} do
+      source = source_fixture(%{enabled: false, download_media: false})
+
+      post(conn, ~p"/sources/#{source.id}/start_all")
+
+      source = Repo.reload(source)
+      refute source.enabled
+      refute source.download_media
+    end
+  end
+
+  describe "pause_all" do
+    test "turns off download_media and cancels an in-progress download, leaving the source enabled", %{conn: conn} do
+      source = source_fixture(%{enabled: true, download_media: true})
+      media_item = media_item_fixture(source_id: source.id, media_filepath: nil)
+      {:ok, task} = MediaDownloadWorker.kickoff_with_task(media_item)
+      set_job_state(task, :executing)
+
+      conn = post(conn, ~p"/sources/#{source.id}/pause_all")
+
+      assert redirected_to(conn) == ~p"/sources/#{source.id}"
+      source = Repo.reload(source)
+      assert source.enabled
+      refute source.download_media
+      refute Repo.get(Vdlarr.Tasks.Task, task.id)
+    end
+
+    test "does nothing when there are no active or queued downloads", %{conn: conn} do
+      source = source_fixture(%{enabled: true, download_media: true})
+
+      post(conn, ~p"/sources/#{source.id}/pause_all")
+
+      assert Repo.reload(source).download_media
+    end
+  end
+
+  describe "stop_all" do
+    test "disables the source and cancels a queued download", %{conn: conn} do
+      source = source_fixture(%{enabled: true, download_media: true})
+      media_item = media_item_fixture(source_id: source.id, media_filepath: nil)
+      {:ok, _task} = MediaDownloadWorker.kickoff_with_task(media_item)
+
+      conn = post(conn, ~p"/sources/#{source.id}/stop_all")
+
+      assert redirected_to(conn) == ~p"/sources/#{source.id}"
+      source = Repo.reload(source)
+      refute source.enabled
+      refute source.download_media
+      refute_enqueued(worker: MediaDownloadWorker)
+    end
+
+    test "does nothing when there are no active or queued downloads", %{conn: conn} do
+      source = source_fixture(%{enabled: true, download_media: true})
+
+      post(conn, ~p"/sources/#{source.id}/stop_all")
+
+      assert Repo.reload(source).enabled
+    end
+  end
+
   describe "force_redownload" do
     test "enqueues re-download tasks", %{conn: conn} do
       source = source_fixture()
@@ -452,6 +574,12 @@ defmodule VdlarrWeb.SourceControllerTest do
     media_item = media_item_with_attachments(%{source_id: source.id})
 
     %{source: source, media_item: media_item}
+  end
+
+  defp set_job_state(task, job_state) do
+    Oban.Job
+    |> where([j], j.id == ^task.job_id)
+    |> Repo.update_all(set: [state: to_string(job_state)])
   end
 
   defp runner_function_mock(_url, :get_source_details, _opts, _ot, _addl) do

@@ -30,7 +30,10 @@ defmodule Vdlarr.Sources.SingleVideoHelpers do
   def create_source(url, attrs \\ %{}) do
     should_use_cookies = Map.get(attrs, "cookie_behaviour") == "all_operations"
 
-    case YtDlpMedia.get_media_attributes(url, [], use_cookies: should_use_cookies) do
+    case YtDlpMedia.get_media_attributes(url, [],
+           use_cookies: should_use_cookies,
+           sleep_interval_context: :indexing
+         ) do
       {:ok, media_attrs} ->
         source_attrs =
           Map.merge(attrs, %{

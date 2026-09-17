@@ -19,6 +19,8 @@ defmodule Vdlarr.YtDlp.MediaCollection do
       file that will be written to when yt-dlp is done. This is useful for
       setting up a file watcher to know when the file is ready to be read.
     - :use_cookies - whether or not to use user-provided cookies when fetching the media details
+    - :sleep_interval_context - forwarded as-is to `Vdlarr.YtDlp.CommandRunner.run/5` - see
+      its docs. Defaults to :download there if not given.
 
   Returns {:ok, [map()]} | {:error, any, ...}.
   """
@@ -31,7 +33,8 @@ defmodule Vdlarr.YtDlp.MediaCollection do
     output_template = YtDlpMedia.indexing_output_template()
     output_filepath = FilesystemUtils.generate_metadata_tmpfile(:json)
     file_listener_handler = Keyword.get(addl_opts, :file_listener_handler, false)
-    runner_opts = [output_filepath: output_filepath, use_cookies: use_cookies]
+    sleep_interval_context = Keyword.get(addl_opts, :sleep_interval_context, :download)
+    runner_opts = [output_filepath: output_filepath, use_cookies: use_cookies, sleep_interval_context: sleep_interval_context]
     action = :get_media_attributes_for_collection
 
     if file_listener_handler do

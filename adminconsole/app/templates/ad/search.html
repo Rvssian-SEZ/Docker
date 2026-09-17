@@ -35,6 +35,12 @@
           {% if user.can('ad.laps_read') %}
           <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#lapsModal{{ loop.index }}">LAPS Reveal</button>
           {% endif %}
+          {% if user.can('ad.delete_computer') %}
+          <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteComputerModal{{ loop.index }}">Delete</button>
+          {% endif %}
+          {% if user.can('ad.move_object') %}
+          <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#moveModal{{ loop.index }}">Move</button>
+          {% endif %}
         {% elif r.kind == 'user' %}
           {% if user.can('ad.unlock') %}<button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#unlockModal{{ loop.index }}">Unlock</button>{% endif %}
           {% if user.can('ad.reset_password') %}<button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#resetModal{{ loop.index }}">Reset PW</button>{% endif %}
@@ -43,6 +49,10 @@
           <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#enableModal{{ loop.index }}">Enable</button>
           <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#disableModal{{ loop.index }}">Disable</button>
           {% endif %}
+          {% if user.can('ad.move_object') %}
+          <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#moveModal{{ loop.index }}">Move</button>
+          {% endif %}
+          <a href="/ad/{{ r.sam }}/groups" class="btn btn-sm btn-outline-light">Groups</a>
         {% else %}
           <span class="text-secondary small">No actions (not a user account)</span>
         {% endif %}
@@ -60,6 +70,17 @@
     <div class="modal-header"><h5 class="modal-title">Reveal LAPS password for {{ r.sam }}</h5></div>
     <div class="modal-body"><label class="form-label">Reason / ticket ref (required)</label><input name="reason" class="form-control" required></div>
     <div class="modal-footer"><button class="btn btn-info">Reveal</button></div>
+  </form>
+</div></div></div>
+
+<div class="modal fade" id="deleteComputerModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/ad/{{ r.sam }}/delete-computer">
+    <div class="modal-header"><h5 class="modal-title text-danger">Delete computer object</h5></div>
+    <div class="modal-body">
+      <p>Are you sure you want to delete <strong>{{ r.sam }}</strong>? This permanently removes the computer object from Active Directory and cannot be undone from this app.</p>
+      <label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required>
+    </div>
+    <div class="modal-footer"><button class="btn btn-danger">Delete {{ r.sam }}</button></div>
   </form>
 </div></div></div>
 {% elif r.kind == 'user' %}
@@ -119,6 +140,27 @@
   </form>
 </div></div></div>
 {% endif %}
+
+{% if r.kind in ('computer', 'user') and user.can('ad.move_object') %}
+<div class="modal fade" id="moveModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/ad/{{ r.sam }}/move">
+    <div class="modal-header"><h5 class="modal-title">Move {{ r.sam }} to a different OU</h5></div>
+    <div class="modal-body">
+      <div class="mb-2">
+        <label class="form-label">Destination OU</label>
+        <select name="new_ou_dn" class="form-select" required>
+          <option value="" disabled selected>Choose an OU...</option>
+          {% for ou in ous %}
+          <option value="{{ ou.dn }}">{{ ou.display }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required>
+    </div>
+    <div class="modal-footer"><button class="btn btn-secondary">Move</button></div>
+  </form>
+</div></div></div>
+{% endif %}
 {% endfor %}
 
 <script>
@@ -127,6 +169,25 @@ document.querySelectorAll(".regen-password-btn").forEach(function (btn) {
     fetch("/ad/new-password")
       .then(r => r.json())
       .then(data => { btn.previousElementSibling.value = data.password; });
+  });
+});
+
+// Guards every action form on this page (unlock/reset/modify/enable/disable/
+// delete) against a double-click submitting the same action twice — hit
+// live 2026-09-07 on Delete Computer, where two near-simultaneous submits
+// both ran the full LDAPS-then-Semaphore-fallback flow for the same
+// target; the first succeeded and the second failed only because the
+// object was already gone by the time it got around to checking. Doesn't
+// touch anything server-side (rate limiting/idempotency there is a
+// separate concern) — this just stops the redundant second submit at the
+// source.
+document.querySelectorAll(".modal form").forEach(function (form) {
+  form.addEventListener("submit", function () {
+    var btn = form.querySelector("button[type=submit], .modal-footer button");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Working...";
+    }
   });
 });
 </script>

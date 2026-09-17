@@ -27,6 +27,10 @@ defmodule Vdlarr.YtDlp.CommandRunner do
       attach a cookie file if the user hasn't set one up.
     - :skip_sleep_interval - if true, will not add the sleep interval options to the command.
       Usually only used for commands that would be UI-blocking
+    - :sleep_interval_context - :download (default) or :indexing. Picks which of the two
+      independent sleep-interval settings to apply - :indexing calls are lighter-weight
+      metadata-only requests, so they're commonly given a shorter interval than actual
+      media downloads. Ignored if :skip_sleep_interval is set.
     - :line_handler - if set, called with each line of output as it's produced instead of
       waiting for the command to finish. See `Vdlarr.Utils.CliUtils.wrap_cmd/4`.
 
@@ -40,7 +44,7 @@ defmodule Vdlarr.YtDlp.CommandRunner do
     print_to_file_opts = [{:print_to_file, output_template}, output_filepath]
     user_configured_opts = cookie_file_options(addl_opts) ++ rate_limit_options(addl_opts) ++ misc_options()
     # These must stay in exactly this order, hence why I'm giving it its own variable.
-    all_opts = command_opts ++ print_to_file_opts ++ user_configured_opts ++ global_options()
+    all_opts = command_opts ++ print_to_file_opts ++ user_configured_opts ++ global_options(addl_opts)
     formatted_command_opts = [url] ++ CliUtils.parse_options(all_opts)
     wrap_cmd_opts = Keyword.take(addl_opts, [:line_handler])
 
@@ -81,15 +85,21 @@ defmodule Vdlarr.YtDlp.CommandRunner do
   end
 
   @doc """
-  Updates yt-dlp to the latest version
+  Updates yt-dlp to the given target.
+
+  The target can be:
+    - "stable" - updates to the latest stable release
+    - "nightly" - updates to the latest nightly build
+    - "nightly@2025.12.08.123456" - pins to that exact nightly build
+    - a specific version like "2025.12.08" - pins to that exact stable release
 
   Returns {:ok, binary()} | {:error, binary()}
   """
   @impl YtDlpCommandRunner
-  def update do
+  def update(target) do
     command = backend_executable()
 
-    case CliUtils.wrap_cmd(command, ["--update"]) do
+    case CliUtils.wrap_cmd(command, build_update_args(target)) do
       {output, 0} ->
         {:ok, String.trim(output)}
 
@@ -97,6 +107,14 @@ defmodule Vdlarr.YtDlp.CommandRunner do
         {:error, output}
     end
   end
+
+  defp build_update_args("stable"), do: ["--update"]
+  defp build_update_args("nightly"), do: ["--update-to", "nightly"]
+  # `nightly` is yt-dlp's channel alias for the yt-dlp/yt-dlp-nightly-builds repo;
+  # `<channel>@<tag>` pins to an exact build. Naming the repo directly (e.g.
+  # `yt-dlp/yt-dlp_nightly@<tag>`) fails because that repo doesn't exist.
+  defp build_update_args("nightly@" <> version), do: ["--update-to", "nightly@#{version}"]
+  defp build_update_args(version), do: ["--update-to", "yt-dlp/yt-dlp@#{version}"]
 
   # A failed command's captured output is `stdout` and `stderr` combined (see
   # `stderr_to_stdout: true` above), so on a download it's interleaved with every
@@ -121,12 +139,23 @@ defmodule Vdlarr.YtDlp.CommandRunner do
     end
   end
 
-  defp global_options do
-    [
+  # `:quiet` is dropped when a `:line_handler` is present - that's only ever wired up for
+  # the actual download command (see `MediaDownloader`), where yt-dlp's own status lines
+  # (extraction phase, `Sleeping N seconds ...`, post-processing tool names) get streamed
+  # to `DownloadProgress.handle_line/2` and shown alongside the download progress bar
+  # instead of being silently swallowed. Indexing/metadata calls have no line_handler and
+  # stay quiet since nothing consumes their extra chatter.
+  defp global_options(addl_opts) do
+    base_options = [
       :windows_filenames,
-      :quiet,
       cache_dir: Path.join(Application.get_env(:vdlarr, :tmpfile_directory), "yt-dlp-cache")
     ]
+
+    if Keyword.has_key?(addl_opts, :line_handler) do
+      base_options
+    else
+      [:quiet | base_options]
+    end
   end
 
   defp cookie_file_options(addl_opts) do
@@ -160,7 +189,11 @@ defmodule Vdlarr.YtDlp.CommandRunner do
   end
 
   defp sleep_interval_opts(addl_opts) do
-    sleep_interval = Settings.get!(:extractor_sleep_interval_seconds)
+    sleep_interval =
+      case Keyword.get(addl_opts, :sleep_interval_context, :download) do
+        :indexing -> Settings.get!(:indexing_sleep_interval_seconds)
+        :download -> Settings.get!(:extractor_sleep_interval_seconds)
+      end
 
     if sleep_interval <= 0 || Keyword.get(addl_opts, :skip_sleep_interval) do
       []

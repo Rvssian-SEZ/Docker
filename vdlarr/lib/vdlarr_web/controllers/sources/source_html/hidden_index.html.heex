@@ -1,9 +1,9 @@
 <div class="mb-6 flex gap-3 flex-row items-center justify-between">
-  <h2 class="text-title-md2 font-bold text-black dark:text-white">Hidden Sources</h2>
+  <h2 class="font-display font-bold text-[22px] text-white">Hidden Sources</h2>
 </div>
 
-<div class="rounded-sm border border-stroke bg-white shadow-default dark:border-strokedark dark:bg-boxdark">
-  <div class="max-w-full overflow-x-auto">
+<div class="rounded-xl border border-white/5 bg-midnight-850 shadow-default">
+  <div class="max-w-full overflow-x-auto p-4">
     {live_render(@conn, VdlarrWeb.Sources.SourceLive.IndexGridLive,
       session: %{
         "show_hidden" => true,

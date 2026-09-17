@@ -32,6 +32,36 @@
   <:option>
     <div class="h-px w-full bg-bodydark2"></div>
   </:option>
+  <:option :if={!@source.enabled || !@source.download_media}>
+    <.link
+      href={~p"/sources/#{@source}/start_all"}
+      method="post"
+      data-confirm="Start this source? Enables it and turns downloading back on."
+    >
+      Start
+    </.link>
+  </:option>
+  <:option :if={@source.download_media}>
+    <.link
+      href={~p"/sources/#{@source}/pause_all"}
+      method="post"
+      data-confirm="Pause downloads for this source? Cancels anything in progress or queued, but indexing keeps running."
+    >
+      Pause
+    </.link>
+  </:option>
+  <:option :if={@source.enabled}>
+    <.link
+      href={~p"/sources/#{@source}/stop_all"}
+      method="post"
+      data-confirm="Stop this source entirely? Disables it (including indexing) and cancels anything in progress or queued."
+    >
+      Stop
+    </.link>
+  </:option>
+  <:option>
+    <div class="h-px w-full bg-bodydark2"></div>
+  </:option>
   <:option :if={@source.download_media}>
     <.link
       href={~p"/sources/#{@source}/force_download_pending"}

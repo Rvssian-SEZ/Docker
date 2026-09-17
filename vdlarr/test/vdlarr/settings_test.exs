@@ -158,5 +158,33 @@ defmodule Vdlarr.SettingsTest do
 
       assert %Ecto.Changeset{valid?: true} = Settings.change_setting(setting, %{extractor_sleep_interval_seconds: 0})
     end
+
+    test "only accepts known yt_dlp_update_policy values" do
+      setting = Settings.record()
+
+      assert %Ecto.Changeset{valid?: true} = Settings.change_setting(setting, %{yt_dlp_update_policy: "nightly"})
+      assert %Ecto.Changeset{valid?: false} = Settings.change_setting(setting, %{yt_dlp_update_policy: "bogus"})
+    end
+
+    test "allows setting the pinned policy before a pinned version is set" do
+      # Settings.set/1 only ever updates one field at a time, so requiring
+      # yt_dlp_pinned_version in the same changeset as yt_dlp_update_policy would make
+      # `Settings.set(yt_dlp_update_policy: "pinned")` fail before the follow-up
+      # `Settings.set(yt_dlp_pinned_version: ...)` call ever runs. UpdateManager's
+      # reassert_pinned_version/0 already handles a blank pinned version safely at
+      # runtime (logs and no-ops), so this is intentionally unvalidated here.
+      setting = Settings.record()
+
+      assert %Ecto.Changeset{valid?: true} = Settings.change_setting(setting, %{yt_dlp_update_policy: "pinned"})
+
+      assert %Ecto.Changeset{valid?: true} =
+               Settings.change_setting(setting, %{yt_dlp_update_policy: "pinned", yt_dlp_pinned_version: "2025.12.08"})
+    end
+
+    test "does not require a pinned version for other policies" do
+      setting = Settings.record()
+
+      assert %Ecto.Changeset{valid?: true} = Settings.change_setting(setting, %{yt_dlp_update_policy: "stable"})
+    end
   end
 end

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-4"><i class="bi bi-people me-2"></i>Create Group</h1>
+
+{% if error %}<div class="alert alert-warning">{{ error }}</div>{% endif %}
+
+<form method="post" action="/ad/groups/create" class="row g-3" style="max-width: 42rem" id="createGroupForm">
+  <div class="col-12">
+    <label class="form-label">Group name</label>
+    <input type="text" name="name" id="groupName" class="form-control" required autofocus>
+    <div class="form-text">Used for the group's logon name (sAMAccountName) — display name, mail, and proxy addresses below are auto-filled from this but can be edited.</div>
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">OU</label>
+    <select name="ou_dn" class="form-select" required>
+      <option value="" disabled selected>Select an OU…</option>
+      {% for ou in ous %}
+      <option value="{{ ou.dn }}">{{ ou.display }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="col-md-3">
+    <label class="form-label">Scope</label>
+    <select name="group_scope" class="form-select" required>
+      <option value="global" selected>Global</option>
+      <option value="domainlocal">Domain Local</option>
+      <option value="universal">Universal</option>
+    </select>
+  </div>
+  <div class="col-md-3">
+    <label class="form-label">Type</label>
+    <select name="group_type" class="form-select" required>
+      <option value="distribution" selected>Distribution</option>
+      <option value="security">Security</option>
+    </select>
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">Display name</label>
+    <input type="text" name="display_name" id="displayName" class="form-control">
+  </div>
+  <div class="col-md-6">
+    <label class="form-label">Mail</label>
+    <input type="text" name="mail" id="mailAddress" class="form-control">
+  </div>
+
+  <div class="col-12">
+    <label class="form-label">Primary proxy address</label>
+    <input type="text" name="proxy_smtp_primary" id="proxyPrimary" class="form-control font-monospace">
+  </div>
+  <div class="col-12">
+    <label class="form-label">Secondary proxy address</label>
+    <input type="text" name="proxy_smtp_secondary" id="proxySecondary" class="form-control font-monospace">
+  </div>
+
+  <div class="col-12">
+    <label class="form-label">Description</label>
+    <input type="text" name="description" class="form-control">
+  </div>
+
+  <div class="col-12">
+    <label class="form-label">Reason / ticket ref</label>
+    <input type="text" name="reason" class="form-control" required>
+  </div>
+
+  <div class="col-12">
+    <button class="btn btn-primary"><i class="bi bi-people me-1"></i>Create Group</button>
+  </div>
+</form>
+
+<script>
+(function () {
+  const groupName = document.getElementById("groupName");
+  const displayName = document.getElementById("displayName");
+  const mailAddress = document.getElementById("mailAddress");
+  const proxyPrimary = document.getElementById("proxyPrimary");
+  const proxySecondary = document.getElementById("proxySecondary");
+
+  const edited = { displayName: false, mailAddress: false, proxyPrimary: false, proxySecondary: false };
+  [displayName, mailAddress, proxyPrimary, proxySecondary].forEach(function (el) {
+    el.addEventListener("input", function () { edited[el.id] = true; });
+  });
+
+  groupName.addEventListener("input", function () {
+    const name = groupName.value.trim();
+    const localPart = name.toLowerCase().replace(/\s+/g, "");
+    if (!name) return;
+    if (!edited.displayName) displayName.value = name;
+    if (!edited.mailAddress) mailAddress.value = localPart + "@saa.sc";
+    if (!edited.proxyPrimary) proxyPrimary.value = "SMTP:" + localPart + "@saa.sc";
+    if (!edited.proxySecondary) proxySecondary.value = "smtp:" + localPart + "@scaasey.mail.onmicrosoft.com";
+  });
+})();
+</script>
+{% endblock %}

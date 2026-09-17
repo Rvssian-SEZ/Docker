@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h1 class="h3 mb-0"><i class="bi bi-box-arrow-right me-2"></i>Offboarding</h1>
+  {% if not history %}
+  <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#startOffboardingModal">Start Offboarding</button>
+  {% endif %}
+</div>
+<p class="mb-4">
+  {% if history %}
+  <a href="/offboarding"><i class="bi bi-arrow-left me-1"></i>Back to active offboarding</a>
+  {% else %}
+  <a href="/offboarding?history=1">View history (completed / cancelled)</a>
+  {% endif %}
+</p>
+
+{% if not history %}
+<p class="text-secondary small">
+  Starting offboarding automatically disables the account, resets its password to a random value nobody is shown, and removes it from every group it was a member of (the groups it was in are recorded below, permanently). Converting the mailbox to Shared and removing licenses (Exchange Online / Entra) are NOT automated here — tick them off once done manually. A row turns red once 6 months have passed since offboarding started. "Mark Deleted / Complete" actually deletes the AD account — it only becomes clickable once both checkboxes are ticked AND the 6-month date has passed.
+</p>
+{% endif %}
+
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <thead>
+    <tr>
+      <th>User</th>
+      <th>Started</th>
+      <th>Steps 1/2</th>
+      <th>Groups removed</th>
+      {% if not history %}
+      <th>Mailbox -> Shared</th>
+      <th>Licenses removed</th>
+      <th>Delete-eligible</th>
+      <th></th>
+      {% else %}
+      <th>Status</th>
+      {% endif %}
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in records %}
+    <tr{% if not history and r.is_overdue %} class="table-danger"{% endif %}>
+      <td>{{ r.display_name or '—' }}<div class="text-secondary small">{{ r.sam }}</div></td>
+      <td>{{ r.initiated_at.strftime('%Y-%m-%d') }}<div class="text-secondary small">by {{ r.initiated_by }}</div></td>
+      <td>
+        <span class="badge {{ 'text-bg-success' if r.disable_ok else 'text-bg-danger' }}">Disable</span>
+        <span class="badge {{ 'text-bg-success' if r.reset_password_ok else 'text-bg-danger' }}">Reset PW</span>
+      </td>
+      <td>
+        {% set groups = groups_by_id[r.id] %}
+        {% set removed_count = groups | selectattr('removed') | list | length %}
+        <details>
+          <summary>{{ removed_count }}/{{ groups|length }} removed</summary>
+          <ul class="small mb-0">
+            {% for g in groups %}
+            <li class="{{ '' if g.removed else 'text-danger' }}">{{ g.name or g.sam }}{% if not g.removed %} — FAILED: {{ g.error }}{% endif %}</li>
+            {% endfor %}
+          </ul>
+        </details>
+      </td>
+      {% if not history %}
+      <td>
+        <form method="post" action="/offboarding/{{ r.id }}/mailbox-converted" class="d-inline">
+          <button type="submit" class="btn btn-sm {{ 'btn-success' if r.mailbox_converted else 'btn-outline-secondary' }}">
+            {% if r.mailbox_converted %}<i class="bi bi-check-square me-1"></i>Done{% else %}<i class="bi bi-square me-1"></i>Not done{% endif %}
+          </button>
+        </form>
+        {% if r.mailbox_converted %}<div class="text-secondary small">{{ r.mailbox_converted_by }}</div>{% endif %}
+      </td>
+      <td>
+        <form method="post" action="/offboarding/{{ r.id }}/licenses-removed" class="d-inline">
+          <button type="submit" class="btn btn-sm {{ 'btn-success' if r.licenses_removed else 'btn-outline-secondary' }}">
+            {% if r.licenses_removed %}<i class="bi bi-check-square me-1"></i>Done{% else %}<i class="bi bi-square me-1"></i>Not done{% endif %}
+          </button>
+        </form>
+        {% if r.licenses_removed %}<div class="text-secondary small">{{ r.licenses_removed_by }}</div>{% endif %}
+      </td>
+      <td>
+        {{ r.delete_eligible_at.strftime('%Y-%m-%d') }}
+        {% if r.is_overdue %}<div class="small fw-bold">OVERDUE — delete now</div>{% endif %}
+      </td>
+      <td class="text-end">
+        {% set can_delete = r.mailbox_converted and r.licenses_removed and r.is_overdue %}
+        {% if can_delete %}
+        <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#completeModal{{ loop.index }}">Mark Deleted / Complete</button>
+        {% else %}
+        {% set reasons = [] %}
+        {% if not r.mailbox_converted %}{% set _ = reasons.append('mailbox not converted') %}{% endif %}
+        {% if not r.licenses_removed %}{% set _ = reasons.append('licenses not removed') %}{% endif %}
+        {% if not r.is_overdue %}{% set _ = reasons.append('delete-eligible date not reached') %}{% endif %}
+        <button class="btn btn-sm btn-outline-danger" disabled title="Blocked: {{ reasons|join(', ') }}">Mark Deleted / Complete</button>
+        {% endif %}
+        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#cancelModal{{ loop.index }}">Cancel</button>
+      </td>
+      {% else %}
+      <td>
+        {% if r.status == 'completed' %}
+        <span class="badge text-bg-danger">Deleted / Completed</span>
+        <div class="text-secondary small">{{ r.completed_at.strftime('%Y-%m-%d') }} by {{ r.completed_by }} — {{ r.completed_reason }}</div>
+        {% else %}
+        <span class="badge text-bg-secondary">Cancelled</span>
+        <div class="text-secondary small">{{ r.cancelled_at.strftime('%Y-%m-%d') }} by {{ r.cancelled_by }} — {{ r.cancelled_reason }}</div>
+        {% endif %}
+      </td>
+      {% endif %}
+    </tr>
+  {% else %}
+    <tr><td colspan="8" class="text-secondary">{% if history %}No completed offboarding records.{% else %}No active offboarding records.{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if not history %}
+<div class="modal fade" id="startOffboardingModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/offboarding/start">
+    <div class="modal-header"><h5 class="modal-title">Start offboarding</h5></div>
+    <div class="modal-body">
+      <div class="mb-2 position-relative">
+        <label class="form-label">Username (sAMAccountName)</label>
+        <input name="sam" id="offboardSam" class="form-control" required autofocus autocomplete="off">
+        <div id="offboardSamSuggestions" class="list-group position-absolute w-100" style="z-index: 1060;"></div>
+      </div>
+      <div class="alert alert-warning small">This immediately disables the account, resets its password, and removes it from every AD group it belongs to. This cannot be undone from this app.</div>
+      <label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required>
+    </div>
+    <div class="modal-footer"><button class="btn btn-warning">Start Offboarding</button></div>
+  </form>
+</div></div></div>
+
+{% for r in records %}
+{% if r.mailbox_converted and r.licenses_removed and r.is_overdue %}
+<div class="modal fade" id="completeModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/offboarding/{{ r.id }}/complete">
+    <div class="modal-header"><h5 class="modal-title text-danger">Delete {{ r.sam }} from Active Directory</h5></div>
+    <div class="modal-body">
+      <p>This permanently deletes the AD account for <strong>{{ r.sam }}</strong> and archives this offboarding record. This cannot be undone from this app.</p>
+      <label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required>
+    </div>
+    <div class="modal-footer"><button class="btn btn-danger">Delete {{ r.sam }}</button></div>
+  </form>
+</div></div></div>
+{% endif %}
+
+<div class="modal fade" id="cancelModal{{ loop.index }}" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+  <form method="post" action="/offboarding/{{ r.id }}/cancel">
+    <div class="modal-header"><h5 class="modal-title">Cancel offboarding for {{ r.sam }}</h5></div>
+    <div class="modal-body">
+      <p>This only stops tracking <strong>{{ r.sam }}</strong>'s offboarding — it does <strong>not</strong> re-enable the account, restore its password, or re-add it to any of the groups it was removed from. The account stays exactly as offboarding left it.</p>
+      <label class="form-label">Reason / ticket ref</label><input name="reason" class="form-control" required>
+    </div>
+    <div class="modal-footer"><button class="btn btn-secondary">Cancel Offboarding</button></div>
+  </form>
+</div></div></div>
+{% endfor %}
+
+<script>
+(function () {
+  const input = document.getElementById("offboardSam");
+  const suggestions = document.getElementById("offboardSamSuggestions");
+  let debounceTimer = null;
+  let suppressNext = false;
+
+  input.addEventListener("input", function () {
+    if (suppressNext) { suppressNext = false; return; }
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(fetchSuggestions, 250);
+  });
+
+  input.addEventListener("blur", function () {
+    setTimeout(function () { suggestions.innerHTML = ""; }, 150);
+  });
+
+  function fetchSuggestions() {
+    const q = input.value.trim();
+    if (!q) { suggestions.innerHTML = ""; return; }
+    fetch("/offboarding/user-suggest?q=" + encodeURIComponent(q))
+      .then(r => r.json())
+      .then(data => {
+        const candidates = data.candidates || [];
+        if (!candidates.length) { suggestions.innerHTML = ""; return; }
+        suggestions.innerHTML = candidates.map(c =>
+          `<button type="button" class="list-group-item list-group-item-action py-1 px-2 suggestion-item" data-sam="${c.sam}">` +
+          `<strong>${c.sam}</strong>${c.display_name ? " — " + c.display_name : ""}</button>`
+        ).join("");
+        suggestions.querySelectorAll(".suggestion-item").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            suppressNext = true;
+            input.value = btn.dataset.sam;
+            suggestions.innerHTML = "";
+          });
+        });
+      })
+      .catch(() => { suggestions.innerHTML = ""; });
+  }
+})();
+
+document.querySelectorAll(".modal form").forEach(function (form) {
+  form.addEventListener("submit", function () {
+    var btn = form.querySelector("button[type=submit], .modal-footer button");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Working...";
+    }
+  });
+});
+</script>
+{% endif %}
+{% endblock %}

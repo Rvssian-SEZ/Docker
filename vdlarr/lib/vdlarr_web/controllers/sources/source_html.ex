@@ -12,6 +12,9 @@ defmodule VdlarrWeb.Sources.SourceHTML do
   attr :action, :string, required: true
   attr :media_profiles, :list, required: true
   attr :method, :string, required: true
+  # Only meaningful at creation - selection_mode isn't directly editable after that (see
+  # Sources.create_source/2's delay_automatic_download opt and restore_automatic_downloads/1).
+  attr :show_delay_automatic_download, :boolean, default: false
 
   def source_form(assigns)
 

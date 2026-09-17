@@ -693,6 +693,61 @@ defmodule Vdlarr.MediaTest do
 
       assert Repo.reload(media_item_2).playlist_index == media_attrs.playlist_index
     end
+
+    test "defaults prevent_download to true for a playlist source in manual selection mode" do
+      source = source_fixture(%{collection_type: :playlist, selection_mode: :manual})
+
+      media_attrs =
+        media_attributes_return_fixture()
+        |> Phoenix.json_library().decode!()
+        |> YtDlpMedia.response_to_struct()
+
+      assert {:ok, %MediaItem{} = media_item} = Media.create_media_item_from_backend_attrs(source, media_attrs)
+
+      assert media_item.prevent_download
+    end
+
+    test "does not default prevent_download for a playlist source with selection_mode :all" do
+      source = source_fixture(%{collection_type: :playlist, selection_mode: :all})
+
+      media_attrs =
+        media_attributes_return_fixture()
+        |> Phoenix.json_library().decode!()
+        |> YtDlpMedia.response_to_struct()
+
+      assert {:ok, %MediaItem{} = media_item} = Media.create_media_item_from_backend_attrs(source, media_attrs)
+
+      refute media_item.prevent_download
+    end
+
+    test "does not default prevent_download for a channel source, even in manual selection mode" do
+      source = source_fixture(%{collection_type: :channel, selection_mode: :manual})
+
+      media_attrs =
+        media_attributes_return_fixture()
+        |> Phoenix.json_library().decode!()
+        |> YtDlpMedia.response_to_struct()
+
+      assert {:ok, %MediaItem{} = media_item} = Media.create_media_item_from_backend_attrs(source, media_attrs)
+
+      refute media_item.prevent_download
+    end
+
+    test "re-indexing an already-downloaded item never re-applies the manual-selection default" do
+      source = source_fixture(%{collection_type: :playlist, selection_mode: :manual})
+
+      media_attrs =
+        media_attributes_return_fixture()
+        |> Phoenix.json_library().decode!()
+        |> YtDlpMedia.response_to_struct()
+
+      assert {:ok, %MediaItem{} = media_item} = Media.create_media_item_from_backend_attrs(source, media_attrs)
+      {:ok, _} = Media.update_media_item(media_item, %{prevent_download: false})
+
+      assert {:ok, %MediaItem{} = reindexed} = Media.create_media_item_from_backend_attrs(source, media_attrs)
+
+      refute Repo.reload(reindexed).prevent_download
+    end
   end
 
   describe "update_media_item/2" do

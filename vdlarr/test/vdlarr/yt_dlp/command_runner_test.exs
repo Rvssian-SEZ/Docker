@@ -148,6 +148,44 @@ defmodule Vdlarr.YtDlp.CommandRunnerTest do
       refute String.contains?(output, "--sleep-subtitles")
     end
 
+    test "uses extractor_sleep_interval_seconds by default (no sleep_interval_context given)" do
+      Settings.set(extractor_sleep_interval_seconds: 5)
+      Settings.set(indexing_sleep_interval_seconds: 0)
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "")
+
+      assert String.contains?(output, "--sleep-interval")
+    end
+
+    test "uses indexing_sleep_interval_seconds when sleep_interval_context is :indexing" do
+      Settings.set(extractor_sleep_interval_seconds: 0)
+      Settings.set(indexing_sleep_interval_seconds: 5)
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "", sleep_interval_context: :indexing)
+
+      assert String.contains?(output, "--sleep-interval")
+    end
+
+    test "doesn't include sleep interval options when indexing_sleep_interval_seconds is 0, even with a nonzero download interval" do
+      Settings.set(extractor_sleep_interval_seconds: 5)
+      Settings.set(indexing_sleep_interval_seconds: 0)
+
+      assert {:ok, output} = Runner.run(@media_url, :foo, [], "", sleep_interval_context: :indexing)
+
+      refute String.contains?(output, "--sleep-interval")
+      refute String.contains?(output, "--sleep-requests")
+      refute String.contains?(output, "--sleep-subtitles")
+    end
+
+    test "skip_sleep_interval overrides sleep_interval_context: :indexing too" do
+      Settings.set(indexing_sleep_interval_seconds: 5)
+
+      assert {:ok, output} =
+               Runner.run(@media_url, :foo, [], "", sleep_interval_context: :indexing, skip_sleep_interval: true)
+
+      refute String.contains?(output, "--sleep-interval")
+    end
+
     test "includes limit_rate option when specified" do
       Settings.set(download_throughput_limit: "100K")
 
@@ -211,11 +249,30 @@ defmodule Vdlarr.YtDlp.CommandRunnerTest do
     end
   end
 
-  describe "update/0" do
-    test "adds the update arg" do
-      assert {:ok, output} = Runner.update()
+  describe "update/1" do
+    test "adds the --update arg for the stable target" do
+      assert {:ok, output} = Runner.update("stable")
 
       assert String.contains?(output, "--update")
+      refute String.contains?(output, "--update-to")
+    end
+
+    test "adds an --update-to nightly arg for the nightly target" do
+      assert {:ok, output} = Runner.update("nightly")
+
+      assert String.contains?(output, "--update-to nightly")
+    end
+
+    test "adds an --update-to nightly@<version> arg for a pinned nightly target" do
+      assert {:ok, output} = Runner.update("nightly@2025.12.08.123456")
+
+      assert String.contains?(output, "--update-to nightly@2025.12.08.123456")
+    end
+
+    test "adds an --update-to yt-dlp/yt-dlp@<version> arg for a pinned stable version" do
+      assert {:ok, output} = Runner.update("2025.12.08")
+
+      assert String.contains?(output, "--update-to yt-dlp/yt-dlp@2025.12.08")
     end
   end
 

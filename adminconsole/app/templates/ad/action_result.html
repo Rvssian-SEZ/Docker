@@ -1,5 +1,5 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="alert {% if ok %}alert-success{% else %}alert-danger{% endif %}">{{ message }}</div>
-<a href="/ad" class="btn btn-sm btn-outline-light">Back to AD Accounts</a>
+<a href="{{ back_url or '/ad' }}" class="btn btn-sm btn-outline-light">{{ back_label or 'Back to AD Accounts' }}</a>
 {% endblock %}

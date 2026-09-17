@@ -80,6 +80,28 @@ DEFAULTS: dict[str, tuple[str, str]] = {
     # cycle - see app/routers/ad_accounts.py and CLAUDE_CONTEXT.md
     # "Protected Users unlock". Uses Ansible@SAA.SC, not svc-adminconsole.
     "semaphore.unlock_template_id": ("", "int"),
+    # Fallback delete path for computer objects - svc-adminconsole's own
+    # LDAPS delegation (DC;computer) turned out to be blocked by a
+    # domain-wide "Deny Everyone: Delete Child" ACE inherited onto every
+    # real OU (confirmed live 2026-09-07, see CLAUDE_CONTEXT.md "Delete
+    # Computer") - same Ansible@SAA.SC pattern as the unlock fallback.
+    "semaphore.delete_computer_template_id": ("", "int"),
+    # Fallback move path for OU relocation - a cross-OU move needs Delete
+    # Child rights on the source OU, which is blocked domain-wide by the
+    # same "Deny Everyone: Delete Child" ACE that blocks Delete Computer
+    # (confirmed live 2026-09-07, see CLAUDE_CONTEXT.md "Move (OU
+    # relocation)") - same Ansible@SAA.SC pattern as that fallback.
+    "semaphore.move_object_template_id": ("", "int"),
+    # Fallback rename path for groups - a same-parent rename hit
+    # insufficientAccessRights even with WP;sAMAccountName;group /
+    # WP;displayName;group granted (confirmed live 2026-09-07, see
+    # CLAUDE_CONTEXT.md "Manage Groups") - same Ansible@SAA.SC pattern.
+    "semaphore.rename_group_template_id": ("", "int"),
+    # Delete path for the Offboarding tab's "Mark Deleted / Complete"
+    # action - goes straight here rather than trying LDAPS first, same
+    # "known to always be blocked" reasoning as Move/Rename Group (the
+    # domain-wide Delete Child Deny has no object-class qualifier).
+    "semaphore.delete_user_template_id": ("", "int"),
 
     # --- Reporting sync ---
     "sync.frequency_minutes": ("60", "int"),
