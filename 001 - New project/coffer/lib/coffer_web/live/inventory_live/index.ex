@@ -282,8 +282,12 @@ defmodule CofferWeb.InventoryLive.Index do
 
       <.table id="inventory-items" rows={@items}>
         <:col :let={i} label="Name">
-          {i.name}
-          <span :if={low_stock?(i)} class="badge badge-error badge-sm ml-2">low stock</span>
+          <div class="flex flex-wrap items-center gap-2">
+            <span>{i.name}</span>
+            <span :if={low_stock?(i)} class="badge badge-error badge-sm whitespace-nowrap">
+              low stock
+            </span>
+          </div>
         </:col>
         <:col :let={i} label="Type">{i.tracking_type}</:col>
         <:col :let={i} label="Category">{i.category}</:col>
