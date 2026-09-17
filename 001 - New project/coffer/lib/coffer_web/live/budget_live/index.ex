@@ -12,6 +12,7 @@ defmodule CofferWeb.BudgetLive.Index do
       {:ok,
        socket
        |> assign(:envelopes, Budgets.list_envelopes())
+       |> assign(:editing_category_id, nil)
        |> assign_categories()
        |> assign(:category_form, to_form(Budgets.change_category(%Category{})))}
     else
@@ -103,7 +104,8 @@ defmodule CofferWeb.BudgetLive.Index do
 
   def handle_event("validate_category", %{"category" => params}, socket) do
     form =
-      %Category{}
+      socket
+      |> category_form_source()
       |> Budgets.change_category(params)
       |> Map.put(:action, :validate)
       |> to_form()
@@ -112,21 +114,30 @@ defmodule CofferWeb.BudgetLive.Index do
   end
 
   def handle_event("save_category", %{"category" => params}, socket) do
-    if Policy.can?(socket.assigns.current_user, :create, :budget_category) do
-      case Budgets.create_category(params, socket.assigns.current_user) do
-        {:ok, _category} ->
-          {:noreply,
-           socket
-           |> put_flash(:info, "Category added.")
-           |> assign_categories()
-           |> assign(:category_form, to_form(Budgets.change_category(%Category{})))}
-
-        {:error, changeset} ->
-          {:noreply, assign(socket, :category_form, to_form(changeset))}
-      end
-    else
-      {:noreply, put_flash(socket, :error, "You're not authorized to add categories.")}
+    case socket.assigns.editing_category_id do
+      nil -> create_category(socket, params)
+      id -> update_category(socket, id, params)
     end
+  end
+
+  def handle_event("edit_category", %{"id" => id}, socket) do
+    if Policy.can?(socket.assigns.current_user, :update, :budget_category) do
+      category = Budgets.get_category!(id)
+
+      {:noreply,
+       socket
+       |> assign(:editing_category_id, category.id)
+       |> assign(:category_form, to_form(Budgets.change_category(category)))}
+    else
+      {:noreply, put_flash(socket, :error, "You're not authorized to edit categories.")}
+    end
+  end
+
+  def handle_event("cancel_edit_category", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:editing_category_id, nil)
+     |> assign(:category_form, to_form(Budgets.change_category(%Category{})))}
   end
 
   def handle_event("delete_category", %{"id" => id}, socket) do
@@ -186,6 +197,52 @@ defmodule CofferWeb.BudgetLive.Index do
     end
   end
 
+  defp category_form_source(socket) do
+    case socket.assigns.editing_category_id do
+      nil -> %Category{}
+      id -> Budgets.get_category!(id)
+    end
+  end
+
+  defp create_category(socket, params) do
+    if Policy.can?(socket.assigns.current_user, :create, :budget_category) do
+      case Budgets.create_category(params, socket.assigns.current_user) do
+        {:ok, _category} ->
+          {:noreply,
+           socket
+           |> put_flash(:info, "Category added.")
+           |> assign_categories()
+           |> assign(:category_form, to_form(Budgets.change_category(%Category{})))}
+
+        {:error, changeset} ->
+          {:noreply, assign(socket, :category_form, to_form(changeset))}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "You're not authorized to add categories.")}
+    end
+  end
+
+  defp update_category(socket, id, params) do
+    if Policy.can?(socket.assigns.current_user, :update, :budget_category) do
+      category = Budgets.get_category!(id)
+
+      case Budgets.update_category(category, params, socket.assigns.current_user) do
+        {:ok, _category} ->
+          {:noreply,
+           socket
+           |> put_flash(:info, "Category updated.")
+           |> assign(:editing_category_id, nil)
+           |> assign_categories()
+           |> assign(:category_form, to_form(Budgets.change_category(%Category{})))}
+
+        {:error, changeset} ->
+          {:noreply, assign(socket, :category_form, to_form(changeset))}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "You're not authorized to edit categories.")}
+    end
+  end
+
   defp assign_categories(socket) do
     categories = Budgets.list_categories()
 
@@ -196,6 +253,16 @@ defmodule CofferWeb.BudgetLive.Index do
       :category_options,
       Enum.map(categories, &{Budgets.category_path_label(&1, categories), &1.id})
     )
+  end
+
+  # A category can't become its own descendant's child (the changeset
+  # already rejects that server-side) — drop those options client-side too
+  # so an editor isn't offered choices that would just bounce back as errors.
+  defp parent_options(category_options, _categories, nil), do: category_options
+
+  defp parent_options(category_options, categories, editing_id) do
+    disallowed = Budgets.category_and_descendant_ids(editing_id, categories)
+    Enum.reject(category_options, fn {_label, id} -> id in disallowed end)
   end
 
   defp save_envelope(socket, :edit, params) do
@@ -309,41 +376,62 @@ defmodule CofferWeb.BudgetLive.Index do
         <h2 class="text-lg font-semibold">Categories</h2>
 
         <ul class="mt-2 space-y-1">
-          <li :for={c <- @category_tree} class="flex items-center justify-between">
+          <li :for={c <- @category_tree} class="flex items-center justify-between gap-2">
             <span style={"padding-left: #{c.depth * 1.25}rem"}>
               <span :if={c.depth > 0} class="text-base-content/40">&#8627;</span>
               {c.name}
             </span>
-            <button
-              :if={Policy.can?(@current_user, :delete, :budget_category)}
-              phx-click="delete_category"
-              phx-value-id={c.id}
-              data-confirm={"Delete category \"#{c.name}\"? Any subcategories become top-level."}
-              class="link link-error text-sm"
-            >
-              Delete
-            </button>
+            <span class="flex gap-2 text-sm">
+              <button
+                :if={Policy.can?(@current_user, :update, :budget_category)}
+                phx-click="edit_category"
+                phx-value-id={c.id}
+                class="link"
+              >
+                Edit
+              </button>
+              <button
+                :if={Policy.can?(@current_user, :delete, :budget_category)}
+                phx-click="delete_category"
+                phx-value-id={c.id}
+                data-confirm={"Delete category \"#{c.name}\"? Any subcategories become top-level."}
+                class="link link-error"
+              >
+                Delete
+              </button>
+            </span>
           </li>
         </ul>
 
         <.form
-          :if={Policy.can?(@current_user, :create, :budget_category)}
+          :if={
+            Policy.can?(@current_user, :create, :budget_category) or
+              Policy.can?(@current_user, :update, :budget_category)
+          }
           for={@category_form}
           id="category-form"
           phx-change="validate_category"
           phx-submit="save_category"
           class="mt-4 space-y-2"
         >
-          <.input field={@category_form[:name]} label="New category" />
+          <.input
+            field={@category_form[:name]}
+            label={if @editing_category_id, do: "Edit category", else: "New category"}
+          />
           <.input
             field={@category_form[:parent_id]}
             type="select"
             label="Parent (optional)"
             prompt="None (top-level)"
-            options={@category_options}
+            options={parent_options(@category_options, @categories, @editing_category_id)}
           />
-          <footer class="flex justify-end">
-            <.button phx-disable-with="Adding...">Add</.button>
+          <footer class="flex justify-end gap-2">
+            <.link :if={@editing_category_id} phx-click="cancel_edit_category" class="btn btn-ghost">
+              Cancel
+            </.link>
+            <.button phx-disable-with="Saving...">
+              {if @editing_category_id, do: "Save", else: "Add"}
+            </.button>
           </footer>
         </.form>
       </div>
