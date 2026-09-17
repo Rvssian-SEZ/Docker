@@ -321,8 +321,8 @@ defmodule CofferWeb.BudgetLive.Index do
         <:col :let={e} label="FY">{e.fiscal_year}</:col>
         <:col :let={e} label="Name">{e.name}</:col>
         <:col :let={e} label="Category">{e.category.name}</:col>
-        <:col :let={e} label="Allocated (SCR)">{e.allocated_amount}</:col>
-        <:col :let={e} label="Remaining (SCR)">{Budgets.envelope_remaining(e)}</:col>
+        <:col :let={e} label="Allocated (SCR)">{format_money(e.allocated_amount)}</:col>
+        <:col :let={e} label="Remaining (SCR)">{format_money(Budgets.envelope_remaining(e))}</:col>
         <:col :let={e} label="Active?">{e.active}</:col>
         <:action :let={e}>
           <.link

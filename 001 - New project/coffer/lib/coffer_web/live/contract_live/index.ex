@@ -213,7 +213,7 @@ defmodule CofferWeb.ContractLive.Index do
         <:col :let={c} label="Vendor">{c.vendor.name}</:col>
         <:col :let={c} label="Type">{c.contract_type}</:col>
         <:col :let={c} label="Renewal date">{c.renewal_date}</:col>
-        <:col :let={c} label="Amount">{c.amount} {c.currency.code}</:col>
+        <:col :let={c} label="Amount">{format_money(c.amount)} {c.currency.code}</:col>
         <:col :let={c} label="Auto-post?">{c.auto_post_to_ledger}</:col>
         <:col :let={c} label="Status">{c.status}</:col>
         <:action :let={c}>

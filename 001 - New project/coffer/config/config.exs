@@ -22,7 +22,8 @@ config :coffer, Oban,
      crontab: [
        {"5 0 1 1 *", Coffer.Budgets.FiscalYearRolloverWorker},
        {"10 0 * * *", Coffer.Contracts.ContractRenewalWorker},
-       {"15 0 * * *", Coffer.Inventory.CheckoutOverdueWorker}
+       {"15 0 * * *", Coffer.Inventory.CheckoutOverdueWorker},
+       {"20 0 * * *", Coffer.Ledger.RecurringTransactionWorker}
      ]}
   ],
   queues: [default: 10]

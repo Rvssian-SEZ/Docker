@@ -76,7 +76,9 @@ defmodule Coffer.Contracts.ContractRenewalWorker do
   defp catch_up(contract, today) do
     if Date.compare(contract.renewal_date, today) != :gt do
       {:ok, _txn} = post_transaction(contract, contract.renewal_date)
-      next_date = add_months(contract.renewal_date, cycle_months(contract.renewal_frequency))
+
+      next_date =
+        Coffer.Dates.add_months(contract.renewal_date, cycle_months(contract.renewal_frequency))
 
       {:ok, updated} =
         Contracts.system_update_contract(contract, %{
@@ -117,17 +119,4 @@ defmodule Coffer.Contracts.ContractRenewalWorker do
   defp cycle_months(:monthly), do: 1
   defp cycle_months(:quarterly), do: 3
   defp cycle_months(:annually), do: 12
-
-  @doc """
-  Elixir's `Date` has no month arithmetic — adds `months` to `date`,
-  clamping day-of-month overflow to the target month's last valid day
-  (e.g. Jan 31 + 1 month = Feb 28/29, never an invalid "Feb 31").
-  """
-  def add_months(%Date{} = date, months) when is_integer(months) do
-    total_months = date.year * 12 + (date.month - 1) + months
-    year = div(total_months, 12)
-    month = rem(total_months, 12) + 1
-    last_day = Date.new!(year, month, 1) |> Date.days_in_month()
-    Date.new!(year, month, min(date.day, last_day))
-  end
 end

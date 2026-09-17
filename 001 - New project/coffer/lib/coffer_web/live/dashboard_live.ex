@@ -126,13 +126,13 @@ defmodule CofferWeb.DashboardLive do
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div class="rounded-box border border-base-300 p-4">
           <p class="text-sm text-base-content/60">Total expenditure (SCR)</p>
-          <p class="text-3xl font-semibold">{@total_expenditure}</p>
+          <p class="text-3xl font-semibold">{format_money(@total_expenditure)}</p>
         </div>
         <div :if={@currency_subtotal} class="rounded-box border border-base-300 p-4">
           <p class="text-sm text-base-content/60">
             Total expenditure ({currency_code(@currencies, @filters.currency_id)})
           </p>
-          <p class="text-3xl font-semibold">{@currency_subtotal}</p>
+          <p class="text-3xl font-semibold">{format_money(@currency_subtotal)}</p>
         </div>
       </div>
 
@@ -173,8 +173,8 @@ defmodule CofferWeb.DashboardLive do
           <:col :let={t} label="Date">{t.date}</:col>
           <:col :let={t} label="Description">{t.description}</:col>
           <:col :let={t} label="Direction">{t.direction}</:col>
-          <:col :let={t} label="Amount">{t.amount} {t.currency.code}</:col>
-          <:col :let={t} label="Base (SCR)">{t.amount_base}</:col>
+          <:col :let={t} label="Amount">{format_money(t.amount)} {t.currency.code}</:col>
+          <:col :let={t} label="Base (SCR)">{format_money(t.amount_base)}</:col>
           <:col :let={t} label="Envelope">{t.budget_envelope && t.budget_envelope.name}</:col>
           <:col :let={t} label="Vendor">{t.vendor && t.vendor.name}</:col>
         </.table>

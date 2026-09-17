@@ -11,6 +11,8 @@ defmodule CofferWeb.Charts do
 
   use Phoenix.Component
 
+  import CofferWeb.CoreComponents, only: [format_money: 1]
+
   @doc """
   A labeled horizontal progress bar for spend-vs-allocated. Turns the error
   color when `value` exceeds `max` (over-budget) instead of clamping past
@@ -31,7 +33,9 @@ defmodule CofferWeb.Charts do
     <div class="space-y-1">
       <div class="flex items-center justify-between text-sm">
         <span>{@label}</span>
-        <span class={@over? && "text-error font-semibold"}>{@value} / {@max}</span>
+        <span class={@over? && "text-error font-semibold"}>
+          {format_money(@value)} / {format_money(@max)}
+        </span>
       </div>
       <div class="h-2 w-full overflow-hidden rounded-full bg-base-200">
         <div
@@ -55,7 +59,7 @@ defmodule CofferWeb.Charts do
     <div class="space-y-1">
       <div class="flex items-center justify-between text-sm">
         <span>{@label}</span>
-        <span>{@value}</span>
+        <span>{format_money(@value)}</span>
       </div>
       <div class="h-2 w-full overflow-hidden rounded-full bg-base-200">
         <div class="h-full rounded-full bg-primary" style={"width: #{@percent}%"} />

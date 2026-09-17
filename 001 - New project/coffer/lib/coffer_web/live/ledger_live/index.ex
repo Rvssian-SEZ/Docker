@@ -155,6 +155,14 @@ defmodule CofferWeb.LedgerLive.Index do
     end
   end
 
+  defp recurrence_label(%Transaction{recurrence_frequency: freq}) when not is_nil(freq),
+    do: Phoenix.Naming.humanize(freq)
+
+  defp recurrence_label(%Transaction{recurrence_source: %Transaction{} = source}),
+    do: "↳ from #{source.description}"
+
+  defp recurrence_label(%Transaction{}), do: nil
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -179,8 +187,9 @@ defmodule CofferWeb.LedgerLive.Index do
         <:col :let={t} label="Description">{t.description}</:col>
         <:col :let={t} label="Direction">{t.direction}</:col>
         <:col :let={t} label="Qty">{t.quantity}</:col>
-        <:col :let={t} label="Amount">{t.amount} {t.currency.code}</:col>
-        <:col :let={t} label="Base amount (SCR)">{t.amount_base}</:col>
+        <:col :let={t} label="Amount">{format_money(t.amount)} {t.currency.code}</:col>
+        <:col :let={t} label="Base amount (SCR)">{format_money(t.amount_base)}</:col>
+        <:col :let={t} label="Repeats">{recurrence_label(t)}</:col>
         <:col :let={t} label="Envelope">{t.budget_envelope && t.budget_envelope.name}</:col>
         <:col :let={t} label="Contract">{t.contract && t.contract.name}</:col>
         <:col :let={t} label="Vendor">{t.vendor && t.vendor.name}</:col>
@@ -247,6 +256,18 @@ defmodule CofferWeb.LedgerLive.Index do
             label="Vendor (optional)"
             prompt="None"
             options={Enum.map(@vendors, &{&1.name, &1.id})}
+          />
+          <.input
+            field={@form[:recurrence_frequency]}
+            type="select"
+            label="Repeats"
+            prompt="One-off (not recurring)"
+            options={
+              Enum.map(
+                Transaction.recurrence_frequencies(),
+                &{Phoenix.Naming.humanize(&1), &1}
+              )
+            }
           />
           <.input field={@form[:notes]} type="textarea" label="Notes" />
           <footer class="mt-4 flex justify-end gap-2">
