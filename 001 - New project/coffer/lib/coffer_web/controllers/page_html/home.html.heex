@@ -1,0 +1,42 @@
+<Layouts.app flash={@flash} current_user={@current_user}>
+  <div class="mx-auto max-w-2xl py-16">
+    <h1 class="text-2xl font-semibold">Coffer</h1>
+    <p class="mt-2 text-base-content/70">
+      Signed in as {@current_user.name} ({@current_user.email}) — role:
+      <span class="font-mono">{@current_user.role}</span>
+    </p>
+
+    <ul class="mt-8 space-y-2">
+      <li>
+        <.link href={~p"/dashboard"} class="link link-primary font-semibold">Dashboard</.link>
+      </li>
+      <li>
+        <.link href={~p"/ledger"} class="link link-primary">Ledger</.link>
+      </li>
+      <li>
+        <.link href={~p"/admin/currencies"} class="link link-primary">Currencies</.link>
+      </li>
+      <li>
+        <.link href={~p"/budgets"} class="link link-primary">Budgets</.link>
+      </li>
+      <li>
+        <.link href={~p"/vendors"} class="link link-primary">Vendors</.link>
+      </li>
+      <li>
+        <.link href={~p"/contracts"} class="link link-primary">Contracts</.link>
+      </li>
+      <li>
+        <.link href={~p"/inventory"} class="link link-primary">Inventory</.link>
+      </li>
+      <li>
+        <.link href={~p"/notifications"} class="link link-primary">Notifications</.link>
+      </li>
+      <li :if={@current_user.role in [:admin, :staff]}>
+        <.link href={~p"/admin/audit-log"} class="link link-primary">Audit log</.link>
+      </li>
+      <li :if={@current_user.role == :admin}>
+        <.link href={~p"/admin/role_mappings"} class="link link-primary">Role mappings</.link>
+      </li>
+    </ul>
+  </div>
+</Layouts.app>

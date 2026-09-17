@@ -1,0 +1,10 @@
+<Layouts.app flash={@flash} current_user={@current_user}>
+  <div class="mx-auto max-w-md py-24 text-center">
+    <h1 class="text-2xl font-semibold">No access yet</h1>
+    <p class="mt-4 text-base-content/70">
+      Your Authentik account isn't mapped to a role in Coffer yet. Ask an admin to add your
+      Authentik group to the role mapping table.
+    </p>
+    <.link href={~p"/auth/logout"} class="btn btn-outline mt-6">Sign out</.link>
+  </div>
+</Layouts.app>

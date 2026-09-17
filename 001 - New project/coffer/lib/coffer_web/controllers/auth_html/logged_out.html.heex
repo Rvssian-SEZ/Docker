@@ -1,0 +1,10 @@
+<Layouts.app flash={@flash} current_user={@current_user}>
+  <div class="mx-auto max-w-md py-24 text-center">
+    <h1 class="text-2xl font-semibold">You're signed out</h1>
+    <p class="mt-4 text-base-content/70">
+      Your Authentik session has ended, so you'll need to sign in again for Coffer and any other
+      app using this Authentik instance.
+    </p>
+    <.link href={~p"/auth/login"} class="btn btn-primary mt-6">Sign back in</.link>
+  </div>
+</Layouts.app>
