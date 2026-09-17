@@ -80,9 +80,11 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends libstdc++6 openssl libncurses6 locales ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-# Trust the lab's internal CA (stepca, CT108) so OIDC discovery/token calls to
-# Authentik over https://auth.home.internal verify correctly.
-COPY priv/cert/home-internal-ca.pem /usr/local/share/ca-certificates/home-internal-ca.crt
+# Trust every internal CA under priv/cert/ (one per deployment environment
+# this image is run in — each org's Authentik uses its own private CA) so
+# OIDC discovery/token calls verify correctly regardless of which deployment
+# this image is built for.
+COPY priv/cert/ /usr/local/share/ca-certificates/
 RUN update-ca-certificates
 
 # Set the locale
