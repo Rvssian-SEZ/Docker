@@ -9,6 +9,8 @@ services:
       - SECRET_KEY_BASE
       - PHX_HOST
       - PHX_SERVER=true
+      - URL_SCHEME
+      - URL_PORT
       - OIDC_ISSUER
       - OIDC_CLIENT_ID
       - OIDC_CLIENT_SECRET
