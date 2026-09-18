@@ -15,6 +15,14 @@ defmodule CofferWeb.BudgetLive.Index do
        socket
        |> assign(:date_from, FiscalYear.start_date(current_year))
        |> assign(:date_to, FiscalYear.end_date(current_year))
+       # Defaults true for a first-ever/disconnected render (no localStorage
+       # access yet); the .BudgetsExpandPref hook pushes the real stored
+       # preference right after mount if one exists, which then sticks for
+       # the rest of the connection — unlike a client-only DOM tweak, this
+       # survives LiveView's own reconnect re-render since the server now
+       # actually knows the preference instead of hardcoding `open` and
+       # letting a later diff silently patch it back.
+       |> assign(:expanded, true)
        |> refresh_grouped_envelopes()
        |> assign(:editing_category_id, nil)
        |> assign_categories()
@@ -54,11 +62,12 @@ defmodule CofferWeb.BudgetLive.Index do
     |> reset_category_quickadd()
   end
 
-  defp apply_action(socket, :new, _params) do
-    envelope = %Envelope{fiscal_year: FiscalYear.current_year()}
+  defp apply_action(socket, :new, params) do
+    envelope = prefill_from_envelope(params["duplicate_from"])
+    title = if params["duplicate_from"], do: "Duplicate envelope", else: "New envelope"
 
     socket
-    |> assign(:page_title, "New envelope")
+    |> assign(:page_title, title)
     |> assign(:envelope, envelope)
     |> assign(:form, to_form(Budgets.change_envelope(envelope)))
     |> reset_category_quickadd()
@@ -68,6 +77,26 @@ defmodule CofferWeb.BudgetLive.Index do
     socket
     |> assign(:page_title, "Budgets")
     |> assign(:envelope, nil)
+  end
+
+  # "Duplicate" on an envelope row pre-fills New envelope from it — for the
+  # user's stated workflow of setting up next year's budget from this
+  # year's, so the copy defaults to the source's own fiscal year + 1 (not
+  # just "current year"), while everything stays editable before saving.
+  # Mirrors CofferWeb.LedgerLive.Index's prefill_from_contract/1.
+  defp prefill_from_envelope(nil), do: %Envelope{fiscal_year: FiscalYear.current_year()}
+
+  defp prefill_from_envelope(envelope_id) do
+    source = Budgets.get_envelope!(envelope_id)
+
+    %Envelope{
+      name: source.name,
+      description: source.description,
+      fiscal_year: source.fiscal_year + 1,
+      allocated_amount: source.allocated_amount,
+      category_id: source.category_id,
+      active: true
+    }
   end
 
   @impl true
@@ -253,6 +282,15 @@ defmodule CofferWeb.BudgetLive.Index do
     end
   end
 
+  # `collapsed` arrives as a real boolean (not a stringified phx-value) since
+  # the buttons/hook send it via JS.push's `value:`/pushEvent's JSON payload.
+  def handle_event("set_expand_pref", %{"collapsed" => collapsed}, socket) do
+    {:noreply,
+     socket
+     |> assign(:expanded, not collapsed)
+     |> push_event("persist_expand_pref", %{collapsed: collapsed})}
+  end
+
   def handle_event("filter_range", params, socket) do
     {:noreply,
      socket
@@ -436,66 +474,59 @@ defmodule CofferWeb.BudgetLive.Index do
         No envelopes in this range.
       </p>
 
-      <div class="space-y-2">
-        <details
-          :for={group <- @grouped_envelopes}
-          open
-          class="overflow-hidden rounded-box border border-base-300"
+      <div :if={@grouped_envelopes != []} class="mt-2 flex items-center gap-2">
+        <div id="budgets-expand-pref" phx-hook=".BudgetsExpandPref"></div>
+        <button
+          type="button"
+          phx-click={JS.push("set_expand_pref", value: %{collapsed: false})}
+          class="btn btn-outline btn-sm"
         >
-          <summary
-            class="flex flex-wrap cursor-pointer items-center justify-between gap-2 bg-base-200 px-4 py-2 marker:text-base-content/40"
-            style={"padding-left: #{1 + group.category.depth * 1.25}rem"}
-          >
-            <span class="font-semibold">
-              <span :if={group.category.depth > 0} class="text-base-content/40">&#8627;</span>
-              {group.category.name}
-            </span>
-            <span class="text-sm text-base-content/70">
-              Allocated {format_money(group.allocated_total)} SCR &middot; Remaining
-              <span class={negative_class(group.remaining_total)}>
-                {format_money(group.remaining_total)} SCR
-              </span>
-            </span>
-          </summary>
+          Expand all
+        </button>
+        <button
+          type="button"
+          phx-click={JS.push("set_expand_pref", value: %{collapsed: true})}
+          class="btn btn-outline btn-sm"
+        >
+          Collapse all
+        </button>
+        <span class="text-xs text-base-content/50">
+          (also remembered as the default next time you open this page)
+        </span>
+      </div>
 
-          <.table
-            :if={group.envelopes != []}
-            id={"budget-envelopes-#{group.category.id}"}
-            rows={group.envelopes}
-          >
-            <:col :let={e} label="FY">{e.fiscal_year}</:col>
-            <:col :let={e} label="Name">{e.name}</:col>
-            <:col :let={e} label="Allocated (SCR)">{format_money(e.allocated_amount)}</:col>
-            <:col :let={e} label="Remaining (SCR)">
-              <% remaining = Budgets.envelope_remaining(e) %>
-              <span class={negative_class(remaining)}>{format_money(remaining)}</span>
-            </:col>
-            <:col :let={e} label="Active?">{e.active}</:col>
-            <:action :let={e}>
-              <.link
-                :if={Policy.can?(@current_user, :update, :budget_envelope)}
-                href={~p"/budgets/#{e.id}/edit"}
-                class="link"
-              >
-                Edit
-              </.link>
-            </:action>
-            <:action :let={e}>
-              <.link
-                :if={Policy.can?(@current_user, :delete, :budget_envelope)}
-                phx-click="delete"
-                phx-value-id={e.id}
-                data-confirm="Delete this envelope?"
-                class="link link-error"
-              >
-                Delete
-              </.link>
-            </:action>
-          </.table>
-          <p :if={group.envelopes == []} class="px-4 py-3 text-sm text-base-content/50">
-            No envelopes directly in this category (total above is from subcategories).
-          </p>
-        </details>
+      <script :type={Phoenix.LiveView.ColocatedHook} name=".BudgetsExpandPref">
+        // A plain client-side DOM tweak isn't enough here — LiveView
+        // re-renders this page server-side on the reconnect right after the
+        // initial HTTP load, and that render would silently patch any
+        // manually-toggled `open` attribute right back to whatever the
+        // server last rendered. So this hook pushes the stored preference
+        // to the server on mount instead (see handle_event("set_expand_pref",
+        // ...) in budget_live/index.ex), which is what actually makes it
+        // stick — and just mirrors back whatever the server later confirms
+        // via push_event, rather than writing to localStorage itself, so
+        // the two can never drift out of sync.
+        export default {
+          mounted() {
+            const KEY = "phx:budgets-collapsed-default"
+            const stored = localStorage.getItem(KEY)
+            if (stored !== null) {
+              this.pushEvent("set_expand_pref", {collapsed: stored === "true"})
+            }
+            this.handleEvent("persist_expand_pref", ({collapsed}) => {
+              localStorage.setItem(KEY, collapsed ? "true" : "false")
+            })
+          }
+        }
+      </script>
+
+      <div class="mt-2 space-y-2">
+        <.category_group
+          :for={group <- @grouped_envelopes}
+          group={group}
+          current_user={@current_user}
+          expanded={@expanded}
+        />
       </div>
 
       <.link href={~p"/"} class="link mt-6 inline-block">&larr; Back</.link>
@@ -613,6 +644,91 @@ defmodule CofferWeb.BudgetLive.Index do
         </.form>
       </div>
     </div>
+    """
+  end
+
+  # Renders one category's envelope table plus, nested *inside* the same
+  # <details> (not as a same-level sibling), every child category's own
+  # group — calling itself recursively for `@group.children`. This is what
+  # actually makes a subcategory appear inside its parent's box: collapsing
+  # the parent hides its whole subtree for free, since a nested <details>
+  # simply isn't rendered while its ancestor is closed.
+  attr :group, :map, required: true
+  attr :current_user, :map, required: true
+  attr :expanded, :boolean, required: true
+
+  defp category_group(assigns) do
+    ~H"""
+    <details open={@expanded} class="budget-group overflow-hidden rounded-box border border-base-300">
+      <summary class="flex flex-wrap cursor-pointer items-center justify-between gap-2 bg-base-200 px-4 py-2 marker:text-base-content/40">
+        <span class="font-semibold">{@group.category.name}</span>
+        <span class="text-sm text-base-content/70">
+          Allocated {format_money(@group.allocated_total)} SCR &middot; Remaining
+          <span class={negative_class(@group.remaining_total)}>
+            {format_money(@group.remaining_total)} SCR
+          </span>
+        </span>
+      </summary>
+
+      <.table
+        :if={@group.envelopes != []}
+        id={"budget-envelopes-#{@group.category.id}"}
+        rows={@group.envelopes}
+      >
+        <:col :let={e} label="FY">{e.fiscal_year}</:col>
+        <:col :let={e} label="Name">{e.name}</:col>
+        <:col :let={e} label="Allocated (SCR)">{format_money(e.allocated_amount)}</:col>
+        <:col :let={e} label="Remaining (SCR)">
+          <% remaining = Budgets.envelope_remaining(e) %>
+          <span class={negative_class(remaining)}>{format_money(remaining)}</span>
+        </:col>
+        <:col :let={e} label="Active?">{e.active}</:col>
+        <:action :let={e}>
+          <.link
+            :if={Policy.can?(@current_user, :update, :budget_envelope)}
+            href={~p"/budgets/#{e.id}/edit"}
+            class="link"
+          >
+            Edit
+          </.link>
+        </:action>
+        <:action :let={e}>
+          <.link
+            :if={Policy.can?(@current_user, :create, :budget_envelope)}
+            href={~p"/budgets/new?duplicate_from=#{e.id}"}
+            class="link"
+          >
+            Duplicate
+          </.link>
+        </:action>
+        <:action :let={e}>
+          <.link
+            :if={Policy.can?(@current_user, :delete, :budget_envelope)}
+            phx-click="delete"
+            phx-value-id={e.id}
+            data-confirm="Delete this envelope?"
+            class="link link-error"
+          >
+            Delete
+          </.link>
+        </:action>
+      </.table>
+      <p
+        :if={@group.envelopes == [] and @group.children == []}
+        class="px-4 py-3 text-sm text-base-content/50"
+      >
+        No envelopes directly in this category (total above is from subcategories).
+      </p>
+
+      <div :if={@group.children != []} class="space-y-2 border-t border-base-300 bg-base-100 p-2 pl-6">
+        <.category_group
+          :for={child <- @group.children}
+          group={child}
+          current_user={@current_user}
+          expanded={@expanded}
+        />
+      </div>
+    </details>
     """
   end
 end

@@ -214,23 +214,34 @@ defmodule Coffer.Budgets do
   end
 
   @doc """
-  `envelopes` grouped by category, in the same depth-first tree order as
-  `list_categories_tree/0` (so a subcategory always immediately follows its
-  parent, indented via `category.depth`). Each group's `allocated_total`/
-  `remaining_total` cascade — they include every descendant category's
-  envelopes too, not just this category's own direct ones (same rollup
-  `Coffer.Reporting.spend_by_category/1` does for ledger spend, mirrored
-  here for budget totals). A category with nothing anywhere in its
-  subtree is dropped; one with only descendant envelopes (no direct ones
-  of its own) still shows, as an empty "folder" carrying the cascaded
-  total.
+  `envelopes` grouped by category as an actual nested tree (top-level
+  categories only in the returned list, each with a `:children` key
+  holding its own subcategory groups recursively) — not a flat,
+  depth-indented list, so the UI can render a subcategory genuinely
+  *inside* its parent's box rather than as a same-level sibling. Each
+  group's `allocated_total`/`remaining_total` cascade — they include
+  every descendant category's envelopes too, not just this category's
+  own direct ones (same rollup `Coffer.Reporting.spend_by_category/1`
+  does for ledger spend, mirrored here for budget totals). A branch with
+  nothing anywhere in its subtree is dropped; one with only descendant
+  envelopes (no direct ones of its own) still shows, as an empty
+  "folder" carrying the cascaded total.
   """
   def envelopes_grouped_by_category(envelopes \\ list_envelopes()) do
-    categories = list_categories_tree()
+    categories = list_categories()
     by_category_id = Enum.group_by(envelopes, & &1.category_id)
+    children_by_parent = Enum.group_by(categories, & &1.parent_id)
 
-    categories
+    build_category_groups(nil, children_by_parent, by_category_id, categories)
+  end
+
+  defp build_category_groups(parent_id, children_by_parent, by_category_id, categories) do
+    children_by_parent
+    |> Map.get(parent_id, [])
     |> Enum.map(fn category ->
+      children =
+        build_category_groups(category.id, children_by_parent, by_category_id, categories)
+
       subtree_envelopes =
         category.id
         |> category_and_descendant_ids(categories)
@@ -239,11 +250,14 @@ defmodule Coffer.Budgets do
       %{
         category: category,
         envelopes: Map.get(by_category_id, category.id, []),
+        children: children,
         allocated_total: sum_decimal(subtree_envelopes, & &1.allocated_amount),
         remaining_total: sum_decimal(subtree_envelopes, &envelope_remaining/1)
       }
     end)
-    |> Enum.reject(&(&1.envelopes == [] and Decimal.eq?(&1.allocated_total, 0)))
+    |> Enum.reject(
+      &(&1.envelopes == [] and &1.children == [] and Decimal.eq?(&1.allocated_total, 0))
+    )
   end
 
   defp sum_decimal(list, fun), do: Enum.reduce(list, Decimal.new(0), &Decimal.add(&2, fun.(&1)))
