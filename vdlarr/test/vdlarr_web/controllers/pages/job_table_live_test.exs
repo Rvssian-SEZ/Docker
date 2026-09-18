@@ -119,6 +119,70 @@ defmodule VdlarrWeb.Pages.JobTableLiveTest do
     end
   end
 
+  describe "stopping a download" do
+    test "shows a stop button for download tasks", %{conn: conn} do
+      {_source, _media_item, _task, _job} = create_media_item_job()
+      {:ok, _view, html} = live_isolated(conn, JobTableLive, session: %{})
+
+      assert html =~ "stop_task"
+    end
+
+    test "doesn't show a stop button for non-download tasks", %{conn: conn} do
+      {_source, _task, _job} = create_source_job()
+      {:ok, _view, html} = live_isolated(conn, JobTableLive, session: %{})
+
+      refute html =~ "stop_task"
+    end
+
+    test "cancels the job and deletes the task", %{conn: conn} do
+      {_source, _media_item, task, job} = create_media_item_job()
+      {:ok, view, _html} = live_isolated(conn, JobTableLive, session: %{})
+
+      view
+      |> element("[phx-value-task_id='#{task.id}']")
+      |> render_click()
+
+      assert Repo.get(Vdlarr.Tasks.Task, task.id) == nil
+      assert Repo.get!(Oban.Job, job.id).state == "cancelled"
+    end
+
+    test "removes the row after stopping", %{conn: conn} do
+      {_source, media_item, task, _job} = create_media_item_job()
+      {:ok, view, html} = live_isolated(conn, JobTableLive, session: %{})
+
+      assert html =~ media_item.title
+
+      view
+      |> element("[phx-value-task_id='#{task.id}']")
+      |> render_click()
+
+      refute render(view) =~ media_item.title
+      assert render(view) =~ "Nothing Here!"
+    end
+
+    test "broadcasts job:state so other open tabs refresh", %{conn: conn} do
+      {_source, _media_item, task, _job} = create_media_item_job()
+      {:ok, view, _html} = live_isolated(conn, JobTableLive, session: %{})
+
+      VdlarrWeb.Endpoint.subscribe("job:state")
+
+      view
+      |> element("[phx-value-task_id='#{task.id}']")
+      |> render_click()
+
+      assert_receive %Phoenix.Socket.Broadcast{topic: "job:state", event: "change", payload: nil}
+    end
+
+    test "is a no-op if the task no longer exists", %{conn: conn} do
+      {_source, _media_item, task, _job} = create_media_item_job()
+      {:ok, view, _html} = live_isolated(conn, JobTableLive, session: %{})
+
+      Repo.delete!(task)
+
+      render_click(view, "stop_task", %{"task_id" => to_string(task.id)})
+    end
+  end
+
   defp create_media_item_job(job_state \\ :executing) do
     source = source_fixture()
     media_item = media_item_fixture(source_id: source.id)
