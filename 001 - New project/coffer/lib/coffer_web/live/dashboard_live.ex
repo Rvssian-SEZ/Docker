@@ -18,7 +18,7 @@ defmodule CofferWeb.DashboardLive do
        |> assign(:page_title, "Dashboard")
        |> assign(:filters, filters)
        |> assign(:currencies, Currencies.list_currencies())
-       |> assign(:envelopes, Budgets.list_envelopes())
+       |> assign(:envelopes, Budgets.list_envelopes_in_range(filters.date_from, filters.date_to))
        |> assign(:categories, Budgets.list_categories())
        |> assign(:vendors, Vendors.list_vendors())
        |> load_report(filters)}
@@ -33,7 +33,19 @@ defmodule CofferWeb.DashboardLive do
   @impl true
   def handle_event("filter", params, socket) do
     filters = parse_filters(params)
-    {:noreply, socket |> assign(:filters, filters) |> load_report(filters)}
+    envelopes = Budgets.list_envelopes_in_range(filters.date_from, filters.date_to)
+
+    # A previously-selected envelope can fall out of range when the date
+    # filter changes — drop it from the active selection rather than leaving
+    # the report silently filtered by an envelope the dropdown no longer shows.
+    valid_ids = MapSet.new(envelopes, & &1.id)
+    filters = %{filters | envelope_ids: Enum.filter(filters.envelope_ids, &(&1 in valid_ids))}
+
+    {:noreply,
+     socket
+     |> assign(:envelopes, envelopes)
+     |> assign(:filters, filters)
+     |> load_report(filters)}
   end
 
   defp load_report(socket, filters) do

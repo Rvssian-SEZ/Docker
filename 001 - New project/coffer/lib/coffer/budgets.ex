@@ -122,6 +122,21 @@ defmodule Coffer.Budgets do
     |> Repo.all()
   end
 
+  @doc """
+  Envelopes whose fiscal year overlaps `[date_from, date_to]` — every fiscal
+  year is a fixed calendar-year block (`Coffer.FiscalYear`), so overlap
+  reduces to a plain integer-year comparison. Backs the Dashboard's Envelope
+  filter dropdown so it only offers envelopes that could actually have data
+  in the selected date range, instead of every envelope ever created.
+  """
+  def list_envelopes_in_range(%Date{} = date_from, %Date{} = date_to) do
+    Envelope
+    |> where([e], e.fiscal_year >= ^date_from.year and e.fiscal_year <= ^date_to.year)
+    |> order_by(desc: :fiscal_year, asc: :name)
+    |> preload([:category, :created_by])
+    |> Repo.all()
+  end
+
   def list_envelopes(fiscal_year) do
     Envelope
     |> where(fiscal_year: ^fiscal_year)
