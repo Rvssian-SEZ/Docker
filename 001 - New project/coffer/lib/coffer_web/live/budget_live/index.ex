@@ -11,7 +11,7 @@ defmodule CofferWeb.BudgetLive.Index do
     if Policy.can?(socket.assigns.current_user, :view, :budget_envelope) do
       {:ok,
        socket
-       |> assign(:envelopes, Budgets.list_envelopes())
+       |> refresh_grouped_envelopes()
        |> assign(:editing_category_id, nil)
        |> assign_categories()
        |> assign(:category_form, to_form(Budgets.change_category(%Category{})))
@@ -96,7 +96,7 @@ defmodule CofferWeb.BudgetLive.Index do
           {:noreply,
            socket
            |> put_flash(:info, "Envelope deleted.")
-           |> assign(:envelopes, Budgets.list_envelopes())}
+           |> refresh_grouped_envelopes()}
 
         {:error, _changeset} ->
           {:noreply, put_flash(socket, :error, "Could not delete envelope.")}
@@ -239,7 +239,7 @@ defmodule CofferWeb.BudgetLive.Index do
              :info,
              "Started FY#{target_year}: #{length(created)} envelope(s) created."
            )
-           |> assign(:envelopes, Budgets.list_envelopes())}
+           |> refresh_grouped_envelopes()}
 
         {:error, _changeset} ->
           {:noreply, put_flash(socket, :error, "Could not roll over to the new fiscal year.")}
@@ -311,7 +311,14 @@ defmodule CofferWeb.BudgetLive.Index do
       :category_options,
       Enum.map(categories, &{Budgets.category_path_label(&1, categories), &1.id})
     )
+    # A category rename/reparent changes how the grouped envelope view
+    # should look (name, indentation) even though no envelope itself
+    # changed, so every category mutation refreshes this too.
+    |> refresh_grouped_envelopes()
   end
+
+  defp refresh_grouped_envelopes(socket),
+    do: assign(socket, :grouped_envelopes, Budgets.envelopes_grouped_by_category())
 
   # A category can't become its own descendant's child (the changeset
   # already rejects that server-side) — drop those options client-side too
@@ -375,34 +382,67 @@ defmodule CofferWeb.BudgetLive.Index do
         </:actions>
       </.header>
 
-      <.table id="budget-envelopes" rows={@envelopes}>
-        <:col :let={e} label="FY">{e.fiscal_year}</:col>
-        <:col :let={e} label="Name">{e.name}</:col>
-        <:col :let={e} label="Category">{e.category.name}</:col>
-        <:col :let={e} label="Allocated (SCR)">{format_money(e.allocated_amount)}</:col>
-        <:col :let={e} label="Remaining (SCR)">{format_money(Budgets.envelope_remaining(e))}</:col>
-        <:col :let={e} label="Active?">{e.active}</:col>
-        <:action :let={e}>
-          <.link
-            :if={Policy.can?(@current_user, :update, :budget_envelope)}
-            href={~p"/budgets/#{e.id}/edit"}
-            class="link"
+      <p :if={@grouped_envelopes == []} class="text-sm text-base-content/60">No envelopes yet.</p>
+
+      <div class="space-y-2">
+        <details
+          :for={group <- @grouped_envelopes}
+          open
+          class="overflow-hidden rounded-box border border-base-300"
+        >
+          <summary
+            class="flex flex-wrap cursor-pointer items-center justify-between gap-2 bg-base-200 px-4 py-2 marker:text-base-content/40"
+            style={"padding-left: #{1 + group.category.depth * 1.25}rem"}
           >
-            Edit
-          </.link>
-        </:action>
-        <:action :let={e}>
-          <.link
-            :if={Policy.can?(@current_user, :delete, :budget_envelope)}
-            phx-click="delete"
-            phx-value-id={e.id}
-            data-confirm="Delete this envelope?"
-            class="link link-error"
+            <span class="font-semibold">
+              <span :if={group.category.depth > 0} class="text-base-content/40">&#8627;</span>
+              {group.category.name}
+            </span>
+            <span class="text-sm text-base-content/70">
+              Allocated {format_money(group.allocated_total)} SCR &middot; Remaining {format_money(
+                group.remaining_total
+              )} SCR
+            </span>
+          </summary>
+
+          <.table
+            :if={group.envelopes != []}
+            id={"budget-envelopes-#{group.category.id}"}
+            rows={group.envelopes}
           >
-            Delete
-          </.link>
-        </:action>
-      </.table>
+            <:col :let={e} label="FY">{e.fiscal_year}</:col>
+            <:col :let={e} label="Name">{e.name}</:col>
+            <:col :let={e} label="Allocated (SCR)">{format_money(e.allocated_amount)}</:col>
+            <:col :let={e} label="Remaining (SCR)">
+              {format_money(Budgets.envelope_remaining(e))}
+            </:col>
+            <:col :let={e} label="Active?">{e.active}</:col>
+            <:action :let={e}>
+              <.link
+                :if={Policy.can?(@current_user, :update, :budget_envelope)}
+                href={~p"/budgets/#{e.id}/edit"}
+                class="link"
+              >
+                Edit
+              </.link>
+            </:action>
+            <:action :let={e}>
+              <.link
+                :if={Policy.can?(@current_user, :delete, :budget_envelope)}
+                phx-click="delete"
+                phx-value-id={e.id}
+                data-confirm="Delete this envelope?"
+                class="link link-error"
+              >
+                Delete
+              </.link>
+            </:action>
+          </.table>
+          <p :if={group.envelopes == []} class="px-4 py-3 text-sm text-base-content/50">
+            No envelopes directly in this category (total above is from subcategories).
+          </p>
+        </details>
+      </div>
 
       <.link href={~p"/"} class="link mt-6 inline-block">&larr; Back</.link>
 
