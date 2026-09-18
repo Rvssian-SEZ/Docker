@@ -391,6 +391,16 @@ defmodule CofferWeb.BudgetLive.Index do
     if Decimal.negative?(amount), do: "text-error font-semibold"
   end
 
+  # Summing just the top-level groups is enough — each one's allocated_total/
+  # remaining_total already cascades its whole subtree, so this is the true
+  # grand total for the selected range without double-counting anything a
+  # subcategory would otherwise contribute twice.
+  defp total_allocated(groups), do: sum_group_totals(groups, & &1.allocated_total)
+  defp total_remaining(groups), do: sum_group_totals(groups, & &1.remaining_total)
+
+  defp sum_group_totals(groups, fun),
+    do: Enum.reduce(groups, Decimal.new(0), &Decimal.add(&2, fun.(&1)))
+
   defp refresh_grouped_envelopes(socket) do
     envelopes = Budgets.list_envelopes_in_range(socket.assigns.date_from, socket.assigns.date_to)
     assign(socket, :grouped_envelopes, Budgets.envelopes_grouped_by_category(envelopes))
@@ -464,6 +474,19 @@ defmodule CofferWeb.BudgetLive.Index do
         <button type="button" phx-click="reset_range_to_current_year" class="btn btn-ghost btn-sm">
           Reset to current year
         </button>
+
+        <div class="ml-auto text-right text-sm">
+          <p class="text-base-content/60">Total budget</p>
+          <p class="font-semibold">
+            {format_money(total_allocated(@grouped_envelopes))} SCR
+            <span class="font-normal text-base-content/60">
+              &middot; Remaining
+              <span class={negative_class(total_remaining(@grouped_envelopes))}>
+                {format_money(total_remaining(@grouped_envelopes))} SCR
+              </span>
+            </span>
+          </p>
+        </div>
       </form>
 
       <p class="mt-2 text-sm text-base-content/60">
