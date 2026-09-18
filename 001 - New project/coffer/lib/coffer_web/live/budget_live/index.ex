@@ -9,8 +9,12 @@ defmodule CofferWeb.BudgetLive.Index do
   @impl true
   def mount(_params, _session, socket) do
     if Policy.can?(socket.assigns.current_user, :view, :budget_envelope) do
+      current_year = FiscalYear.current_year()
+
       {:ok,
        socket
+       |> assign(:date_from, FiscalYear.start_date(current_year))
+       |> assign(:date_to, FiscalYear.end_date(current_year))
        |> refresh_grouped_envelopes()
        |> assign(:editing_category_id, nil)
        |> assign_categories()
@@ -249,6 +253,34 @@ defmodule CofferWeb.BudgetLive.Index do
     end
   end
 
+  def handle_event("filter_range", params, socket) do
+    {:noreply,
+     socket
+     |> assign(:date_from, parse_date(params["date_from"]) || socket.assigns.date_from)
+     |> assign(:date_to, parse_date(params["date_to"]) || socket.assigns.date_to)
+     |> refresh_grouped_envelopes()}
+  end
+
+  def handle_event("reset_range_to_current_year", _params, socket) do
+    current_year = FiscalYear.current_year()
+
+    {:noreply,
+     socket
+     |> assign(:date_from, FiscalYear.start_date(current_year))
+     |> assign(:date_to, FiscalYear.end_date(current_year))
+     |> refresh_grouped_envelopes()}
+  end
+
+  defp parse_date(nil), do: nil
+  defp parse_date(""), do: nil
+
+  defp parse_date(str) do
+    case Date.from_iso8601(str) do
+      {:ok, date} -> date
+      _ -> nil
+    end
+  end
+
   defp reset_category_quickadd(socket) do
     socket
     |> assign(:show_category_quickadd, false)
@@ -321,8 +353,10 @@ defmodule CofferWeb.BudgetLive.Index do
     if Decimal.negative?(amount), do: "text-error font-semibold"
   end
 
-  defp refresh_grouped_envelopes(socket),
-    do: assign(socket, :grouped_envelopes, Budgets.envelopes_grouped_by_category())
+  defp refresh_grouped_envelopes(socket) do
+    envelopes = Budgets.list_envelopes_in_range(socket.assigns.date_from, socket.assigns.date_to)
+    assign(socket, :grouped_envelopes, Budgets.envelopes_grouped_by_category(envelopes))
+  end
 
   # A category can't become its own descendant's child (the changeset
   # already rejects that server-side) — drop those options client-side too
@@ -386,7 +420,21 @@ defmodule CofferWeb.BudgetLive.Index do
         </:actions>
       </.header>
 
-      <p :if={@grouped_envelopes == []} class="text-sm text-base-content/60">No envelopes yet.</p>
+      <form phx-change="filter_range" class="mt-4 flex flex-wrap items-end gap-4">
+        <.input type="date" name="date_from" label="From" value={@date_from} />
+        <.input type="date" name="date_to" label="To" value={@date_to} />
+        <button type="button" phx-click="reset_range_to_current_year" class="btn btn-ghost btn-sm">
+          Reset to current year
+        </button>
+      </form>
+
+      <p class="mt-2 text-sm text-base-content/60">
+        Showing envelopes with a fiscal year overlapping {@date_from} to {@date_to}.
+      </p>
+
+      <p :if={@grouped_envelopes == []} class="text-sm text-base-content/60">
+        No envelopes in this range.
+      </p>
 
       <div class="space-y-2">
         <details
