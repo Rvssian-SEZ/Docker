@@ -1,5 +1,6 @@
 services:
   app:
+    restart: unless-stopped
     build: .
     depends_on:
       db:
@@ -25,6 +26,7 @@ services:
       - "4000:4000"
 
   db:
+    restart: unless-stopped
     image: postgres:16
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-coffer}
