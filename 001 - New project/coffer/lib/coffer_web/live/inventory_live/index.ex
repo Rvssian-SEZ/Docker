@@ -5,6 +5,11 @@ defmodule CofferWeb.InventoryLive.Index do
   alias Coffer.Inventory.Item
   alias Coffer.Authorization.Policy
 
+  # A Snipe-IT sync can pull in thousands of rows — rendering them all
+  # unpaginated took over a second and ~1.8MB of HTML on SAA's real 1,473
+  # items, so the table is paginated server-side rather than just filtered.
+  @per_page 50
+
   @impl true
   def mount(_params, _session, socket) do
     if Policy.can?(socket.assigns.current_user, :view, :inventory_item) do
@@ -20,6 +25,8 @@ defmodule CofferWeb.InventoryLive.Index do
       {:ok,
        socket
        |> assign(:filters, filters)
+       |> assign(:page, 1)
+       |> assign(:per_page, @per_page)
        |> assign(:categories, Inventory.distinct_categories())
        |> assign(:locations, Inventory.distinct_locations())
        |> refresh_items()}
@@ -112,7 +119,11 @@ defmodule CofferWeb.InventoryLive.Index do
       "low_stock_only" => params["low_stock_only"] || ""
     }
 
-    {:noreply, socket |> assign(:filters, filters) |> refresh_items()}
+    {:noreply, socket |> assign(:filters, filters) |> assign(:page, 1) |> refresh_items()}
+  end
+
+  def handle_event("paginate", %{"page" => page}, socket) do
+    {:noreply, socket |> assign(:page, String.to_integer(page)) |> refresh_items()}
   end
 
   def handle_event("sync_snipeit", _params, socket) do
@@ -303,8 +314,18 @@ defmodule CofferWeb.InventoryLive.Index do
     filters =
       Map.new(socket.assigns.filters, fn {k, v} -> {String.to_existing_atom(k), v} end)
 
+    total_count = Inventory.count_items(filters)
+    total_pages = max(1, ceil(total_count / @per_page))
+    page = min(socket.assigns.page, total_pages)
+
+    items =
+      Inventory.list_items(Map.merge(filters, %{page: page, per_page: @per_page}))
+
     socket
-    |> assign(:items, Inventory.list_items(filters))
+    |> assign(:page, page)
+    |> assign(:total_count, total_count)
+    |> assign(:total_pages, total_pages)
+    |> assign(:items, items)
     |> assign(:has_snipeit_items, Inventory.any_snipeit_items?())
   end
 
@@ -573,12 +594,14 @@ defmodule CofferWeb.InventoryLive.Index do
         </label>
       </form>
 
-      <p class="mt-2 text-sm text-base-content/60">{length(@items)} item(s)</p>
+      <p class="mt-2 text-sm text-base-content/60">
+        {page_range_label(@page, @per_page, @total_count)}
+      </p>
 
       <.table id="inventory-items" rows={@items}>
         <:col :let={i} label="Name">
           <div class="flex flex-wrap items-center gap-2">
-            <span>{i.name}</span>
+            <span class="max-w-[16rem] min-w-0 truncate" title={i.name}>{i.name}</span>
             <span
               :if={i.source == :snipeit}
               class="badge badge-ghost badge-sm whitespace-nowrap"
@@ -592,13 +615,21 @@ defmodule CofferWeb.InventoryLive.Index do
           </div>
         </:col>
         <:col :let={i} label="Type">{i.tracking_type}</:col>
-        <:col :let={i} label="Category">{i.category}</:col>
+        <:col :let={i} label="Category">
+          <span class="block max-w-[10rem] truncate" title={i.category}>{i.category}</span>
+        </:col>
         <:col :let={i} label="On hand">{i.quantity_on_hand}</:col>
         <:col :let={i} label="Available">
           {if i.tracking_type == :checkoutable, do: Inventory.available(i), else: "—"}
         </:col>
-        <:col :let={i} label="Location">{i.location}</:col>
-        <:col :let={i} label="Assigned to">{i.assigned_to || "—"}</:col>
+        <:col :let={i} label="Location">
+          <span class="block max-w-[10rem] truncate" title={i.location}>{i.location}</span>
+        </:col>
+        <:col :let={i} label="Assigned to">
+          <span class="block max-w-[10rem] truncate" title={i.assigned_to}>
+            {i.assigned_to || "—"}
+          </span>
+        </:col>
         <:action :let={i}>
           <.link
             :if={Policy.can?(@current_user, :update, :inventory_item)}
@@ -621,8 +652,38 @@ defmodule CofferWeb.InventoryLive.Index do
         </:action>
       </.table>
 
+      <div :if={@total_pages > 1} class="mt-4 flex items-center justify-center gap-4">
+        <button
+          type="button"
+          phx-click="paginate"
+          phx-value-page={@page - 1}
+          disabled={@page <= 1}
+          class="btn btn-outline btn-sm"
+        >
+          &larr; Prev
+        </button>
+        <span class="text-sm text-base-content/60">Page {@page} of {@total_pages}</span>
+        <button
+          type="button"
+          phx-click="paginate"
+          phx-value-page={@page + 1}
+          disabled={@page >= @total_pages}
+          class="btn btn-outline btn-sm"
+        >
+          Next &rarr;
+        </button>
+      </div>
+
       <.link href={~p"/"} class="link mt-6 inline-block">&larr; Back</.link>
     </div>
     """
+  end
+
+  defp page_range_label(_page, _per_page, 0), do: "No items match."
+
+  defp page_range_label(page, per_page, total_count) do
+    first = (page - 1) * per_page + 1
+    last = min(page * per_page, total_count)
+    "Showing #{first}–#{last} of #{total_count} item(s)"
   end
 end

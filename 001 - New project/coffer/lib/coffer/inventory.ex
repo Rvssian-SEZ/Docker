@@ -20,11 +20,26 @@ defmodule Coffer.Inventory do
   @doc """
   Lists items, optionally narrowed by `filters` — a map with any of
   `:search` (matches `name`, case-insensitive substring), `:tracking_type`,
-  `:category`, `:location`, `:source`, and `:low_stock_only` (boolean-ish —
-  truthy string or `true`). Nil/""/falsy values mean "no filter", so params
-  straight off a filter form can be passed through unchanged.
+  `:category`, `:location`, `:source`, `:low_stock_only` (boolean-ish —
+  truthy string or `true`), and `:page`/`:per_page` (both positive integers
+  — omit `:page` for the full unpaginated list, which `count_items/1`,
+  CSV export, and the audit log's item-name lookup all still rely on).
+  Nil/""/falsy filter values mean "no filter", so params straight off a
+  filter form can be passed through unchanged.
   """
   def list_items(filters \\ %{}) do
+    filters
+    |> filtered_items_query()
+    |> order_by(asc: :name)
+    |> paginate(filters[:page], filters[:per_page])
+    |> preload(:created_by)
+    |> Repo.all()
+  end
+
+  @doc "Total count matching `filters` (ignores `:page`/`:per_page`) — pairs with `list_items/1` for pagination."
+  def count_items(filters \\ %{}), do: filters |> filtered_items_query() |> Repo.aggregate(:count)
+
+  defp filtered_items_query(filters) do
     Item
     |> filter_by(:search, filters[:search])
     |> filter_by(:tracking_type, filters[:tracking_type])
@@ -32,10 +47,14 @@ defmodule Coffer.Inventory do
     |> filter_by(:location, filters[:location])
     |> filter_by(:source, filters[:source])
     |> filter_low_stock(filters[:low_stock_only])
-    |> order_by(asc: :name)
-    |> preload(:created_by)
-    |> Repo.all()
   end
+
+  defp paginate(query, page, per_page) when is_integer(page) and page > 0 do
+    per_page = per_page || 50
+    query |> limit(^per_page) |> offset(^((page - 1) * per_page))
+  end
+
+  defp paginate(query, _page, _per_page), do: query
 
   defp filter_by(query, _field, value) when value in [nil, ""], do: query
 
