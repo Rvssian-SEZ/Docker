@@ -317,6 +317,10 @@ defmodule CofferWeb.BudgetLive.Index do
     |> refresh_grouped_envelopes()
   end
 
+  defp negative_class(%Decimal{} = amount) do
+    if Decimal.negative?(amount), do: "text-error font-semibold"
+  end
+
   defp refresh_grouped_envelopes(socket),
     do: assign(socket, :grouped_envelopes, Budgets.envelopes_grouped_by_category())
 
@@ -399,9 +403,10 @@ defmodule CofferWeb.BudgetLive.Index do
               {group.category.name}
             </span>
             <span class="text-sm text-base-content/70">
-              Allocated {format_money(group.allocated_total)} SCR &middot; Remaining {format_money(
-                group.remaining_total
-              )} SCR
+              Allocated {format_money(group.allocated_total)} SCR &middot; Remaining
+              <span class={negative_class(group.remaining_total)}>
+                {format_money(group.remaining_total)} SCR
+              </span>
             </span>
           </summary>
 
@@ -414,7 +419,8 @@ defmodule CofferWeb.BudgetLive.Index do
             <:col :let={e} label="Name">{e.name}</:col>
             <:col :let={e} label="Allocated (SCR)">{format_money(e.allocated_amount)}</:col>
             <:col :let={e} label="Remaining (SCR)">
-              {format_money(Budgets.envelope_remaining(e))}
+              <% remaining = Budgets.envelope_remaining(e) %>
+              <span class={negative_class(remaining)}>{format_money(remaining)}</span>
             </:col>
             <:col :let={e} label="Active?">{e.active}</:col>
             <:action :let={e}>
