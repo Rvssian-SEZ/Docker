@@ -556,7 +556,7 @@ defmodule CofferWeb.CoreComponents do
         <h2 class="text-lg font-semibold">{@title}</h2>
         {render_slot(@inner_block)}
       </div>
-      <.link href={@cancel_href} class="modal-backdrop" aria-label="Close">
+      <.link patch={@cancel_href} class="modal-backdrop" aria-label="Close">
         <span class="sr-only">Close</span>
       </.link>
     </div>

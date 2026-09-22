@@ -469,13 +469,21 @@ defmodule CofferWeb.BudgetLive.Index do
     Enum.reject(category_options, fn {_label, id} -> id in disallowed end)
   end
 
+  # push_patch, not push_navigate -- /budgets, /budgets/new and
+  # /budgets/:id/edit are all this same LiveView/live_session, and
+  # push_navigate forces a full remount (a brand new process), which was
+  # silently resetting @expanded_ids/@known_category_ids/@default_collapsed
+  # back to their mount/3 defaults and re-expanding every category. patch
+  # keeps the same process alive so that state survives; refresh_grouped_envelopes/1
+  # picks up the envelope change since apply_action(:index, ...) doesn't.
   defp save_envelope(socket, :edit, params) do
     case Budgets.update_envelope(socket.assigns.envelope, params, socket.assigns.current_user) do
       {:ok, _envelope} ->
         {:noreply,
          socket
          |> put_flash(:info, "Envelope updated.")
-         |> push_navigate(to: ~p"/budgets")}
+         |> refresh_grouped_envelopes()
+         |> push_patch(to: ~p"/budgets")}
 
       {:error, changeset} ->
         {:noreply, assign(socket, :form, to_form(changeset))}
@@ -488,7 +496,8 @@ defmodule CofferWeb.BudgetLive.Index do
         {:noreply,
          socket
          |> put_flash(:info, "Envelope created.")
-         |> push_navigate(to: ~p"/budgets")}
+         |> refresh_grouped_envelopes()
+         |> push_patch(to: ~p"/budgets")}
 
       {:error, changeset} ->
         {:noreply, assign(socket, :form, to_form(changeset))}
@@ -513,7 +522,7 @@ defmodule CofferWeb.BudgetLive.Index do
           </.link>
           <.link
             :if={Policy.can?(@current_user, :create, :budget_envelope)}
-            href={~p"/budgets/new"}
+            patch={~p"/budgets/new"}
             class="btn btn-primary"
           >
             New envelope
@@ -643,7 +652,7 @@ defmodule CofferWeb.BudgetLive.Index do
           </button>
           <.input field={@form[:active]} type="checkbox" label="Active" />
           <footer class="mt-4 flex justify-end gap-2">
-            <.link href={~p"/budgets"} class="btn btn-ghost">Cancel</.link>
+            <.link patch={~p"/budgets"} class="btn btn-ghost">Cancel</.link>
             <.button phx-disable-with="Saving...">Save</.button>
           </footer>
         </.form>
@@ -783,7 +792,7 @@ defmodule CofferWeb.BudgetLive.Index do
         <:action :let={e}>
           <.link
             :if={Policy.can?(@current_user, :update, :budget_envelope)}
-            href={~p"/budgets/#{e.id}/edit"}
+            patch={~p"/budgets/#{e.id}/edit"}
             class="link"
           >
             Edit
@@ -792,7 +801,7 @@ defmodule CofferWeb.BudgetLive.Index do
         <:action :let={e}>
           <.link
             :if={Policy.can?(@current_user, :create, :budget_envelope)}
-            href={~p"/budgets/new?duplicate_from=#{e.id}"}
+            patch={~p"/budgets/new?duplicate_from=#{e.id}"}
             class="link"
           >
             Duplicate
