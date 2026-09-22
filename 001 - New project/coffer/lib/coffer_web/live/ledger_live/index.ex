@@ -69,7 +69,7 @@ defmodule CofferWeb.LedgerLive.Index do
   # transaction from the contract instead of building a separate posting
   # flow — the Staff/Admin still reviews and saves it here like any other
   # transaction.
-  defp prefill_from_contract(nil), do: %Transaction{}
+  defp prefill_from_contract(nil), do: %Transaction{direction: :expense}
 
   defp prefill_from_contract(contract_id) do
     contract = Contracts.get_contract!(contract_id)
@@ -218,12 +218,11 @@ defmodule CofferWeb.LedgerLive.Index do
 
       <.link href={~p"/"} class="link mt-6 inline-block">&larr; Back</.link>
 
-      <div
+      <.modal_form
         :if={@live_action in [:new, :edit]}
-        class="mt-8 max-w-sm rounded-box border border-base-300 p-6"
+        title={@page_title}
+        cancel_href={~p"/ledger"}
       >
-        <h2 class="text-lg font-semibold">{@page_title}</h2>
-
         <.form for={@form} id="transaction-form" phx-change="validate" phx-submit="save" class="mt-4">
           <.input field={@form[:date]} type="date" label="Date" />
           <.input field={@form[:description]} label="Description" />
@@ -275,7 +274,7 @@ defmodule CofferWeb.LedgerLive.Index do
             <.button phx-disable-with="Saving...">Save</.button>
           </footer>
         </.form>
-      </div>
+      </.modal_form>
     </div>
     """
   end
