@@ -14,7 +14,9 @@ defmodule Coffer.Budgets do
 
   # --- Categories -----------------------------------------------------
 
-  def list_categories, do: Repo.all(from c in Category, order_by: c.name)
+  def list_categories,
+    do: Repo.all(from c in Category, order_by: [asc: c.position, asc: c.name])
+
   def get_category!(id), do: Repo.get!(Category, id)
 
   @doc """
@@ -74,7 +76,10 @@ defmodule Coffer.Budgets do
     do: Category.changeset(category, attrs)
 
   def create_category(attrs, %User{} = actor) do
-    changeset = Category.changeset(%Category{}, attrs)
+    changeset =
+      %Category{}
+      |> Category.changeset(attrs)
+      |> Ecto.Changeset.put_change(:position, next_position(attrs_parent_id(attrs)))
 
     Ecto.Multi.new()
     |> Ecto.Multi.insert(:category, changeset)
@@ -87,7 +92,19 @@ defmodule Coffer.Budgets do
 
   def update_category(%Category{} = category, attrs, %User{} = actor) do
     before = serialize_category(category)
+    new_parent_id = attrs_parent_id(attrs)
+
     changeset = Category.changeset(category, attrs)
+
+    # A rename/no-op-reparent keeps its existing position (untouched sibling
+    # order); an actual reparent starts the category at the end of its new
+    # siblings, same as a freshly-created category would.
+    changeset =
+      if new_parent_id == category.parent_id do
+        changeset
+      else
+        Ecto.Changeset.put_change(changeset, :position, next_position(new_parent_id))
+      end
 
     Ecto.Multi.new()
     |> Ecto.Multi.update(:category, changeset)
@@ -99,6 +116,77 @@ defmodule Coffer.Budgets do
     end)
     |> Repo.transaction()
     |> unwrap(:category)
+  end
+
+  @doc """
+  Swaps a category's position with its immediate sibling (same parent_id)
+  in the given direction -- a no-op (`{:ok, :no_change}`) at either end of
+  the sibling list. Siblings only, never crosses into a different parent;
+  reparenting is what the edit form's Parent field is for.
+  """
+  def move_category(%Category{} = category, direction, %User{} = actor)
+      when direction in [:up, :down] do
+    siblings =
+      category.parent_id
+      |> siblings_query()
+      |> order_by([c], asc: c.position, asc: c.name)
+      |> Repo.all()
+
+    index = Enum.find_index(siblings, &(&1.id == category.id))
+    swap_index = if direction == :up, do: index - 1, else: index + 1
+
+    if swap_index < 0 or swap_index >= length(siblings) do
+      {:ok, :no_change}
+    else
+      swap_positions(category, Enum.at(siblings, swap_index), actor)
+    end
+  end
+
+  defp swap_positions(a, b, actor) do
+    before_a = serialize_category(a)
+    before_b = serialize_category(b)
+
+    Ecto.Multi.new()
+    |> Ecto.Multi.update(:a, Ecto.Changeset.change(a, position: b.position))
+    |> Ecto.Multi.update(:b, Ecto.Changeset.change(b, position: a.position))
+    |> Ecto.Multi.run(:audit_a, fn _repo, %{a: c} ->
+      AuditLog.record(actor.id, :update, "BudgetCategory", c.id, %{
+        before: before_a,
+        after: serialize_category(c)
+      })
+    end)
+    |> Ecto.Multi.run(:audit_b, fn _repo, %{b: c} ->
+      AuditLog.record(actor.id, :update, "BudgetCategory", c.id, %{
+        before: before_b,
+        after: serialize_category(c)
+      })
+    end)
+    |> Repo.transaction()
+    |> case do
+      {:ok, _changes} -> {:ok, :moved}
+      {:error, _failed_op, changeset, _changes} -> {:error, changeset}
+    end
+  end
+
+  defp siblings_query(nil), do: from(c in Category, where: is_nil(c.parent_id))
+  defp siblings_query(parent_id), do: from(c in Category, where: c.parent_id == ^parent_id)
+
+  defp next_position(parent_id) do
+    case parent_id |> siblings_query() |> Repo.aggregate(:max, :position) do
+      nil -> 0
+      max -> max + 1
+    end
+  end
+
+  # Reads parent_id out of raw create/update attrs (string- or atom-keyed,
+  # matching however the caller built the map) -- a blank select value
+  # ("None (top-level)") arrives as "", normalized to nil like the rest of
+  # the app treats an unset parent.
+  defp attrs_parent_id(attrs) do
+    case Map.get(attrs, "parent_id", Map.get(attrs, :parent_id)) do
+      "" -> nil
+      value -> value
+    end
   end
 
   def delete_category(%Category{} = category, %User{} = actor) do
@@ -330,7 +418,8 @@ defmodule Coffer.Budgets do
     |> Repo.one()
   end
 
-  defp serialize_category(%Category{} = c), do: %{id: c.id, name: c.name, parent_id: c.parent_id}
+  defp serialize_category(%Category{} = c),
+    do: %{id: c.id, name: c.name, parent_id: c.parent_id, position: c.position}
 
   defp serialize_envelope(%Envelope{} = e) do
     %{

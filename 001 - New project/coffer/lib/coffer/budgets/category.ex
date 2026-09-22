@@ -8,6 +8,7 @@ defmodule Coffer.Budgets.Category do
 
   schema "budget_categories" do
     field :name, :string
+    field :position, :integer
 
     belongs_to :parent, __MODULE__
     has_many :children, __MODULE__, foreign_key: :parent_id

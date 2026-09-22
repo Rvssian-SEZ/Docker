@@ -203,6 +203,24 @@ defmodule CofferWeb.BudgetLive.Index do
        put_flash(socket, :error, "That category is still used by one or more envelopes.")}
   end
 
+  def handle_event("move_category", %{"id" => id, "direction" => direction}, socket)
+      when direction in ["up", "down"] do
+    if Policy.can?(socket.assigns.current_user, :update, :budget_category) do
+      category = Budgets.get_category!(id)
+      direction = if direction == "up", do: :up, else: :down
+
+      case Budgets.move_category(category, direction, socket.assigns.current_user) do
+        {:ok, _} ->
+          {:noreply, assign_categories(socket)}
+
+        {:error, _changeset} ->
+          {:noreply, put_flash(socket, :error, "Could not reorder that category.")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "You're not authorized to reorder categories.")}
+    end
+  end
+
   # Lets a category get created without leaving the envelope popup — the
   # quickadd form is deliberately a separate `@category_quickadd_form`
   # rather than reusing `@category_form` (the persistent category-management
@@ -399,18 +417,34 @@ defmodule CofferWeb.BudgetLive.Index do
 
   defp assign_categories(socket) do
     categories = Budgets.list_categories()
+    {first_ids, last_ids} = sibling_boundary_ids(categories)
 
     socket
     |> assign(:categories, categories)
     |> assign(:category_tree, Budgets.list_categories_tree())
+    |> assign(:category_first_sibling_ids, first_ids)
+    |> assign(:category_last_sibling_ids, last_ids)
     |> assign(
       :category_options,
       Enum.map(categories, &{Budgets.category_path_label(&1, categories), &1.id})
     )
-    # A category rename/reparent changes how the grouped envelope view
-    # should look (name, indentation) even though no envelope itself
-    # changed, so every category mutation refreshes this too.
+    # A category rename/reparent/reorder changes how the grouped envelope
+    # view should look (name, indentation, order) even though no envelope
+    # itself changed, so every category mutation refreshes this too.
     |> refresh_grouped_envelopes()
+  end
+
+  # `categories` is already ordered by position (see Budgets.list_categories/0),
+  # so within each parent_id group the first/last elements are exactly the
+  # top/bottom of that sibling list -- lets the template hide the Up/Down
+  # button that would otherwise be a no-op at either end.
+  defp sibling_boundary_ids(categories) do
+    categories
+    |> Enum.group_by(& &1.parent_id)
+    |> Map.values()
+    |> Enum.reduce({MapSet.new(), MapSet.new()}, fn siblings, {firsts, lasts} ->
+      {MapSet.put(firsts, List.first(siblings).id), MapSet.put(lasts, List.last(siblings).id)}
+    end)
   end
 
   defp negative_class(%Decimal{} = amount) do
@@ -690,6 +724,32 @@ defmodule CofferWeb.BudgetLive.Index do
               {c.name}
             </span>
             <span class="flex gap-2 text-sm">
+              <button
+                :if={
+                  Policy.can?(@current_user, :update, :budget_category) and
+                    not MapSet.member?(@category_first_sibling_ids, c.id)
+                }
+                phx-click="move_category"
+                phx-value-id={c.id}
+                phx-value-direction="up"
+                class="link"
+                aria-label={"Move #{c.name} up"}
+              >
+                &uarr;
+              </button>
+              <button
+                :if={
+                  Policy.can?(@current_user, :update, :budget_category) and
+                    not MapSet.member?(@category_last_sibling_ids, c.id)
+                }
+                phx-click="move_category"
+                phx-value-id={c.id}
+                phx-value-direction="down"
+                class="link"
+                aria-label={"Move #{c.name} down"}
+              >
+                &darr;
+              </button>
               <button
                 :if={Policy.can?(@current_user, :update, :budget_category)}
                 phx-click="edit_category"
