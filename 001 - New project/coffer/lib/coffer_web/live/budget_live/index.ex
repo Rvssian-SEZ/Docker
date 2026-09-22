@@ -15,14 +15,17 @@ defmodule CofferWeb.BudgetLive.Index do
        socket
        |> assign(:date_from, FiscalYear.start_date(current_year))
        |> assign(:date_to, FiscalYear.end_date(current_year))
-       # Defaults true for a first-ever/disconnected render (no localStorage
-       # access yet); the .BudgetsExpandPref hook pushes the real stored
-       # preference right after mount if one exists, which then sticks for
-       # the rest of the connection — unlike a client-only DOM tweak, this
-       # survives LiveView's own reconnect re-render since the server now
-       # actually knows the preference instead of hardcoding `open` and
-       # letting a later diff silently patch it back.
-       |> assign(:expanded, true)
+       # Per-category expand/collapse state, not one global flag — see
+       # refresh_grouped_envelopes/1 and the handle_event clauses for
+       # set_expand_pref/toggle_category for how these three stay in sync.
+       # Starts empty/false for a first-ever/disconnected render (no
+       # localStorage access yet); the .BudgetsExpandPref hook pushes the
+       # real stored preference right after mount if one exists, via the
+       # same set_expand_pref handler Expand/Collapse all use, which then
+       # sticks for the rest of the connection.
+       |> assign(:default_collapsed, false)
+       |> assign(:expanded_ids, MapSet.new())
+       |> assign(:known_category_ids, MapSet.new())
        |> refresh_grouped_envelopes()
        |> assign(:editing_category_id, nil)
        |> assign_categories()
@@ -284,11 +287,34 @@ defmodule CofferWeb.BudgetLive.Index do
 
   # `collapsed` arrives as a real boolean (not a stringified phx-value) since
   # the buttons/hook send it via JS.push's `value:`/pushEvent's JSON payload.
+  # Applies to every group currently on screen, and is remembered as the
+  # default disposition for any category added later (see
+  # refresh_grouped_envelopes/1) -- individual per-group toggles made after
+  # this (see the toggle_category clause below) aren't touched by anything
+  # except another Expand all/Collapse all or a fresh category showing up.
   def handle_event("set_expand_pref", %{"collapsed" => collapsed}, socket) do
+    all_ids = all_category_ids(socket.assigns.grouped_envelopes)
+    expanded_ids = if collapsed, do: MapSet.new(), else: all_ids
+
     {:noreply,
      socket
-     |> assign(:expanded, not collapsed)
+     |> assign(:default_collapsed, collapsed)
+     |> assign(:expanded_ids, expanded_ids)
      |> push_event("persist_expand_pref", %{collapsed: collapsed})}
+  end
+
+  # Fired by the .BudgetGroupToggle hook whenever a single group's <details>
+  # is opened/closed by hand, so that state survives later re-renders (e.g.
+  # adding a category elsewhere) instead of living only in the DOM.
+  def handle_event("toggle_category", %{"id" => id, "open" => open}, socket) do
+    expanded_ids =
+      if open do
+        MapSet.put(socket.assigns.expanded_ids, id)
+      else
+        MapSet.delete(socket.assigns.expanded_ids, id)
+      end
+
+    {:noreply, assign(socket, :expanded_ids, expanded_ids)}
   end
 
   def handle_event("filter_range", params, socket) do
@@ -401,9 +427,36 @@ defmodule CofferWeb.BudgetLive.Index do
   defp sum_group_totals(groups, fun),
     do: Enum.reduce(groups, Decimal.new(0), &Decimal.add(&2, fun.(&1)))
 
+  # Grows expanded_ids/known_category_ids rather than resetting them, so a
+  # category added (or a date-range change surfacing one for the first
+  # time) starts at whatever the current default disposition is without
+  # disturbing any category the user already toggled by hand.
   defp refresh_grouped_envelopes(socket) do
     envelopes = Budgets.list_envelopes_in_range(socket.assigns.date_from, socket.assigns.date_to)
-    assign(socket, :grouped_envelopes, Budgets.envelopes_grouped_by_category(envelopes))
+    grouped = Budgets.envelopes_grouped_by_category(envelopes)
+
+    current_ids = all_category_ids(grouped)
+    new_ids = MapSet.difference(current_ids, socket.assigns.known_category_ids)
+
+    expanded_ids =
+      if socket.assigns.default_collapsed do
+        socket.assigns.expanded_ids
+      else
+        MapSet.union(socket.assigns.expanded_ids, new_ids)
+      end
+
+    socket
+    |> assign(:grouped_envelopes, grouped)
+    |> assign(:known_category_ids, MapSet.union(socket.assigns.known_category_ids, current_ids))
+    |> assign(:expanded_ids, expanded_ids)
+  end
+
+  defp all_category_ids(groups) do
+    Enum.reduce(groups, MapSet.new(), fn group, acc ->
+      acc
+      |> MapSet.put(group.category.id)
+      |> MapSet.union(all_category_ids(group.children))
+    end)
   end
 
   # A category can't become its own descendant's child (the changeset
@@ -543,12 +596,27 @@ defmodule CofferWeb.BudgetLive.Index do
         }
       </script>
 
+      <script :type={Phoenix.LiveView.ColocatedHook} name=".BudgetGroupToggle">
+        // Each category's <details> gets one of these. The browser already
+        // handles opening/closing instantly with no round-trip; this just
+        // reports the result back so the server can track it in
+        // @expanded_ids and it survives a later re-render (e.g. adding a
+        // category elsewhere), instead of living only in the DOM.
+        export default {
+          mounted() {
+            this.el.addEventListener("toggle", () => {
+              this.pushEvent("toggle_category", {id: this.el.dataset.categoryId, open: this.el.open})
+            })
+          }
+        }
+      </script>
+
       <div class="mt-2 space-y-2">
         <.category_group
           :for={group <- @grouped_envelopes}
           group={group}
           current_user={@current_user}
-          expanded={@expanded}
+          expanded_ids={@expanded_ids}
         />
       </div>
 
@@ -678,11 +746,17 @@ defmodule CofferWeb.BudgetLive.Index do
   # simply isn't rendered while its ancestor is closed.
   attr :group, :map, required: true
   attr :current_user, :map, required: true
-  attr :expanded, :boolean, required: true
+  attr :expanded_ids, :any, required: true, doc: "a MapSet of expanded category ids"
 
   defp category_group(assigns) do
     ~H"""
-    <details open={@expanded} class="budget-group overflow-hidden rounded-box border border-base-300">
+    <details
+      id={"budget-group-#{@group.category.id}"}
+      phx-hook=".BudgetGroupToggle"
+      data-category-id={@group.category.id}
+      open={MapSet.member?(@expanded_ids, @group.category.id)}
+      class="budget-group overflow-hidden rounded-box border border-base-300"
+    >
       <summary class="flex flex-wrap cursor-pointer items-center justify-between gap-2 bg-base-200 px-4 py-2 marker:text-base-content/40">
         <span class="font-semibold">{@group.category.name}</span>
         <span class="text-sm text-base-content/70">
@@ -748,7 +822,7 @@ defmodule CofferWeb.BudgetLive.Index do
           :for={child <- @group.children}
           group={child}
           current_user={@current_user}
-          expanded={@expanded}
+          expanded_ids={@expanded_ids}
         />
       </div>
     </details>
