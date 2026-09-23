@@ -146,6 +146,28 @@ defmodule VdlarrWeb.Pages.JobTableLiveTest do
       assert Repo.get!(Oban.Job, job.id).state == "cancelled"
     end
 
+    test "clears the stopped download's progress state", %{conn: conn} do
+      {_source, media_item, task, _job} = create_media_item_job()
+      Vdlarr.Downloading.DownloadProgress.handle_line(media_item.id, "[download] Destination: /tmp/video.mp4")
+      {:ok, view, _html} = live_isolated(conn, JobTableLive, session: %{})
+
+      view
+      |> element("[phx-value-task_id='#{task.id}']")
+      |> render_click()
+
+      assert Vdlarr.Downloading.DownloadProgressStore.get(media_item.id) == nil
+    end
+
+    test "shows the stage of an in-flight download", %{conn: conn} do
+      {_source, media_item, _task, _job} = create_media_item_job()
+      Vdlarr.Downloading.DownloadProgress.handle_line(media_item.id, "[download] Destination: /tmp/video.f137.mp4")
+      Vdlarr.Downloading.DownloadProgress.handle_line(media_item.id, ~s([Merger] Merging formats into "/x.mp4"))
+
+      {:ok, _view, html} = live_isolated(conn, JobTableLive, session: %{})
+
+      assert html =~ "Merging video and audio"
+    end
+
     test "removes the row after stopping", %{conn: conn} do
       {_source, media_item, task, _job} = create_media_item_job()
       {:ok, view, html} = live_isolated(conn, JobTableLive, session: %{})

@@ -2,6 +2,7 @@ defmodule VdlarrWeb.Sources.MediaItemTableLive do
   use VdlarrWeb, :live_view
   use Vdlarr.Media.MediaQuery
 
+  alias Vdlarr.Downloading.DownloadProgressStore
   alias Vdlarr.Repo
   alias Vdlarr.Sources
   alias Vdlarr.Utils.NumberUtils
@@ -76,7 +77,7 @@ defmodule VdlarrWeb.Sources.MediaItemTableLive do
           <.icon name={if media_item.prevent_download, do: "hero-check", else: "hero-x-mark"} />
         </:col>
         <:col :let={media_item} :if={@media_state in ["pending", "failed"]} label="Progress">
-          <.download_progress_bar progress={@progress[media_item.id]} status_line={@status_lines[media_item.id]} />
+          <.download_progress_bar state={@downloads[media_item.id]} />
         </:col>
         <:col :let={media_item} :if={@media_state == "failed"} label="">
           <span :if={MediaDownloadWorker.non_retryable_error?(media_item.last_error)} class="text-xs text-bodydark2">
@@ -136,8 +137,7 @@ defmodule VdlarrWeb.Sources.MediaItemTableLive do
           base_query: base_query,
           source: source,
           media_state: media_state,
-          progress: %{},
-          status_lines: %{}
+          downloads: DownloadProgressStore.all()
         }
       )
 
@@ -173,16 +173,9 @@ defmodule VdlarrWeb.Sources.MediaItemTableLive do
     {:noreply, assign(socket, new_assigns)}
   end
 
-  def handle_info(%{topic: "downloads:progress", event: "progress", payload: payload}, socket) do
-    progress = Map.put(socket.assigns.progress, payload.media_item_id, payload.progress)
-
-    {:noreply, assign(socket, :progress, progress)}
-  end
-
-  def handle_info(%{topic: "downloads:status", event: "status", payload: payload}, socket) do
-    status_lines = Map.put(socket.assigns.status_lines, payload.media_item_id, payload.line)
-
-    {:noreply, assign(socket, :status_lines, status_lines)}
+  def handle_info(%{topic: topic, payload: %{media_item_id: id, state: state}}, socket)
+      when topic in ["downloads:progress", "downloads:status"] do
+    {:noreply, assign(socket, :downloads, Map.put(socket.assigns.downloads, id, state))}
   end
 
   # Nothing currently refetches the pending list when a download finishes (only
@@ -190,20 +183,11 @@ defmodule VdlarrWeb.Sources.MediaItemTableLive do
   # completed download's progress bar frozen at its last percentage instead of
   # the row disappearing. Piggyback on the existing job-state broadcast (already
   # fired on every Oban job start/stop/exception) to refetch, which also doubles
-  # as the place to prune finished items out of the progress map.
+  # as the point to re-read in-flight downloads (a finished one is cleared from the store).
   def handle_info(%{topic: "job:state", event: "change"}, %{assigns: assigns} = socket) do
     new_assigns = fetch_pagination_attributes(assigns.base_query, assigns.page, assigns.search_term)
-    visible_ids = MapSet.new(new_assigns.records, & &1.id)
 
-    pruned_progress =
-      Map.filter(assigns.progress, fn {media_item_id, _} -> MapSet.member?(visible_ids, media_item_id) end)
-
-    pruned_status_lines =
-      Map.filter(assigns.status_lines, fn {media_item_id, _} -> MapSet.member?(visible_ids, media_item_id) end)
-
-    new_assigns = Map.merge(new_assigns, %{progress: pruned_progress, status_lines: pruned_status_lines})
-
-    {:noreply, assign(socket, new_assigns)}
+    {:noreply, assign(socket, Map.put(new_assigns, :downloads, DownloadProgressStore.all()))}
   end
 
   defp fetch_pagination_attributes(base_query, page, ""), do: fetch_pagination_attributes(base_query, page, nil)

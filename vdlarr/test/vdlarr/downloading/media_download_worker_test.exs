@@ -3,6 +3,8 @@ defmodule Vdlarr.Downloading.MediaDownloadWorkerTest do
 
   import Vdlarr.MediaFixtures
 
+  alias Vdlarr.Downloading.DownloadState
+  alias Vdlarr.Downloading.DownloadProgressStore
   alias Vdlarr.Media
   alias Vdlarr.Sources
   alias Vdlarr.Utils.FilesystemUtils
@@ -81,6 +83,14 @@ defmodule Vdlarr.Downloading.MediaDownloadWorkerTest do
       media_item = Repo.reload(media_item)
 
       assert media_item.media_filepath != nil
+    end
+
+    test "clears the item's in-flight download state once the job ends", %{media_item: media_item} do
+      DownloadProgressStore.update(media_item.id, &DownloadState.apply_status_line(&1, "[download] Destination: /x.mp4"))
+
+      perform_job(MediaDownloadWorker, %{id: media_item.id})
+
+      assert DownloadProgressStore.get(media_item.id) == nil
     end
 
     test "saves the metadata to the media_item", %{media_item: media_item} do

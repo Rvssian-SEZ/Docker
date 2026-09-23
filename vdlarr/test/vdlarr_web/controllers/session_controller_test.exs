@@ -99,7 +99,7 @@ defmodule VdlarrWeb.SessionControllerTest do
       assert redirected_to(conn) == ~p"/"
 
       conn = conn |> recycle() |> get(~p"/")
-      assert html_response(conn, 200) =~ "Menu"
+      assert html_response(conn, 200) =~ "Dashboard"
     end
   end
 end

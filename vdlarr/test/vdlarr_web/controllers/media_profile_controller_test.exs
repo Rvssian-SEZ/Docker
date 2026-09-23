@@ -58,7 +58,8 @@ defmodule VdlarrWeb.MediaProfileControllerTest do
       conn = get(conn, ~p"/media_profiles/new", %{"template_id" => profile.id})
       assert html_response(conn, 200) =~ "New Media Profile"
       assert html_response(conn, 200) =~ profile.sub_langs
-      refute html_response(conn, 200) =~ profile.name
+      # The sidebar lists every profile by name, so check the name field itself isn't prefilled
+      refute html_response(conn, 200) =~ ~s(value="#{profile.name}")
     end
   end
 

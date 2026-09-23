@@ -1,0 +1,32 @@
+/**
+ * Material Symbols Rounded - self-hosted subset (only the icons the UI uses, ~13KB), fetched
+ * from the Google Fonts API with `icon_names=`. To add an icon, re-fetch the subset with the
+ * new name included (names must be alphabetical) - an unlisted name renders as its raw text.
+ */
+
+@font-face {
+  font-family: 'Material Symbols Rounded';
+  font-style: normal;
+  font-weight: 350;
+  font-display: block;
+  src: url('../fonts/material-symbols/MaterialSymbolsRounded-subset.woff2') format('woff2');
+}
+
+.material-symbols-rounded {
+  font-family: 'Material Symbols Rounded';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'liga';
+  font-variation-settings: 'FILL' 0, 'wght' 350, 'GRAD' 0, 'opsz' 24;
+  user-select: none;
+}

@@ -46,7 +46,7 @@ defmodule VdlarrWeb.Router do
   scope "/", VdlarrWeb do
     pipe_through [:browser, :authenticated]
 
-    get "/", Sources.SourceController, :index
+    get "/", Pages.PageController, :dashboard
     get "/stats", Pages.PageController, :home
     get "/wanted", Pages.PageController, :wanted
     get "/activity", Pages.PageController, :activity

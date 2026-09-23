@@ -37,12 +37,7 @@ defmodule VdlarrWeb.SourceControllerTest do
     # Most of the tests are in `index_grid_live_test.exs`
     test "returns 200", %{conn: conn} do
       conn = get(conn, ~p"/sources")
-      assert html_response(conn, 200) =~ "Dashboard"
-    end
-
-    test "is also served at the app root, since Dashboard is the default landing page", %{conn: conn} do
-      conn = get(conn, ~p"/")
-      assert html_response(conn, 200) =~ "Dashboard"
+      assert html_response(conn, 200) =~ "Channels"
     end
   end
 

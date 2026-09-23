@@ -5,6 +5,7 @@ defmodule Vdlarr.Pages.JobTableLive do
   alias Vdlarr.Repo
   alias Vdlarr.Tasks
   alias Vdlarr.Tasks.Task
+  alias Vdlarr.Downloading.DownloadProgressStore
   alias VdlarrWeb.CustomComponents.TextComponents
 
   def render(%{tasks: []} = assigns) do
@@ -31,11 +32,7 @@ defmodule Vdlarr.Pages.JobTableLive do
           {job_state_to_label(task.job.state)}
         </:col>
         <:col :let={task} label="Progress">
-          <.download_progress_bar
-            :if={download_task?(task)}
-            progress={@progress[task.media_item_id]}
-            status_line={@status_lines[task.media_item_id]}
-          />
+          <.download_progress_bar :if={download_task?(task)} state={@downloads[task.media_item_id]} />
           <span :if={!download_task?(task)}>Attempt {task.job.attempt}</span>
         </:col>
         <:col :let={task} label="Started At">
@@ -61,7 +58,7 @@ defmodule Vdlarr.Pages.JobTableLive do
     VdlarrWeb.Endpoint.subscribe("downloads:progress")
     VdlarrWeb.Endpoint.subscribe("downloads:status")
 
-    {:ok, assign(socket, tasks: get_tasks(), progress: %{}, status_lines: %{})}
+    {:ok, assign(socket, tasks: get_tasks(), downloads: DownloadProgressStore.all())}
   end
 
   # `Tasks.delete_task/1` cancels the underlying Oban job and removes the Task
@@ -78,8 +75,12 @@ defmodule Vdlarr.Pages.JobTableLive do
   # the job was in.
   def handle_event("stop_task", %{"task_id" => task_id}, socket) do
     case Repo.get(Task, task_id) do
-      nil -> :ok
-      task -> Tasks.delete_task(task)
+      nil ->
+        :ok
+
+      task ->
+        Tasks.delete_task(task)
+        if task.media_item_id, do: DownloadProgressStore.delete(task.media_item_id)
     end
 
     VdlarrWeb.Endpoint.broadcast("job:state", "change", nil)
@@ -87,26 +88,13 @@ defmodule Vdlarr.Pages.JobTableLive do
     {:noreply, socket}
   end
 
-  def handle_info(%{topic: "job:state", event: "change"}, %{assigns: assigns} = socket) do
-    tasks = get_tasks()
-    visible_ids = MapSet.new(tasks, & &1.media_item_id)
-
-    pruned_progress = Map.filter(assigns.progress, fn {id, _} -> MapSet.member?(visible_ids, id) end)
-    pruned_status_lines = Map.filter(assigns.status_lines, fn {id, _} -> MapSet.member?(visible_ids, id) end)
-
-    {:noreply, assign(socket, tasks: tasks, progress: pruned_progress, status_lines: pruned_status_lines)}
+  def handle_info(%{topic: "job:state", event: "change"}, socket) do
+    {:noreply, assign(socket, tasks: get_tasks(), downloads: DownloadProgressStore.all())}
   end
 
-  def handle_info(%{topic: "downloads:progress", event: "progress", payload: payload}, socket) do
-    progress = Map.put(socket.assigns.progress, payload.media_item_id, payload.progress)
-
-    {:noreply, assign(socket, :progress, progress)}
-  end
-
-  def handle_info(%{topic: "downloads:status", event: "status", payload: payload}, socket) do
-    status_lines = Map.put(socket.assigns.status_lines, payload.media_item_id, payload.line)
-
-    {:noreply, assign(socket, :status_lines, status_lines)}
+  def handle_info(%{topic: topic, payload: %{media_item_id: id, state: state}}, socket)
+      when topic in ["downloads:progress", "downloads:status"] do
+    {:noreply, assign(socket, :downloads, Map.put(socket.assigns.downloads, id, state))}
   end
 
   defp download_task?(%Task{job: %Oban.Job{worker: worker}}) do

@@ -705,6 +705,20 @@ defmodule VdlarrWeb.CoreComponents do
     """
   end
 
+  @doc """
+  Renders a Material Symbols Rounded icon by its ligature name (eg: "home"). Only icons
+  included in the self-hosted subset render - see assets/css/material-symbols.css.
+  """
+  attr :name, :string, required: true
+  attr :class, :any, default: nil
+  attr :rest, :global
+
+  def material_icon(assigns) do
+    ~H"""
+    <span class={["material-symbols-rounded", @class]} aria-hidden="true" {@rest}>{@name}</span>
+    """
+  end
+
   ## JS Commands
 
   def show(js \\ %JS{}, selector) do

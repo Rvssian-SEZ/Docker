@@ -9,6 +9,7 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
 
   require Logger
 
+  alias Vdlarr.Downloading.DownloadProgressStore
   alias __MODULE__
   alias Vdlarr.Tasks
   alias Vdlarr.Repo
@@ -61,6 +62,9 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
   rescue
     Ecto.NoResultsError -> Logger.info("#{__MODULE__} discarded: media item #{media_item_id} not found")
     Ecto.StaleEntryError -> Logger.info("#{__MODULE__} discarded: media item #{media_item_id} stale")
+  after
+    # A stopped (killed) download never reaches this - JobTableLive's stop handler clears it instead
+    DownloadProgressStore.delete(media_item_id)
   end
 
   # If this is a quality upgrade, only check if the source is set to download media
