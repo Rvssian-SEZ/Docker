@@ -298,7 +298,25 @@ defmodule Vdlarr.Downloading.MediaDownloadWorkerTest do
       perform_job(MediaDownloadWorker, %{id: media_item.id, force: true})
     end
 
-    test "sets force_overwrites runner option", %{media_item: media_item} do
+    test "resumes rather than overwrites when forcing a download that never finished", %{media_item: media_item} do
+      expect(YtDlpRunnerMock, :run, 3, fn
+        _url, :get_downloadable_status, _opts, _ot, _addl ->
+          {:ok, "{}"}
+
+        _url, :download, opts, _ot, _addl ->
+          assert :no_force_overwrites in opts
+          refute :force_overwrites in opts
+
+          {:ok, render_metadata(:media_metadata)}
+
+        _url, :download_thumbnail, _opts, _ot, _addl ->
+          {:ok, ""}
+      end)
+
+      perform_job(MediaDownloadWorker, %{id: media_item.id, force: true})
+    end
+
+    test "overwrites when forcing a download of media that already finished", %{media_item: media_item} do
       expect(YtDlpRunnerMock, :run, 3, fn
         _url, :get_downloadable_status, _opts, _ot, _addl ->
           {:ok, "{}"}
@@ -312,6 +330,8 @@ defmodule Vdlarr.Downloading.MediaDownloadWorkerTest do
         _url, :download_thumbnail, _opts, _ot, _addl ->
           {:ok, ""}
       end)
+
+      Media.update_media_item(media_item, %{media_filepath: "foo.mp4"})
 
       perform_job(MediaDownloadWorker, %{id: media_item.id, force: true})
     end
@@ -368,7 +388,7 @@ defmodule Vdlarr.Downloading.MediaDownloadWorkerTest do
           {:ok, ""}
       end)
 
-      perform_job(MediaDownloadWorker, %{id: media_item.id, force: true})
+      perform_job(MediaDownloadWorker, %{id: media_item.id, quality_upgrade?: true})
     end
 
     test "deletes old files if the media item has been updated" do

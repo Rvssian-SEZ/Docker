@@ -176,6 +176,15 @@ defmodule VdlarrWeb.SourceControllerTest do
       assert html_response(conn, 200) =~ "New Source"
     end
 
+    test "renders the single Schedule control, writing both schedule fields", %{conn: conn} do
+      html = conn |> get(~p"/sources/new") |> html_response(200)
+
+      assert html =~ "Every N hours"
+      assert html =~ ~s(name="source[index_frequency_minutes]")
+      assert html =~ ~s(name="source[index_cron_schedule]")
+      refute html =~ "Cron Schedule (optional)"
+    end
+
     test "preloads some attributes when using a template", %{conn: conn} do
       source = source_fixture(custom_name: "My first source", download_cutoff_date: "2021-01-01")
 

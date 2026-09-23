@@ -40,8 +40,9 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
   (unless forced).
 
   Options:
-    - `force`: force download even if the source is set to not download media. Fully
-      re-downloads media, including the video
+    - `force`: force download even if the source is set to not download media. Only
+      overwrites (fully re-downloads) media that has already finished downloading - an
+      item that never finished resumes its partial file instead
     - `quality_upgrade?`: re-downloads media, including the video. Does not force download
       if the source is set to not download media
 
@@ -96,8 +97,7 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
   end
 
   defp download_media_and_schedule_jobs(media_item, is_quality_upgrade, should_force) do
-    overwrite_behaviour = if should_force || is_quality_upgrade, do: :force_overwrites, else: :no_force_overwrites
-    override_opts = [overwrite_behaviour: overwrite_behaviour]
+    override_opts = [overwrite_behaviour: overwrite_behaviour(media_item, is_quality_upgrade, should_force)]
 
     case MediaDownloader.download_for_media_item(media_item, override_opts) do
       {:ok, downloaded_media_item} ->
@@ -157,6 +157,14 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
       _ -> nil
     end
   end
+
+  # `--force-overwrites` makes yt-dlp delete any partial `.part` file and start from zero, so
+  # only use it when there's a finished file to replace. A forced download of something that
+  # never finished (Force Download, retry-failed, and every Oban retry of those jobs, which
+  # keep `force: true`) resumes where it left off instead of re-fetching gigabytes.
+  defp overwrite_behaviour(_media_item, true = _is_quality_upgrade, _should_force), do: :force_overwrites
+  defp overwrite_behaviour(%{media_filepath: path}, _is_quality_upgrade, true) when is_binary(path), do: :force_overwrites
+  defp overwrite_behaviour(_media_item, _is_quality_upgrade, _should_force), do: :no_force_overwrites
 
   defp get_redownloaded_at(true), do: DateTime.utc_now()
   defp get_redownloaded_at(_), do: nil
