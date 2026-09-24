@@ -7,6 +7,10 @@ defmodule VdlarrWeb.Pages.PageController do
   alias Vdlarr.Profiles.MediaProfile
   alias Vdlarr.Downloading.DownloadingHelpers
 
+  def dashboard(conn, _params) do
+    render(conn, :dashboard, page_title: "Dashboard")
+  end
+
   def home(conn, _params) do
     render_home_page(conn)
   end

@@ -47,6 +47,9 @@ defmodule Vdlarr.DataCase do
   def setup_sandbox(tags) do
     pid = Ecto.Adapters.SQL.Sandbox.start_owner!(Vdlarr.Repo, shared: not tags[:async])
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
+    # In-flight download state lives in a global ETS table that outlives each test's DB
+    # rollback (and media item ids get reused), so start every test from a clean slate
+    Vdlarr.Downloading.DownloadProgressStore.clear()
   end
 
   @doc """

@@ -1,0 +1,689 @@
+defmodule CofferWeb.InventoryLive.Index do
+  use CofferWeb, :live_view
+
+  alias Coffer.Inventory
+  alias Coffer.Inventory.Item
+  alias Coffer.Authorization.Policy
+
+  # A Snipe-IT sync can pull in thousands of rows — rendering them all
+  # unpaginated took over a second and ~1.8MB of HTML on SAA's real 1,473
+  # items, so the table is paginated server-side rather than just filtered.
+  @per_page 50
+
+  @impl true
+  def mount(_params, _session, socket) do
+    if Policy.can?(socket.assigns.current_user, :view, :inventory_item) do
+      filters = %{
+        "search" => "",
+        "tracking_type" => "",
+        "category" => "",
+        "location" => "",
+        "source" => "",
+        "low_stock_only" => ""
+      }
+
+      {:ok,
+       socket
+       |> assign(:filters, filters)
+       |> assign(:page, 1)
+       |> assign(:per_page, @per_page)
+       |> assign(:categories, Inventory.distinct_categories())
+       |> assign(:locations, Inventory.distinct_locations())
+       |> refresh_items()}
+    else
+      {:ok,
+       socket
+       |> put_flash(:error, "You're not authorized to view inventory.")
+       |> push_navigate(to: ~p"/")}
+    end
+  end
+
+  @impl true
+  def handle_params(params, _url, socket) do
+    action = if socket.assigns.live_action == :new, do: :create, else: :update
+
+    if socket.assigns.live_action in [:new, :edit] and
+         not Policy.can?(socket.assigns.current_user, action, :inventory_item) do
+      {:noreply,
+       socket
+       |> put_flash(:error, "You're not authorized to do that.")
+       |> push_navigate(to: ~p"/inventory")}
+    else
+      {:noreply, apply_action(socket, socket.assigns.live_action, params)}
+    end
+  end
+
+  defp apply_action(socket, :edit, %{"id" => id}) do
+    item = Inventory.get_item!(id)
+
+    socket
+    |> assign(:page_title, "Edit item")
+    |> assign(:item, item)
+    |> assign(:form, to_form(Inventory.change_item(item)))
+    |> assign(:transactions, Inventory.list_transactions_for_item(item))
+    |> assign(:checkouts, Inventory.list_checkouts_for_item(item))
+    |> assign(:stock_form, to_form(%{}, as: :stock))
+    |> assign(:checkout_form, to_form(%{}, as: :checkout))
+    |> assign(:checkin_id, nil)
+    |> assign(:checkin_form, to_form(%{}, as: :checkin))
+  end
+
+  defp apply_action(socket, :new, _params) do
+    item = %Item{}
+
+    socket
+    |> assign(:page_title, "New item")
+    |> assign(:item, item)
+    |> assign(:form, to_form(Inventory.change_new_item(item)))
+  end
+
+  defp apply_action(socket, :index, _params) do
+    socket
+    |> assign(:page_title, "Inventory")
+    |> assign(:item, nil)
+  end
+
+  @impl true
+  def handle_event("validate", %{"item" => params}, socket) do
+    change_fn =
+      if socket.assigns.live_action == :new,
+        do: &Inventory.change_new_item/2,
+        else: &Inventory.change_item/2
+
+    form =
+      socket.assigns.item
+      |> change_fn.(params)
+      |> Map.put(:action, :validate)
+      |> to_form()
+
+    {:noreply, assign(socket, :form, form)}
+  end
+
+  def handle_event("save", %{"item" => params}, socket) do
+    action = if socket.assigns.live_action == :new, do: :create, else: :update
+
+    if Policy.can?(socket.assigns.current_user, action, :inventory_item) do
+      save_item(socket, socket.assigns.live_action, params)
+    else
+      {:noreply, put_flash(socket, :error, "You're not authorized to do that.")}
+    end
+  end
+
+  def handle_event("filter", params, socket) do
+    filters = %{
+      "search" => params["search"] || "",
+      "tracking_type" => params["tracking_type"] || "",
+      "category" => params["category"] || "",
+      "location" => params["location"] || "",
+      "source" => params["source"] || "",
+      "low_stock_only" => params["low_stock_only"] || ""
+    }
+
+    {:noreply, socket |> assign(:filters, filters) |> assign(:page, 1) |> refresh_items()}
+  end
+
+  def handle_event("paginate", %{"page" => page}, socket) do
+    {:noreply, socket |> assign(:page, String.to_integer(page)) |> refresh_items()}
+  end
+
+  def handle_event("sync_snipeit", _params, socket) do
+    if Policy.can?(socket.assigns.current_user, :create, :inventory_item) do
+      case Coffer.SnipeIt.sync_inventory(socket.assigns.current_user) do
+        {:ok, result} ->
+          {:noreply,
+           socket
+           |> put_flash(:info, sync_summary(result))
+           |> refresh_items()}
+
+        {:error, :not_configured} ->
+          {:noreply,
+           put_flash(
+             socket,
+             :error,
+             "Snipe-IT isn't configured (SNIPEIT_URL / SNIPEIT_API_TOKEN not set)."
+           )}
+
+        {:error, reason} ->
+          {:noreply, put_flash(socket, :error, "Snipe-IT sync failed: #{inspect(reason)}")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "You're not authorized to sync from Snipe-IT.")}
+    end
+  end
+
+  def handle_event("delete", %{"id" => id}, socket) do
+    if Policy.can?(socket.assigns.current_user, :delete, :inventory_item) do
+      item = Inventory.get_item!(id)
+
+      case Inventory.delete_item(item, socket.assigns.current_user) do
+        {:ok, _item} ->
+          {:noreply,
+           socket
+           |> put_flash(:info, "Item deleted.")
+           |> refresh_items()}
+
+        {:error, _changeset} ->
+          {:noreply, put_flash(socket, :error, "Could not delete item.")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "You're not authorized to delete inventory items.")}
+    end
+  end
+
+  def handle_event("stock_move", %{"stock" => %{"type" => type} = params}, socket) do
+    if Policy.can?(socket.assigns.current_user, :create, :inventory_transaction) do
+      item = socket.assigns.item
+
+      attrs = %{
+        "quantity" => params["quantity"],
+        "date" => params["date"],
+        "notes" => params["notes"]
+      }
+
+      attrs =
+        if type == "issue", do: Map.put(attrs, "issued_to", params["issued_to"]), else: attrs
+
+      result =
+        case type do
+          "issue" -> Inventory.issue_stock(item, attrs, socket.assigns.current_user)
+          "receive" -> Inventory.receive_stock(item, attrs, socket.assigns.current_user)
+          "adjustment" -> Inventory.adjust_stock(item, attrs, socket.assigns.current_user)
+        end
+
+      case result do
+        {:ok, _txn} ->
+          item = Inventory.get_item!(item.id)
+
+          {:noreply,
+           socket
+           |> put_flash(:info, "Stock updated.")
+           |> assign(:item, item)
+           |> assign(:transactions, Inventory.list_transactions_for_item(item))
+           |> assign(:stock_form, to_form(%{}, as: :stock))}
+
+        {:error, changeset} ->
+          {:noreply,
+           put_flash(socket, :error, "Could not record that: #{error_summary(changeset)}")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "You're not authorized to move stock.")}
+    end
+  end
+
+  def handle_event("checkout", %{"checkout" => params}, socket) do
+    if Policy.can?(socket.assigns.current_user, :create, :checkout) do
+      item = socket.assigns.item
+
+      due_back_at =
+        case params["due_back_at"] do
+          "" -> nil
+          date_str -> date_str <> "T00:00:00Z"
+        end
+
+      attrs = %{
+        "checked_out_to" => params["checked_out_to"],
+        "due_back_at" => due_back_at,
+        "condition_notes_out" => params["condition_notes_out"]
+      }
+
+      case Inventory.checkout_item(item, attrs, socket.assigns.current_user) do
+        {:ok, _checkout} ->
+          item = Inventory.get_item!(item.id)
+
+          {:noreply,
+           socket
+           |> put_flash(:info, "Checked out.")
+           |> assign(:item, item)
+           |> assign(:checkouts, Inventory.list_checkouts_for_item(item))
+           |> assign(:checkout_form, to_form(%{}, as: :checkout))}
+
+        {:error, :none_available} ->
+          {:noreply, put_flash(socket, :error, "No units currently available.")}
+
+        {:error, _changeset} ->
+          {:noreply, put_flash(socket, :error, "Could not check out that item.")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "You're not authorized to check out items.")}
+    end
+  end
+
+  def handle_event("start_check_in", %{"id" => id}, socket) do
+    {:noreply, assign(socket, :checkin_id, id)}
+  end
+
+  def handle_event("cancel_check_in", _params, socket) do
+    {:noreply, assign(socket, :checkin_id, nil)}
+  end
+
+  def handle_event("check_in", %{"checkin" => params}, socket) do
+    if Policy.can?(socket.assigns.current_user, :update, :checkout) do
+      checkout = Inventory.get_checkout!(socket.assigns.checkin_id)
+
+      attrs = %{
+        "condition_notes_in" => params["condition_notes_in"],
+        "status" => params["status"]
+      }
+
+      case Inventory.check_in_item(checkout, attrs, socket.assigns.current_user) do
+        {:ok, _checkout} ->
+          item = Inventory.get_item!(socket.assigns.item.id)
+
+          {:noreply,
+           socket
+           |> put_flash(:info, "Checked in.")
+           |> assign(:item, item)
+           |> assign(:checkouts, Inventory.list_checkouts_for_item(item))
+           |> assign(:checkin_id, nil)}
+
+        {:error, _changeset} ->
+          {:noreply, put_flash(socket, :error, "Could not check in that item.")}
+      end
+    else
+      {:noreply, put_flash(socket, :error, "You're not authorized to check in items.")}
+    end
+  end
+
+  defp save_item(socket, :edit, params) do
+    case Inventory.update_item(socket.assigns.item, params, socket.assigns.current_user) do
+      {:ok, _item} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Item updated.")
+         |> push_navigate(to: ~p"/inventory")}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, :form, to_form(changeset))}
+    end
+  end
+
+  defp save_item(socket, :new, params) do
+    case Inventory.create_item(params, socket.assigns.current_user) do
+      {:ok, _item} ->
+        {:noreply,
+         socket
+         |> put_flash(:info, "Item created.")
+         |> push_navigate(to: ~p"/inventory")}
+
+      {:error, changeset} ->
+        {:noreply, assign(socket, :form, to_form(changeset))}
+    end
+  end
+
+  defp refresh_items(socket) do
+    filters =
+      Map.new(socket.assigns.filters, fn {k, v} -> {String.to_existing_atom(k), v} end)
+
+    total_count = Inventory.count_items(filters)
+    total_pages = max(1, ceil(total_count / @per_page))
+    page = min(socket.assigns.page, total_pages)
+
+    items =
+      Inventory.list_items(Map.merge(filters, %{page: page, per_page: @per_page}))
+
+    socket
+    |> assign(:page, page)
+    |> assign(:total_count, total_count)
+    |> assign(:total_pages, total_pages)
+    |> assign(:items, items)
+    |> assign(:has_snipeit_items, Inventory.any_snipeit_items?())
+  end
+
+  defp sync_summary(%Coffer.SnipeIt.Result{} = r) do
+    base =
+      "Synced from Snipe-IT: #{r.created} created, #{r.updated} updated, #{r.unchanged} unchanged."
+
+    if r.errors == [], do: base, else: base <> " #{length(r.errors)} failed — see server logs."
+  end
+
+  defp error_summary(changeset) do
+    changeset
+    |> Ecto.Changeset.traverse_errors(fn {msg, _opts} -> msg end)
+    |> Enum.map_join(", ", fn {field, errs} -> "#{field} #{Enum.join(errs, ", ")}" end)
+  end
+
+  defp low_stock?(%Item{tracking_type: :consumable, reorder_threshold: t, quantity_on_hand: q})
+       when not is_nil(t),
+       do: q <= t
+
+  defp low_stock?(_item), do: false
+
+  @impl true
+  def render(assigns) do
+    ~H"""
+    <div class="mx-auto max-w-4xl py-12">
+      <div :if={@has_snipeit_items} role="alert" class="alert alert-error mb-4">
+        <.icon name="hero-exclamation-triangle" class="size-5 shrink-0" />
+        <p>
+          Items synced from Snipe-IT (marked with the
+          <span class="badge badge-ghost badge-sm align-middle">Snipe-IT</span>
+          badge) are overwritten by the source system on every sync — any changes you make to
+          them here in Coffer will be lost the next time someone clicks "Sync from Snipe-IT."
+        </p>
+      </div>
+
+      <.header>
+        Inventory
+        <:actions>
+          <.link href={~p"/inventory/export.csv"} class="btn btn-outline">Export CSV</.link>
+          <.link href={~p"/inventory/checkouts/export.csv"} class="btn btn-outline">
+            Export checkouts CSV
+          </.link>
+          <button
+            :if={Policy.can?(@current_user, :create, :inventory_item)}
+            type="button"
+            phx-click="sync_snipeit"
+            phx-disable-with="Syncing..."
+            class="btn btn-outline"
+          >
+            Sync from Snipe-IT
+          </button>
+          <.link
+            :if={Policy.can?(@current_user, :create, :inventory_item)}
+            href={~p"/inventory/new"}
+            class="btn btn-primary"
+          >
+            New item
+          </.link>
+        </:actions>
+      </.header>
+
+      <.modal_form
+        :if={@live_action in [:new, :edit]}
+        title={@page_title}
+        cancel_href={~p"/inventory"}
+        class="max-w-2xl"
+      >
+        <p :if={@live_action == :edit and @item.assigned_to} class="mt-1 text-sm text-base-content/60">
+          Assigned to <span class="font-medium text-base-content">{@item.assigned_to}</span>
+          (from Snipe-IT)
+        </p>
+
+        <.form for={@form} id="item-form" phx-change="validate" phx-submit="save" class="mt-4">
+          <.input field={@form[:name]} label="Name" />
+          <.input field={@form[:description]} type="textarea" label="Description" />
+          <.input
+            field={@form[:tracking_type]}
+            type="select"
+            label="Tracking type"
+            options={Enum.map(Item.tracking_types(), &{Phoenix.Naming.humanize(&1), &1})}
+          />
+          <.input field={@form[:category]} label="Category" />
+          <.input
+            :if={@live_action == :new}
+            field={@form[:quantity_on_hand]}
+            type="number"
+            step="1"
+            label="Starting quantity on hand"
+          />
+          <.input
+            field={@form[:reorder_threshold]}
+            type="number"
+            step="1"
+            label="Reorder threshold (consumables only)"
+          />
+          <.input field={@form[:unit_cost]} type="number" step="0.01" label="Unit cost (optional)" />
+          <.input field={@form[:location]} label="Location" />
+          <.input field={@form[:active]} type="checkbox" label="Active" />
+          <footer class="mt-4 flex justify-end gap-2">
+            <.link href={~p"/inventory"} class="btn btn-ghost">Cancel</.link>
+            <.button phx-disable-with="Saving...">Save</.button>
+          </footer>
+        </.form>
+
+        <div
+          :if={@live_action == :edit and @item.tracking_type == :consumable}
+          class="mt-8 border-t border-base-300 pt-6"
+        >
+          <h3 class="font-semibold">Move stock</h3>
+
+          <.form for={@stock_form} id="stock-form" phx-submit="stock_move" class="mt-4">
+            <.input
+              type="select"
+              name="stock[type]"
+              label="Type"
+              options={[
+                {"Issue", "issue"},
+                {"Receive", "receive"},
+                {"Adjustment (add)", "adjustment"}
+              ]}
+            />
+            <.input type="number" name="stock[quantity]" label="Quantity" />
+            <.input type="date" name="stock[date]" label="Date" />
+            <.input type="text" name="stock[issued_to]" label="Issued to (issue only)" />
+            <.input type="text" name="stock[notes]" label="Notes" />
+            <footer class="mt-4 flex justify-end">
+              <.button phx-disable-with="Saving...">Record</.button>
+            </footer>
+          </.form>
+
+          <h4 class="mt-6 text-sm font-semibold">History</h4>
+          <.table id="inventory-transactions" rows={@transactions}>
+            <:col :let={t} label="Date">{t.date}</:col>
+            <:col :let={t} label="Type">{t.transaction_type}</:col>
+            <:col :let={t} label="Qty">{t.quantity}</:col>
+            <:col :let={t} label="Issued to">{t.issued_to}</:col>
+            <:col :let={t} label="Notes">{t.notes}</:col>
+          </.table>
+        </div>
+
+        <div
+          :if={@live_action == :edit and @item.tracking_type == :checkoutable}
+          class="mt-8 border-t border-base-300 pt-6"
+        >
+          <h3 class="font-semibold">Checkouts</h3>
+
+          <.form for={@checkout_form} id="checkout-form" phx-submit="checkout" class="mt-4">
+            <.input type="text" name="checkout[checked_out_to]" label="Checked out to" />
+            <.input type="date" name="checkout[due_back_at]" label="Due back (optional)" />
+            <.input
+              type="text"
+              name="checkout[condition_notes_out]"
+              label="Condition notes (optional)"
+            />
+            <footer class="mt-4 flex justify-end">
+              <.button phx-disable-with="Saving...">Check out</.button>
+            </footer>
+          </.form>
+
+          <h4 class="mt-6 text-sm font-semibold">History</h4>
+          <.table id="checkouts" rows={@checkouts}>
+            <:col :let={c} label="To">{c.checked_out_to}</:col>
+            <:col :let={c} label="Out">{c.checked_out_at}</:col>
+            <:col :let={c} label="Due">{c.due_back_at}</:col>
+            <:col :let={c} label="Status">{c.status}</:col>
+            <:action :let={c}>
+              <button
+                :if={c.status in [:out, :overdue] and Policy.can?(@current_user, :update, :checkout)}
+                phx-click="start_check_in"
+                phx-value-id={c.id}
+                class="link"
+              >
+                Check in
+              </button>
+            </:action>
+          </.table>
+
+          <div :if={@checkin_id} class="mt-4 rounded-box border border-base-300 p-4">
+            <.form for={@checkin_form} id="checkin-form" phx-submit="check_in">
+              <.input
+                type="text"
+                name="checkin[condition_notes_in]"
+                label="Condition notes (optional)"
+              />
+              <.input
+                type="select"
+                name="checkin[status]"
+                label="Status"
+                options={[{"Returned", "returned"}, {"Lost", "lost"}]}
+              />
+              <footer class="mt-4 flex justify-end gap-2">
+                <.link phx-click="cancel_check_in" class="btn btn-ghost">Cancel</.link>
+                <.button phx-disable-with="Saving...">Confirm check-in</.button>
+              </footer>
+            </.form>
+          </div>
+        </div>
+      </.modal_form>
+
+      <form phx-change="filter" class="mt-4 flex flex-wrap items-end gap-3">
+        <fieldset class="fieldset">
+          <label class="mb-1 text-sm">Search</label>
+          <input
+            type="text"
+            name="search"
+            value={@filters["search"]}
+            placeholder="Name..."
+            phx-debounce="300"
+            class="input input-bordered"
+          />
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <label class="mb-1 text-sm">Type</label>
+          <select name="tracking_type" class="select select-bordered">
+            <option value="" selected={@filters["tracking_type"] == ""}>All</option>
+            <option
+              :for={t <- Item.tracking_types()}
+              value={t}
+              selected={@filters["tracking_type"] == to_string(t)}
+            >
+              {Phoenix.Naming.humanize(t)}
+            </option>
+          </select>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <label class="mb-1 text-sm">Category</label>
+          <select name="category" class="select select-bordered">
+            <option value="" selected={@filters["category"] == ""}>All</option>
+            <option :for={c <- @categories} value={c} selected={@filters["category"] == c}>
+              {c}
+            </option>
+          </select>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <label class="mb-1 text-sm">Location</label>
+          <select name="location" class="select select-bordered">
+            <option value="" selected={@filters["location"] == ""}>All</option>
+            <option :for={l <- @locations} value={l} selected={@filters["location"] == l}>
+              {l}
+            </option>
+          </select>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <label class="mb-1 text-sm">Source</label>
+          <select name="source" class="select select-bordered">
+            <option value="" selected={@filters["source"] == ""}>All</option>
+            <option value="manual" selected={@filters["source"] == "manual"}>Manual</option>
+            <option value="snipeit" selected={@filters["source"] == "snipeit"}>Snipe-IT</option>
+          </select>
+        </fieldset>
+
+        <label class="fieldset flex-row items-center gap-2 pb-2">
+          <input
+            type="checkbox"
+            name="low_stock_only"
+            value="true"
+            checked={@filters["low_stock_only"] == "true"}
+            class="checkbox"
+          />
+          <span class="text-sm">Low stock only</span>
+        </label>
+      </form>
+
+      <p class="mt-2 text-sm text-base-content/60">
+        {page_range_label(@page, @per_page, @total_count)}
+      </p>
+
+      <.table id="inventory-items" rows={@items}>
+        <:col :let={i} label="Name">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="max-w-[16rem] min-w-0 truncate" title={i.name}>{i.name}</span>
+            <span
+              :if={i.source == :snipeit}
+              class="badge badge-ghost badge-sm whitespace-nowrap"
+              title="Synced from Snipe-IT — edits here get overwritten by the next sync"
+            >
+              Snipe-IT
+            </span>
+            <span :if={low_stock?(i)} class="badge badge-error badge-sm whitespace-nowrap">
+              low stock
+            </span>
+          </div>
+        </:col>
+        <:col :let={i} label="Type">{i.tracking_type}</:col>
+        <:col :let={i} label="Category">
+          <span class="block max-w-[10rem] truncate" title={i.category}>{i.category}</span>
+        </:col>
+        <:col :let={i} label="On hand">{i.quantity_on_hand}</:col>
+        <:col :let={i} label="Available">
+          {if i.tracking_type == :checkoutable, do: Inventory.available(i), else: "—"}
+        </:col>
+        <:col :let={i} label="Location">
+          <span class="block max-w-[10rem] truncate" title={i.location}>{i.location}</span>
+        </:col>
+        <:col :let={i} label="Assigned to">
+          <span class="block max-w-[10rem] truncate" title={i.assigned_to}>
+            {i.assigned_to || "—"}
+          </span>
+        </:col>
+        <:action :let={i}>
+          <.link
+            :if={Policy.can?(@current_user, :update, :inventory_item)}
+            href={~p"/inventory/#{i.id}/edit"}
+            class="link"
+          >
+            Edit
+          </.link>
+        </:action>
+        <:action :let={i}>
+          <.link
+            :if={Policy.can?(@current_user, :delete, :inventory_item)}
+            phx-click="delete"
+            phx-value-id={i.id}
+            data-confirm="Delete this item? This does not delete its transaction/checkout history."
+            class="link link-error"
+          >
+            Delete
+          </.link>
+        </:action>
+      </.table>
+
+      <div :if={@total_pages > 1} class="mt-4 flex items-center justify-center gap-4">
+        <button
+          type="button"
+          phx-click="paginate"
+          phx-value-page={@page - 1}
+          disabled={@page <= 1}
+          class="btn btn-outline btn-sm"
+        >
+          &larr; Prev
+        </button>
+        <span class="text-sm text-base-content/60">Page {@page} of {@total_pages}</span>
+        <button
+          type="button"
+          phx-click="paginate"
+          phx-value-page={@page + 1}
+          disabled={@page >= @total_pages}
+          class="btn btn-outline btn-sm"
+        >
+          Next &rarr;
+        </button>
+      </div>
+
+      <.link href={~p"/"} class="link mt-6 inline-block">&larr; Back</.link>
+    </div>
+    """
+  end
+
+  defp page_range_label(_page, _per_page, 0), do: "No items match."
+
+  defp page_range_label(page, per_page, total_count) do
+    first = (page - 1) * per_page + 1
+    last = min(page * per_page, total_count)
+    "Showing #{first}–#{last} of #{total_count} item(s)"
+  end
+end

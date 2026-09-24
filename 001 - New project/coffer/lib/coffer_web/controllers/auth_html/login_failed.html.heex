@@ -1,0 +1,7 @@
+<Layouts.app flash={@flash} current_user={@current_user}>
+  <div class="mx-auto max-w-md py-24 text-center">
+    <h1 class="text-2xl font-semibold">Sign-in failed</h1>
+    <p class="mt-4 text-base-content/70">Something went wrong talking to Authentik. Try again.</p>
+    <.link href={~p"/auth/login"} class="btn btn-primary mt-6">Try again</.link>
+  </div>
+</Layouts.app>

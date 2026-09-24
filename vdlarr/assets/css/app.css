@@ -5,6 +5,7 @@
 @import './satoshi';
 @import './inter';
 @import './sora';
+@import './material-symbols';
 
 /* This file is for your main application CSS */
 [x-cloak] {
@@ -15,9 +16,33 @@
   body {
     @apply relative z-1 bg-whiten font-sans text-base font-normal text-body;
   }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #283341 transparent;
+  }
 }
 
 @layer components {
+  .m3-card {
+    @apply rounded-xl border border-m3-border bg-m3-card/95 shadow-[0_2px_10px_rgba(0,0,0,.25)];
+  }
+
+  .m3-card-hover {
+    @apply transition hover:border-[#334354] hover:bg-[#0e151e];
+  }
+
+  .m3-badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold;
+  }
+
+  .m3-row {
+    @apply border-t border-m3-line text-[13px];
+  }
+
+  .m3-row:hover {
+    background: rgba(255, 255, 255, 0.018);
+  }
 }
 
 @layer utilities {

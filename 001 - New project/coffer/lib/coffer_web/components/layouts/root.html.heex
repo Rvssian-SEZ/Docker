@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content={get_csrf_token()} />
+    <.live_title default="Coffer" suffix=" · Phoenix Framework" phx-no-format>{assigns[:page_title]}</.live_title>
+    <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
+    <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
+    </script>
+    <script>
+      (() => {
+        const systemTheme = () => matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+
+        const setTheme = (theme) => {
+          if (theme === "system") {
+            localStorage.removeItem("phx:theme");
+            document.documentElement.setAttribute("data-theme", systemTheme());
+            document.documentElement.setAttribute("data-theme-source", "system");
+          } else {
+            localStorage.setItem("phx:theme", theme);
+            document.documentElement.setAttribute("data-theme", theme);
+            document.documentElement.setAttribute("data-theme-source", "user");
+          }
+        };
+        if (!document.documentElement.hasAttribute("data-theme")) {
+          setTheme(localStorage.getItem("phx:theme") || "system");
+        }
+        window.addEventListener("storage", (e) => e.key === "phx:theme" && setTheme(e.newValue || "system"));
+        window.addEventListener("phx:set-theme", (e) => setTheme(e.target.dataset.phxTheme));
+
+        matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
+          if (document.documentElement.getAttribute("data-theme-source") === "system") {
+            document.documentElement.setAttribute("data-theme", systemTheme());
+          }
+        });
+      })();
+
+      // Same pattern as the theme script above: apply the saved sidebar
+      // state before first paint (avoids a flash of the wrong width), and
+      // let the sidebar's own toggle button flip it via a dispatched event
+      // rather than a server round-trip — it's pure presentation state.
+      //
+      // If the user has never toggled it, we deliberately do NOT set
+      // data-sidebar at all — the CSS media query below auto-collapses on
+      // tablet/half-screen widths (<1024px) with no JS involved, and stays
+      // reactive to window resizes for free. Once someone clicks the
+      // toggle, that becomes an explicit, persisted choice that wins over
+      // the width-based default from then on, at any width.
+      (() => {
+        const narrow = matchMedia("(max-width: 1023px)");
+
+        const apply = (collapsed) => {
+          document.documentElement.setAttribute("data-sidebar", collapsed ? "collapsed" : "expanded");
+        };
+
+        const stored = localStorage.getItem("phx:sidebar");
+        if (stored) apply(stored === "collapsed");
+
+        const isCollapsed = () => {
+          const attr = document.documentElement.getAttribute("data-sidebar");
+          return attr ? attr === "collapsed" : narrow.matches;
+        };
+
+        window.addEventListener("phx:toggle-sidebar", () => {
+          const collapsed = !isCollapsed();
+          localStorage.setItem("phx:sidebar", collapsed ? "collapsed" : "expanded");
+          apply(collapsed);
+        });
+      })();
+    </script>
+    <style>
+      html[data-sidebar="collapsed"] #app-sidebar { width: 4.5rem; }
+      html[data-sidebar="collapsed"] #app-sidebar .sidebar-label,
+      html[data-sidebar="collapsed"] #app-sidebar .sidebar-heading { display: none; }
+      html[data-sidebar="collapsed"] #app-sidebar .sidebar-collapse-icon { transform: rotate(180deg); }
+
+      /* No explicit user choice yet (see script above) — default to
+         collapsed under ~tablet/half-screen widths. */
+      @media (max-width: 1023px) {
+        html:not([data-sidebar]) #app-sidebar { width: 4.5rem; }
+        html:not([data-sidebar]) #app-sidebar .sidebar-label,
+        html:not([data-sidebar]) #app-sidebar .sidebar-heading { display: none; }
+        html:not([data-sidebar]) #app-sidebar .sidebar-collapse-icon { transform: rotate(180deg); }
+      }
+    </style>
+  </head>
+  <body>
+    {@inner_content}
+  </body>
+</html>

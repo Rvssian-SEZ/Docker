@@ -6,6 +6,7 @@ defmodule VdlarrWeb.Sources.MediaItemTableLiveTest do
   import Vdlarr.SourcesFixtures
   import Vdlarr.ProfilesFixtures
 
+  alias Vdlarr.Downloading.DownloadProgress
   alias Vdlarr.Media
   alias VdlarrWeb.Sources.MediaItemTableLive
 
@@ -228,7 +229,16 @@ defmodule VdlarrWeb.Sources.MediaItemTableLiveTest do
       refute render(view) =~ media_item.title
     end
 
-    test "clears progress for items no longer pending on a job:state change", %{conn: conn, source: source} do
+    test "shows an in-flight download's progress immediately on page load", %{conn: conn, source: source} do
+      media_item = media_item_fixture(source_id: source.id, media_filepath: nil)
+      DownloadProgress.handle_line(media_item.id, "[Merger] Merging formats into \"/tmp/video.mp4\"")
+
+      {:ok, _view, html} = live_isolated(conn, MediaItemTableLive, session: create_session(source, "pending"))
+
+      assert html =~ "Merging video and audio"
+    end
+
+        test "clears progress for items no longer pending on a job:state change", %{conn: conn, source: source} do
       media_item = media_item_fixture(source_id: source.id, media_filepath: nil)
 
       {:ok, view, _html} = live_isolated(conn, MediaItemTableLive, session: create_session(source, "pending"))
@@ -244,14 +254,13 @@ defmodule VdlarrWeb.Sources.MediaItemTableLiveTest do
     end
   end
 
-  # `Endpoint.broadcast/3` is async - `:sys.get_state/1` forces a synchronous
-  # round-trip with the LiveView process, guaranteeing it's processed the
+  # Goes through the real entry point (so the store + broadcast payload match what a live
+  # download produces). `Endpoint.broadcast/3` is async - `:sys.get_state/1` forces a
+  # synchronous round-trip with the LiveView process, guaranteeing it's processed the
   # broadcast (and re-rendered) before we assert on its output.
   defp broadcast_progress(view, media_item_id, downloaded_bytes, total_bytes) do
-    VdlarrWeb.Endpoint.broadcast("downloads:progress", "progress", %{
-      media_item_id: media_item_id,
-      progress: %{"status" => "downloading", "downloaded_bytes" => downloaded_bytes, "total_bytes" => total_bytes}
-    })
+    progress = %{"status" => "downloading", "downloaded_bytes" => downloaded_bytes, "total_bytes" => total_bytes}
+    DownloadProgress.handle_line(media_item_id, "PROGRESS_JSON:" <> Phoenix.json_library().encode!(progress))
 
     :sys.get_state(view.pid)
   end

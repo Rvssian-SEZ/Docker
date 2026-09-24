@@ -1,0 +1,54 @@
+<Layouts.app flash={@flash} current_user={@current_user}>
+  <div class="mx-auto max-w-5xl py-12">
+    <header class="pb-8">
+      <h1 class="text-2xl font-semibold">Coffer</h1>
+      <p class="mt-1 text-sm text-base-content/70">
+        Signed in as {@current_user.name} ({@current_user.email}) — role:
+        <span class="font-mono">{@current_user.role}</span>
+      </p>
+    </header>
+
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <.app_tile navigate={~p"/dashboard"} icon="hero-chart-bar" title="Dashboard">
+        Filterable expenditure overview and charts.
+      </.app_tile>
+      <.app_tile navigate={~p"/ledger"} icon="hero-banknotes" title="Ledger">
+        Income and expense transactions.
+      </.app_tile>
+      <.app_tile navigate={~p"/budgets"} icon="hero-wallet" title="Budgets">
+        Envelopes, categories, and fiscal years.
+      </.app_tile>
+      <.app_tile navigate={~p"/vendors"} icon="hero-building-storefront" title="Vendors">
+        Suppliers and contacts.
+      </.app_tile>
+      <.app_tile navigate={~p"/contracts"} icon="hero-document-text" title="Contracts">
+        Subscriptions, renewals, and attachments.
+      </.app_tile>
+      <.app_tile navigate={~p"/inventory"} icon="hero-archive-box" title="Inventory">
+        Consumables and checkoutable assets.
+      </.app_tile>
+      <.app_tile navigate={~p"/admin/currencies"} icon="hero-currency-dollar" title="Currencies">
+        Exchange rates and base currency.
+      </.app_tile>
+      <.app_tile navigate={~p"/notifications"} icon="hero-bell" title="Notifications">
+        Renewals, low stock, overdue checkouts.
+      </.app_tile>
+      <.app_tile
+        :if={@current_user.role in [:admin, :staff]}
+        navigate={~p"/admin/audit-log"}
+        icon="hero-shield-check"
+        title="Audit log"
+      >
+        Full history of every change.
+      </.app_tile>
+      <.app_tile
+        :if={@current_user.role == :admin}
+        navigate={~p"/admin/role_mappings"}
+        icon="hero-users"
+        title="Role mappings"
+      >
+        Authentik group → app role.
+      </.app_tile>
+    </div>
+  </div>
+</Layouts.app>

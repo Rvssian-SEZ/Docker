@@ -7,6 +7,9 @@ defmodule Vdlarr.Downloading.DownloadProgress do
 
   require Logger
 
+  alias Vdlarr.Downloading.DownloadState
+  alias Vdlarr.Downloading.DownloadProgressStore
+
   @progress_line_prefix "PROGRESS_JSON:"
 
   @doc """
@@ -31,7 +34,9 @@ defmodule Vdlarr.Downloading.DownloadProgress do
   `total_bytes`, `eta`, `speed`, `elapsed`, `status`, etc - `status: "finished"`
   marks the terminal update for a download), or on the `"downloads:status"`
   topic, `"status"` event, with a payload of `%{media_item_id: media_item_id,
-  line: line}` for everything else.
+  line: line}` for everything else. Both payloads also carry `state:` - the item's updated
+  `Vdlarr.Downloading.DownloadState` (phase, stream n/m, etc), which is also kept in
+  `Vdlarr.Downloading.DownloadProgressStore` for pages that open mid-download.
 
   Returns :ok
   """
@@ -44,10 +49,13 @@ defmodule Vdlarr.Downloading.DownloadProgress do
 
   defp broadcast_progress(media_item_id, json) do
     case Phoenix.json_library().decode(json) do
-      {:ok, progress} ->
+      {:ok, progress} when is_map(progress) ->
+        state = DownloadProgressStore.update(media_item_id, &DownloadState.apply_progress(&1, progress))
+
         VdlarrWeb.Endpoint.broadcast("downloads:progress", "progress", %{
           media_item_id: media_item_id,
-          progress: progress
+          progress: progress,
+          state: state
         })
 
       err ->
@@ -61,9 +69,12 @@ defmodule Vdlarr.Downloading.DownloadProgress do
     trimmed_line = String.trim(line)
 
     if trimmed_line != "" do
+      state = DownloadProgressStore.update(media_item_id, &DownloadState.apply_status_line(&1, trimmed_line))
+
       VdlarrWeb.Endpoint.broadcast("downloads:status", "status", %{
         media_item_id: media_item_id,
-        line: trimmed_line
+        line: trimmed_line,
+        state: state
       })
     end
 

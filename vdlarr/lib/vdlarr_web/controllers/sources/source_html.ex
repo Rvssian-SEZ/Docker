@@ -79,20 +79,52 @@ defmodule VdlarrWeb.Sources.SourceHTML do
   # escaping HEEx does automatically) - otherwise a raw `'` surviving in the field's
   # value (eg: after a failed validation, before the form reflects the rejected input
   # back to the user) could break out of that string literal.
-  def cron_picker_initial_state(changeset) do
-    changeset
-    |> Ecto.Changeset.get_field(:index_cron_schedule)
-    |> CronUtils.to_picker_state()
+  @doc """
+  Initial state for the source form's single Schedule control, which writes both
+  `index_frequency_minutes` and `index_cron_schedule`. A cron schedule wins (daily, weekly,
+  every N hours, or custom); otherwise it's a repeating interval, or "once" for -1.
+  """
+  def schedule_picker_initial_state(changeset) do
+    frequency = Ecto.Changeset.get_field(changeset, :index_frequency_minutes)
+    cron_state = CronUtils.to_picker_state(Ecto.Changeset.get_field(changeset, :index_cron_schedule))
+
+    mode =
+      case {cron_state.mode, frequency} do
+        {"none", -1} -> "once"
+        {"none", _} -> "interval"
+        {cron_mode, _} -> cron_mode
+      end
+
+    cron_state
+    |> Map.merge(%{mode: mode, frequency: frequency, every: Map.get(cron_state, :every, 6)})
     |> Phoenix.json_library().encode!()
     |> Phoenix.HTML.javascript_escape()
   end
 
+  @doc """
+  An existing source's interval when it isn't one of `schedule_interval_options/0` (eg: set
+  via the API or an older version), so the Schedule control can show it instead of silently
+  displaying a different value. Returns integer() | nil
+  """
+  def unlisted_interval(changeset) do
+    minutes = Ecto.Changeset.get_field(changeset, :index_frequency_minutes)
+    listed = Enum.map(schedule_interval_options(), &elem(&1, 1))
+
+    if is_integer(minutes) and minutes > 0 and minutes not in listed, do: minutes
+  end
+
+  @doc """
+  The repeating-interval choices for the Schedule control ("once" is its own mode there).
+  """
+  def schedule_interval_options do
+    Enum.reject(friendly_index_frequencies(), fn {_label, minutes} -> minutes == -1 end)
+  end
+
   def cron_schedule_help do
     """
-    Optional. When set, indexing runs at a fixed time instead of drifting with Index Frequency above.
-    Use Daily or Weekly for common schedules, or Custom to enter a cron expression directly
-    (e.g. <code>0 */6 * * *</code> for every 6 hours). Interpreted in the server's configured timezone.
-    DST transitions are handled on a best-effort basis. Leave blank to use Index Frequency instead
+    Five fields: minute, hour, day of month, month, day of week - eg: <code>0 3 * * 1-5</code>
+    for 03:00 on weekdays. Interpreted in the server's configured timezone; DST transitions are
+    handled on a best-effort basis
     """
   end
 

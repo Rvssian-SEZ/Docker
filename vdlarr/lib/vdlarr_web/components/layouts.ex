@@ -4,21 +4,53 @@ defmodule VdlarrWeb.Layouts do
   embed_templates "layouts/*"
   embed_templates "layouts/partials/*"
 
+  use Vdlarr.Media.MediaQuery
+
+  alias Vdlarr.Repo
+  alias Vdlarr.Profiles.MediaProfile
+
   @doc """
   Whether the given sidebar `href` should be shown as the active nav item for the current
-  request path. Plain prefix-matching, checked in a specific order by the caller (see
-  sidebar.html.heex) so a more specific href (eg: "/sources/hidden") can claim a path before
-  a broader one that would otherwise also match as a prefix (eg: "/sources", Dashboard).
-
-  "/" is treated as equivalent to "/sources" for Dashboard specifically, since both routes
-  render the same page (see the "Make Dashboard the default landing page" change).
+  request path. Plain prefix-matching, except "/" (Dashboard) which only matches exactly, and
+  "/sources" (Channels) which must not claim "/sources/hidden".
   """
+  def nav_active?(request_path, "/"), do: request_path == "/"
+
   def nav_active?(request_path, "/sources") do
-    (request_path == "/" or String.starts_with?(request_path, "/sources")) and
-      not String.starts_with?(request_path, "/sources/hidden")
+    String.starts_with?(request_path, "/sources") and not String.starts_with?(request_path, "/sources/hidden")
   end
 
   def nav_active?(request_path, href), do: String.starts_with?(request_path, href)
+
+  @doc """
+  Number of media items waiting to download, for the Wanted nav badge.
+  """
+  def wanted_count do
+    MediaQuery.new()
+    |> MediaQuery.require_assoc(:media_profile)
+    |> where(^MediaQuery.pending())
+    |> Repo.aggregate(:count)
+  end
+
+  def profile_badge_classes do
+    ["bg-[#123e76] text-[#a9d0ff]", "bg-[#422066] text-[#d9b5ff]", "bg-[#064c37] text-[#79e8b9]"]
+  end
+
+  @doc """
+  Every media profile with how many sources use it, for the sidebar's Media Profiles list.
+
+  Returns [{id, name, source_count}]
+  """
+  def media_profile_source_counts do
+    from(mp in MediaProfile,
+      left_join: s in assoc(mp, :sources),
+      where: is_nil(mp.marked_for_deletion_at),
+      group_by: mp.id,
+      order_by: [desc: count(s.id), asc: mp.name],
+      select: {mp.id, mp.name, count(s.id)}
+    )
+    |> Repo.all()
+  end
 
   @doc """
   Renders a sidebar menu item link
@@ -33,11 +65,20 @@ defmodule VdlarrWeb.Layouts do
   attr :target, :any, default: "_self"
   attr :icon_class, :string, default: ""
   attr :active, :boolean, default: false
+  attr :badge, :any, default: nil
 
   def sidebar_item(assigns) do
     ~H"""
     <li>
-      <.sidebar_link icon={@icon} text={@text} href={@href} target={@target} icon_class={@icon_class} active={@active} />
+      <.sidebar_link
+        icon={@icon}
+        text={@text}
+        href={@href}
+        target={@target}
+        icon_class={@icon_class}
+        active={@active}
+        badge={@badge}
+      />
     </li>
     """
   end
@@ -109,6 +150,7 @@ defmodule VdlarrWeb.Layouts do
   attr :class, :string, default: ""
   attr :icon_class, :string, default: ""
   attr :active, :boolean, default: false
+  attr :badge, :any, default: nil
 
   def sidebar_link(assigns) do
     ~H"""
@@ -116,16 +158,26 @@ defmodule VdlarrWeb.Layouts do
       href={@href}
       target={@target}
       class={[
-        "group relative flex items-center gap-2.5 rounded-lg px-3 py-2.5 border-l-2 transition-colors",
+        "group relative flex items-center gap-4 rounded-xl px-4 py-3 text-[14px] transition",
         if(@active,
-          do: "text-white font-medium bg-gradient-to-r from-indigo-500/20 to-transparent border-indigo-400",
-          else: "text-slate-400 font-medium hover:text-white hover:bg-white/5 border-transparent"
+          do: "bg-m3-active text-[#c9e2ff]",
+          else: "text-[#c4cfdf] hover:bg-[#111a25] hover:text-white"
         ),
         @class
       ]}
     >
-      <.icon :if={@icon} name={@icon} class={"#{@icon_class} #{if @active, do: "text-indigo-400", else: ""}"} />
-      {@text}
+      <%= if @icon && String.starts_with?(@icon, "hero-") do %>
+        <.icon name={@icon} class={"#{@icon_class} #{if @active, do: "text-[#7eb7ff]", else: ""}"} />
+      <% else %>
+        <.material_icon :if={@icon} name={@icon} class={"#{@icon_class} #{if @active, do: "text-[#7eb7ff]", else: ""}"} />
+      <% end %>
+      <span class="flex-1">{@text}</span>
+      <span
+        :if={@badge not in [nil, 0]}
+        class="grid h-6 min-w-6 place-items-center rounded-full bg-[#293645] px-2 text-xs text-[#edf1f7]"
+      >
+        {@badge}
+      </span>
     </.link>
     """
   end

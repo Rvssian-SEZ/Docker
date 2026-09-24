@@ -26,10 +26,20 @@ defmodule VdlarrWeb.PageControllerTest do
     end
   end
 
+  describe "GET /" do
+    test "displays the dashboard", %{conn: conn} do
+      conn = get(conn, ~p"/")
+      html = html_response(conn, 200)
+
+      assert html =~ "Dashboard"
+      assert html =~ "Recently Downloaded"
+    end
+  end
+
   describe "GET /stats" do
     test "always displays the stats page - there's no onboarding flow", %{conn: conn} do
       conn = get(conn, ~p"/stats")
-      assert html_response(conn, 200) =~ "Menu"
+      assert html_response(conn, 200) =~ "Media History"
     end
   end
 

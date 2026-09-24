@@ -37,12 +37,7 @@ defmodule VdlarrWeb.SourceControllerTest do
     # Most of the tests are in `index_grid_live_test.exs`
     test "returns 200", %{conn: conn} do
       conn = get(conn, ~p"/sources")
-      assert html_response(conn, 200) =~ "Dashboard"
-    end
-
-    test "is also served at the app root, since Dashboard is the default landing page", %{conn: conn} do
-      conn = get(conn, ~p"/")
-      assert html_response(conn, 200) =~ "Dashboard"
+      assert html_response(conn, 200) =~ "Channels"
     end
   end
 
@@ -179,6 +174,15 @@ defmodule VdlarrWeb.SourceControllerTest do
     test "renders form", %{conn: conn} do
       conn = get(conn, ~p"/sources/new")
       assert html_response(conn, 200) =~ "New Source"
+    end
+
+    test "renders the single Schedule control, writing both schedule fields", %{conn: conn} do
+      html = conn |> get(~p"/sources/new") |> html_response(200)
+
+      assert html =~ "Every N hours"
+      assert html =~ ~s(name="source[index_frequency_minutes]")
+      assert html =~ ~s(name="source[index_cron_schedule]")
+      refute html =~ "Cron Schedule (optional)"
     end
 
     test "preloads some attributes when using a template", %{conn: conn} do

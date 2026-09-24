@@ -31,13 +31,51 @@ module.exports = {
         // VDLarr's new design direction (see "Dashboard Redesign Pilot") - additive
         // alongside the tokens below, which the rest of the app still uses until their
         // own passes land.
+        // vdlarr2: AMOLED Material 3 palette. Every page styles its surfaces through this
+        // scale, so remapping it here re-skins the whole app without touching templates.
         midnight: {
-          950: '#0a0b11',
-          900: '#0f1117',
-          850: '#131622',
-          800: '#171a28',
-          700: '#1e2233',
-          600: '#2a2f45'
+          950: '#000000',
+          900: '#05090e',
+          850: '#0b1118',
+          800: '#101720',
+          700: '#171e28',
+          600: '#263343'
+        },
+        // indigo/violet are the old accent pair (buttons, active tabs, gradients) - pointed
+        // at M3 blues so existing accents match the new theme.
+        indigo: {
+          50: '#eaf3ff',
+          100: '#d4e7ff',
+          200: '#b3d5ff',
+          300: '#9fc9ff',
+          400: '#7eb7ff',
+          500: '#4d98ff',
+          600: '#287bd8',
+          700: '#1f63b3',
+          800: '#123e76',
+          900: '#073a82',
+          950: '#062a5c'
+        },
+        violet: {
+          300: '#a9d0ff',
+          400: '#8dc2ff',
+          500: '#5da3ff',
+          600: '#3f8cff'
+        },
+        m3: {
+          primary: '#9fc9ff',
+          blue: '#5da3ff',
+          green: '#3ddc97',
+          orange: '#ff9f43',
+          red: '#ff5b61',
+          purple: '#b478ff',
+          outline: '#3d4857',
+          card: '#0b1118',
+          line: '#1d2733',
+          border: '#202b38',
+          muted: '#7d8da2',
+          subtle: '#93a3b8',
+          active: '#073a82'
         },
         white: '#FFFFFF',
         black: '#1C2434',
@@ -46,7 +84,7 @@ module.exports = {
         bodydark: '#AEB7C0',
         bodydark1: '#DEE4EE',
         bodydark2: '#8A99AF',
-        primary: '#3C50E0',
+        primary: '#287bd8',
         secondary: '#80CAEE',
         stroke: '#E2E8F0',
         gray: '#EFF4FB',
@@ -255,6 +293,10 @@ module.exports = {
         linspin: {
           '100%': { transform: 'rotate(360deg)' }
         },
+        indeterminate: {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(300%)' }
+        },
         easespin: {
           '12.5%': { transform: 'rotate(135deg)' },
           '25%': { transform: 'rotate(270deg)' },
@@ -290,6 +332,7 @@ module.exports = {
       },
       animation: {
         linspin: 'linspin 1568.2353ms linear infinite',
+        indeterminate: 'indeterminate 1.4s ease-in-out infinite',
         easespin: 'easespin 5332ms cubic-bezier(0.4, 0, 0.2, 1) infinite both',
         'left-spin': 'left-spin 1333ms cubic-bezier(0.4, 0, 0.2, 1) infinite both',
         'right-spin': 'right-spin 1333ms cubic-bezier(0.4, 0, 0.2, 1) infinite both',
