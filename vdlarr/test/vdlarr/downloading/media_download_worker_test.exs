@@ -57,6 +57,30 @@ defmodule Vdlarr.Downloading.MediaDownloadWorkerTest do
       assert job.priority == 5
     end
 
+    test "shorter videos get a higher priority than longer ones" do
+      for {seconds, priority} <- [{20 * 60, 3}, {90 * 60, 4}, {3 * 3600, 5}, {10 * 3600, 6}, {nil, 5}] do
+        assert MediaDownloadWorker.default_priority(%{duration_seconds: seconds}, %{}) == priority
+      end
+    end
+
+    test "a forced download goes first and background re-downloads go last" do
+      item = %{duration_seconds: 10 * 3600}
+
+      assert MediaDownloadWorker.default_priority(item, %{force: true}) == 0
+      assert MediaDownloadWorker.default_priority(item, %{"force" => true}) == 0
+      assert MediaDownloadWorker.default_priority(item, %{quality_upgrade?: true}) == 7
+      assert MediaDownloadWorker.default_priority(item, %{redownload_existing: true}) == 7
+    end
+
+    test "enqueues with the duration-based priority", %{media_item: media_item} do
+      {:ok, media_item} = Media.update_media_item(media_item, %{duration_seconds: 600})
+      assert {:ok, _} = MediaDownloadWorker.kickoff_with_task(media_item)
+
+      [job] = all_enqueued(worker: MediaDownloadWorker, args: %{"id" => media_item.id})
+
+      assert job.priority == 3
+    end
+
     test "priority can be set", %{media_item: media_item} do
       assert {:ok, _} = MediaDownloadWorker.kickoff_with_task(media_item, %{}, priority: 0)
 
@@ -334,6 +358,45 @@ defmodule Vdlarr.Downloading.MediaDownloadWorkerTest do
       Media.update_media_item(media_item, %{media_filepath: "foo.mp4"})
 
       perform_job(MediaDownloadWorker, %{id: media_item.id, force: true})
+    end
+  end
+
+  describe "perform/1 with redownload_existing" do
+    test "runs for already-downloaded media without overwriting the video", %{media_item: media_item} do
+      expect(YtDlpRunnerMock, :run, 3, fn
+        _url, :get_downloadable_status, _opts, _ot, _addl ->
+          {:ok, "{}"}
+
+        _url, :download, opts, _ot, _addl ->
+          assert :no_force_overwrites in opts
+          refute :force_overwrites in opts
+
+          {:ok, render_metadata(:media_metadata)}
+
+        _url, :download_thumbnail, _opts, _ot, _addl ->
+          {:ok, ""}
+      end)
+
+      Media.update_media_item(media_item, %{media_filepath: "foo.mp4"})
+
+      perform_job(MediaDownloadWorker, %{id: media_item.id, redownload_existing: true})
+    end
+
+    test "doesn't run if the source is set not to download", %{media_item: media_item} do
+      expect(YtDlpRunnerMock, :run, 0, fn _url, :download, _opts, _ot, _addl -> :ok end)
+
+      Media.update_media_item(media_item, %{media_filepath: "foo.mp4"})
+      Sources.update_source(media_item.source, %{download_media: false})
+
+      perform_job(MediaDownloadWorker, %{id: media_item.id, redownload_existing: true})
+    end
+
+    test "doesn't mark the item as a quality upgrade", %{media_item: media_item} do
+      Media.update_media_item(media_item, %{media_filepath: "foo.mp4"})
+
+      perform_job(MediaDownloadWorker, %{id: media_item.id, redownload_existing: true})
+
+      assert Repo.reload(media_item).media_redownloaded_at == nil
     end
   end
 

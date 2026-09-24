@@ -552,7 +552,7 @@ defmodule VdlarrWeb.SourceControllerTest do
 
       assert [] = all_enqueued(worker: MediaDownloadWorker)
       post(conn, ~p"/sources/#{source.id}/force_redownload")
-      assert [_] = all_enqueued(worker: MediaDownloadWorker)
+      assert [%{args: %{"redownload_existing" => true}}] = all_enqueued(worker: MediaDownloadWorker)
     end
 
     test "redirects to the source page", %{conn: conn} do

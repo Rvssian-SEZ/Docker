@@ -130,6 +130,6 @@ defmodule Vdlarr.Downloading.DownloadingHelpers do
       )
     )
     |> Repo.all()
-    |> Enum.map(&MediaDownloadWorker.kickoff_with_task/1)
+    |> Enum.map(&MediaDownloadWorker.kickoff_with_task(&1, %{redownload_existing: true}))
   end
 end

@@ -28,11 +28,35 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
   Returns {:ok, %Task{}} | {:error, :duplicate_job} | {:error, %Ecto.Changeset{}}
   """
   def kickoff_with_task(media_item, job_args \\ %{}, job_opts \\ []) do
+    job_opts = Keyword.put_new_lazy(job_opts, :priority, fn -> default_priority(media_item, job_args) end)
+
     %{id: media_item.id}
     |> Map.merge(job_args)
     |> MediaDownloadWorker.new(job_opts)
     |> Tasks.create_job_with_task(media_item)
   end
+
+  @doc """
+  Oban priority (0 = runs first) for a download when the caller doesn't set one. With one
+  download at a time, plain first-in-first-out meant a single 26-hour compilation blocked every
+  new upload behind it for a day - so shorter videos go first, something the user explicitly
+  asked for (Force Download / retry) goes before all of them, and background re-downloads go
+  last. Long waits are evened out by `DownloadPriorityAgingWorker`, so nothing starves.
+  """
+  def default_priority(media_item, job_args) do
+    cond do
+      truthy?(job_args, :force) -> 0
+      truthy?(job_args, :quality_upgrade?) or truthy?(job_args, :redownload_existing) -> 7
+      true -> duration_priority(media_item.duration_seconds)
+    end
+  end
+
+  defp duration_priority(seconds) when is_integer(seconds) and seconds <= 30 * 60, do: 3
+  defp duration_priority(seconds) when is_integer(seconds) and seconds <= 2 * 3600, do: 4
+  defp duration_priority(seconds) when is_integer(seconds) and seconds > 6 * 3600, do: 6
+  defp duration_priority(_seconds), do: 5
+
+  defp truthy?(args, key), do: Map.get(args, key) in [true, "true"] or Map.get(args, to_string(key)) in [true, "true"]
 
   @doc """
   For a given media item, download the media alongside any options.
@@ -45,6 +69,9 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
       item that never finished resumes its partial file instead
     - `quality_upgrade?`: re-downloads media, including the video. Does not force download
       if the source is set to not download media
+    - `redownload_existing`: runs the download again for media that's already downloaded
+      (eg: to pick up newly enabled thumbnails/subtitles/metadata) WITHOUT overwriting the
+      existing video file. Respects the source's download setting like a quality upgrade does
 
   Returns :ok | {:error, any, ...any}
   """
@@ -52,10 +79,12 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
   def perform(%Oban.Job{args: %{"id" => media_item_id} = args}) do
     should_force = Map.get(args, "force", false)
     is_quality_upgrade = Map.get(args, "quality_upgrade?", false)
+    # Already-downloaded media is never "pending", so without this the job would be a no-op
+    ignores_pending = is_quality_upgrade or Map.get(args, "redownload_existing", false)
 
     media_item = fetch_and_run_prevent_download_user_script(media_item_id)
 
-    if should_download_media?(media_item, should_force, is_quality_upgrade) do
+    if should_download_media?(media_item, should_force, ignores_pending) do
       download_media_and_schedule_jobs(media_item, is_quality_upgrade, should_force)
     else
       :ok
@@ -70,12 +99,12 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
 
   # If this is a quality upgrade, only check if the source is set to download media
   # or that the media item's download hasn't been prevented
-  defp should_download_media?(media_item, should_force, true = _is_quality_upgrade) do
+  defp should_download_media?(media_item, should_force, true = _ignores_pending) do
     (media_item.source.download_media && !media_item.prevent_download) || should_force
   end
 
   # If it's not a quality upgrade, additionally check if the media item is pending download
-  defp should_download_media?(media_item, should_force, _is_quality_upgrade) do
+  defp should_download_media?(media_item, should_force, _ignores_pending) do
     source = media_item.source
     is_pending = Media.pending_download?(media_item)
 
