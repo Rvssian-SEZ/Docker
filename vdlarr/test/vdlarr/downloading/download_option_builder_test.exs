@@ -42,6 +42,18 @@ defmodule Vdlarr.Downloading.DownloadOptionBuilderTest do
       assert {:output, "/tmp/test/media/99.%(ext)s"} in res
     end
 
+    @tag :tmp_dir
+    test "is relative to the media profile's root folder", %{media_item: media_item, tmp_dir: tmp_dir} do
+      {:ok, root} = Vdlarr.RootFolders.create_root_folder(%{name: "Archive", path: tmp_dir})
+      Vdlarr.Profiles.update_media_profile(media_item.source.media_profile, %{root_folder_id: root.id})
+      media_item = Repo.preload(Repo.reload(media_item), [source: :media_profile], force: true)
+
+      assert {:ok, res} = DownloadOptionBuilder.build(media_item)
+      {:output, output} = List.keyfind(res, :output, 0)
+
+      assert String.starts_with?(output, tmp_dir <> "/")
+    end
+
     test "uses source's output override if present", %{media_item: media_item} do
       source = media_item.source
       {:ok, _} = Sources.update_source(source, %{output_path_template_override: "override.%(ext)s"})

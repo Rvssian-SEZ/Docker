@@ -14,6 +14,100 @@ defmodule VdlarrWeb.MediaProfiles.MediaProfileHTML do
 
   def media_profile_form(assigns)
 
+  @doc """
+  Root folder choices for the media profile form - the default root (MEDIA_PATH) first.
+  """
+  def root_folder_options do
+    default = {"Default (#{Vdlarr.RootFolders.default_path()})", ""}
+    [default | Enum.map(Vdlarr.RootFolders.list_root_folders(), &{"#{&1.name} (#{&1.path})", &1.id})]
+  end
+
+  @doc """
+  The folder part of an output path template, eg: "/{{ source_custom_name }}/{{ title }}.{{ ext }}"
+  -> "{{ source_custom_name }}/". Files land under the media root plus this.
+  """
+  def download_folder_label(template, root_name \\ nil)
+
+  def download_folder_label(template, root_name) when is_binary(template) do
+    root = root_name || "Default"
+
+    case template |> String.trim_leading("/") |> Path.dirname() do
+      "." -> root
+      dir -> "#{root} › #{dir}/"
+    end
+  end
+
+  def download_folder_label(_, root_name), do: root_name || "Default"
+
+  @doc """
+  The absolute folder a profile's files land under (its root plus the template's folders).
+  """
+  def download_folder_path(media_profile) do
+    base = Vdlarr.RootFolders.base_path_for(media_profile)
+
+    case media_profile.output_path_template |> String.trim_leading("/") |> Path.dirname() do
+      "." -> base
+      dir -> Path.join(base, dir) <> "/"
+    end
+  end
+
+  def subtitles_label(%{download_subs: false, download_auto_subs: false}), do: "Off"
+
+  def subtitles_label(profile) do
+    kinds = if profile.download_auto_subs, do: "including auto-generated", else: "uploaded only"
+    where = if profile.embed_subs, do: "embedded", else: "saved alongside"
+
+    "#{String.capitalize(where)}, #{kinds} · #{profile.sub_langs}"
+  end
+
+  def short_subtitles_label(%{download_subs: false, download_auto_subs: false}), do: "Off"
+  def short_subtitles_label(%{embed_subs: true}), do: "Embedded"
+  def short_subtitles_label(_), do: "Saved alongside"
+
+  def thumbnail_label(%{download_thumbnail: true, embed_thumbnail: true}), do: "Saved alongside and embedded"
+  def thumbnail_label(%{download_thumbnail: true}), do: "Saved alongside"
+  def thumbnail_label(%{embed_thumbnail: true}), do: "Embedded"
+  def thumbnail_label(_), do: "Off"
+
+  def metadata_label(profile) do
+    [
+      profile.embed_metadata && "Embedded",
+      profile.download_metadata && "JSON saved alongside",
+      profile.download_nfo && "NFO file"
+    ]
+    |> Enum.reject(&(&1 in [nil, false]))
+    |> case do
+      [] -> "Off"
+      parts -> Enum.join(parts, " · ")
+    end
+  end
+
+  def sponsorblock_label(%{sponsorblock_behaviour: :disabled}), do: "Off"
+
+  def sponsorblock_label(%{sponsorblock_behaviour: behaviour, sponsorblock_categories: categories}) do
+    action = if behaviour == :remove, do: "Remove", else: "Mark as chapters"
+
+    case categories do
+      [] -> action
+      categories -> "#{action}: #{Enum.join(categories, ", ")}"
+    end
+  end
+
+  def short_sponsorblock_label(%{sponsorblock_behaviour: :remove}), do: "Remove"
+  def short_sponsorblock_label(%{sponsorblock_behaviour: :mark}), do: "Mark"
+  def short_sponsorblock_label(_), do: "Off"
+
+  def content_label(:only, kind), do: "Only #{kind}"
+  def content_label(:exclude, kind), do: "Skip #{kind}"
+  def content_label(_, kind), do: "Include #{kind}"
+
+  def redownload_label(1), do: "Re-download 1 day after upload for better quality"
+
+  def redownload_label(days) when is_integer(days) and days > 0,
+    do: "Re-download #{days} days after upload for better quality"
+
+  def redownload_label(_), do: "Off"
+
   def friendly_format_type_options do
     [
       {"Include (default)", :include},

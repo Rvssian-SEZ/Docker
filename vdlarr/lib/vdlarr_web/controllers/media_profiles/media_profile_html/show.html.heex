@@ -23,12 +23,45 @@
         <.actions_dropdown media_profile={@media_profile} />
       </:tab_append>
 
-      <:tab title="Media Profile" id="media-profile">
-        <div class="flex flex-col gap-10 text-white">
-          <section>
-            <h3 class="font-bold text-xl mt-6 mb-2 font-display">Raw Attributes</h3>
-            <.list_items_from_map map={Map.from_struct(@media_profile)} />
-          </section>
+      <:tab title="Overview" id="media-profile">
+        <div class="mt-6 flex flex-col gap-8 text-white" data-testid="profile-overview">
+          <div class="rounded-lg border border-m3-border bg-midnight-800 p-4">
+            <div class="text-[11px] font-semibold uppercase tracking-wide text-[#7d8da2]">Output path</div>
+            <code class="mt-1 block break-all font-mono text-[13px] text-[#c9e2ff]">{@media_profile.output_path_template}</code>
+            <div class="mt-2 text-xs text-[#7d8da2]">
+              Saves into <span class="font-mono text-[#b9c7dc]">{download_folder_path(@media_profile)}</span>
+              ({if @media_profile.root_folder, do: "#{@media_profile.root_folder.name} root", else: "default root"}) ·
+              used by <.localized_number number={length(@sources)} />
+              {if length(@sources) == 1, do: "source", else: "sources"}
+            </div>
+          </div>
+
+          <dl class="grid gap-x-8 gap-y-5 sm:grid-cols-2 xl:grid-cols-3">
+            <.detail_item label="Resolution">{@media_profile.preferred_resolution}</.detail_item>
+            <.detail_item label="Container">{@media_profile.media_container || "Automatic"}</.detail_item>
+            <.detail_item label="Audio track">{@media_profile.audio_track || "Default"}</.detail_item>
+            <.detail_item label="Subtitles">{subtitles_label(@media_profile)}</.detail_item>
+            <.detail_item label="Thumbnail">{thumbnail_label(@media_profile)}</.detail_item>
+            <.detail_item label="Channel art">
+              {if @media_profile.download_source_images, do: "Poster, fanart and banner saved", else: "Off"}
+            </.detail_item>
+            <.detail_item label="Metadata">{metadata_label(@media_profile)}</.detail_item>
+            <.detail_item label="SponsorBlock">{sponsorblock_label(@media_profile)}</.detail_item>
+            <.detail_item label="Shorts">{content_label(@media_profile.shorts_behaviour, "shorts")}</.detail_item>
+            <.detail_item label="Livestreams">
+              {content_label(@media_profile.livestream_behaviour, "livestreams")}
+            </.detail_item>
+            <.detail_item label="Quality upgrades">{redownload_label(@media_profile.redownload_delay_days)}</.detail_item>
+          </dl>
+
+          <details class="rounded-lg border border-m3-border bg-midnight-900/60">
+            <summary class="cursor-pointer select-none px-4 py-3 text-sm font-medium text-[#b9c7dc] hover:text-white">
+              Advanced: all fields
+            </summary>
+            <div class="border-t border-m3-border px-4 pb-4">
+              <.list_items_from_map map={Map.from_struct(@media_profile)} />
+            </div>
+          </details>
         </div>
       </:tab>
       <:tab title="Sources" id="sources">

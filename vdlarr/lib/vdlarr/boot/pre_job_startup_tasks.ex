@@ -46,6 +46,7 @@ defmodule Vdlarr.Boot.PreJobStartupTasks do
     create_blank_user_script_file()
     apply_default_settings()
     apply_timezone_setting()
+    Vdlarr.RootFolders.convert_relative_profile_templates()
     run_app_init_script()
 
     {:ok, state}

@@ -88,6 +88,32 @@ defmodule VdlarrWeb.SourceControllerTest do
       assert conn.status == 200
     end
 
+    test "?size=thumb serves a small square thumbnail when ffmpeg can make one", %{conn: conn} do
+      if System.find_executable("ffmpeg") do
+        poster = Path.join(System.tmp_dir!(), "poster-#{System.unique_integer([:positive])}.jpg")
+        {_, 0} = System.cmd("ffmpeg", ~w(-y -loglevel error -f lavfi -i color=c=red:s=1280x720 -frames:v 1) ++ [poster])
+        source = source_fixture(poster_filepath: poster)
+
+        conn = get(conn, ~p"/sources/#{source.id}/poster?size=thumb")
+
+        assert conn.status == 200
+        assert byte_size(conn.resp_body) < File.stat!(poster).size
+        assert {:ok, thumb} = Vdlarr.Sources.PosterThumbnails.thumbnail_for(source.id, poster)
+        assert String.starts_with?(thumb, Vdlarr.Sources.PosterThumbnails.thumbnail_directory())
+      end
+    end
+
+    test "?size=thumb falls back to the original when a thumbnail can't be made", %{conn: conn} do
+      not_an_image = Path.join(System.tmp_dir!(), "poster-#{System.unique_integer([:positive])}.jpg")
+      File.write!(not_an_image, "definitely not a jpeg")
+      source = source_fixture(poster_filepath: not_an_image)
+
+      conn = get(conn, ~p"/sources/#{source.id}/poster?size=thumb")
+
+      assert conn.status == 200
+      assert conn.resp_body == "definitely not a jpeg"
+    end
+
     test "returns 404 when the DB points at a file that no longer exists on disk", %{conn: conn} do
       source = source_fixture(poster_filepath: "/tmp/does-not-exist-#{:rand.uniform(1_000_000)}.jpg")
 
@@ -266,6 +292,39 @@ defmodule VdlarrWeb.SourceControllerTest do
       source = Repo.get!(Source, id)
 
       assert source.selection_mode == :all
+    end
+  end
+
+  describe "show source" do
+    test "opens on a readable overview instead of raw database fields", %{conn: conn} do
+      source =
+        source_fixture(
+          custom_name: "Overview Source",
+          index_frequency_minutes: 360,
+          retention_period_days: 30,
+          title_filter_regex: "Recap"
+        )
+
+      media_item_fixture(source_id: source.id, media_size_bytes: 1_048_576)
+      media_item_fixture(source_id: source.id, media_filepath: nil, last_error: "boom")
+
+      html = conn |> get(~p"/sources/#{source.id}") |> html_response(200)
+
+      assert html =~ "source-overview"
+      assert html =~ "Every 6 hours, counted from the previous index"
+      assert html =~ "Delete 30 days after downloading"
+      assert html =~ "Title matches Recap"
+      assert html =~ "Advanced: all fields"
+      refute html =~ "Raw Attributes"
+    end
+
+    test "describes a once-only source and a cutoff date", %{conn: conn} do
+      source = source_fixture(index_frequency_minutes: -1, download_cutoff_date: ~D[2024-03-01])
+
+      html = conn |> get(~p"/sources/#{source.id}") |> html_response(200)
+
+      assert html =~ "Once, when the source was added"
+      assert html =~ "Only videos uploaded on or after Mar 01, 2024"
     end
   end
 

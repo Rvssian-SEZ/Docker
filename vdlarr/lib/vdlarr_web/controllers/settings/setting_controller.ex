@@ -2,6 +2,7 @@ defmodule VdlarrWeb.Settings.SettingController do
   use VdlarrWeb, :controller
 
   alias Vdlarr.Settings
+  alias Vdlarr.RootFolders
   alias Vdlarr.YtDlp.UpdateWorker
   alias Vdlarr.Lifecycle.Notifications.JellyfinNotifier
 
@@ -11,7 +12,22 @@ defmodule VdlarrWeb.Settings.SettingController do
     setting = Settings.record()
     changeset = Settings.change_setting(setting)
 
-    render(conn, "show.html", changeset: changeset)
+    render(conn, "show.html", [changeset: changeset] ++ root_folder_assigns())
+  end
+
+  defp root_folder_assigns do
+    default_path = RootFolders.default_path()
+
+    roots =
+      Enum.map(RootFolders.list_root_folders(), fn root ->
+        %{root: root, free: RootFolders.free_bytes(root.path), profiles: RootFolders.profile_count(root)}
+      end)
+
+    [
+      root_folders: roots,
+      default_root: %{path: default_path, free: RootFolders.free_bytes(default_path), jellyfin: Settings.get!(:jellyfin_path_prefix)},
+      root_folder_changeset: RootFolders.change_root_folder(%Vdlarr.RootFolders.RootFolder{})
+    ]
   end
 
   def update(conn, %{"setting" => setting_params}) do
@@ -26,7 +42,7 @@ defmodule VdlarrWeb.Settings.SettingController do
         |> redirect(to: ~p"/settings")
 
       {:error, %Ecto.Changeset{} = changeset} ->
-        render(conn, "show.html", changeset: changeset)
+        render(conn, "show.html", [changeset: changeset] ++ root_folder_assigns())
     end
   end
 
@@ -55,15 +71,31 @@ defmodule VdlarrWeb.Settings.SettingController do
     end
   end
 
-  # Only the tail is rendered on the page - the log file can grow up to 10MB per the
-  # rotating file handler config (see config/runtime.exs), and dumping all of that into
-  # the DOM would make the page sluggish. The full file is always available via download.
-  @max_log_display_bytes 300_000
+  # Only the tail is read - the log file can grow up to 10MB per the rotating file handler
+  # config (see config/runtime.exs). It's generous because at debug level most of it is
+  # filtered out; the page itself shows at most @max_log_entries entries. The full file is
+  # always available via download.
+  @max_log_display_bytes 3_000_000
 
-  def logs(conn, _params) do
+  @log_levels ~w(debug info warning error)
+  @max_log_entries 1_000
+
+  @doc """
+  Shows recent log entries at or above the chosen level (default: info), newest first.
+  Production logs at debug by default (see LOG_LEVEL), which buries warnings and errors under
+  SQL and request noise - so entries are parsed out of the raw file and filtered here.
+  """
+  def logs(conn, params) do
     log_path = Application.get_env(:vdlarr, :log_path)
+    level = if params["level"] in @log_levels, do: params["level"], else: "info"
 
-    render(conn, "logs.html", log_content: read_log_tail(log_path))
+    entries =
+      case read_log_tail(log_path) do
+        nil -> nil
+        content -> content |> parse_log_entries() |> filter_log_level(level) |> Enum.take(-@max_log_entries) |> Enum.reverse()
+      end
+
+    render(conn, "logs.html", log_entries: entries, level: level, logger_level: Logger.level())
   end
 
   def download_logs(conn, _params) do
@@ -76,6 +108,37 @@ defmodule VdlarrWeb.Settings.SettingController do
       |> put_flash(:error, "Log file couldn't be found")
       |> redirect(to: ~p"/logs")
     end
+  end
+
+  @log_entry_start ~r/^\S*\s*\d{2}:\d{2}:\d{2}(?:\.\d+)?\s+\[(debug|info|notice|warning|warn|error|critical|alert|emergency)\]/
+
+  # A new entry starts at a timestamped "[level]" line; anything else (SQL, stack traces,
+  # command output) is a continuation of the entry above it.
+  defp parse_log_entries(content) do
+    content
+    |> String.split("\n")
+    |> Enum.reduce([], fn line, acc ->
+      case Regex.run(@log_entry_start, line) do
+        [_, level] -> [%{level: normalize_level(level), text: line} | acc]
+        nil when acc == [] -> acc
+        nil -> [Map.update!(hd(acc), :text, &(&1 <> "\n" <> line)) | tl(acc)]
+      end
+    end)
+    |> Enum.reverse()
+    |> Enum.map(&Map.update!(&1, :text, fn text -> String.trim_trailing(text) end))
+  end
+
+  defp normalize_level("warn"), do: "warning"
+  defp normalize_level(level) when level in ["critical", "alert", "emergency"], do: "error"
+  defp normalize_level("notice"), do: "info"
+  defp normalize_level(level), do: level
+
+  defp filter_log_level(entries, level) do
+    min_rank = Enum.find_index(@log_levels, &(&1 == level))
+
+    Enum.filter(entries, fn %{level: entry_level} ->
+      Enum.find_index(@log_levels, &(&1 == entry_level)) >= min_rank
+    end)
   end
 
   defp read_log_tail(nil), do: nil

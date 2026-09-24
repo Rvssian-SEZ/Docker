@@ -77,7 +77,7 @@ defmodule VdlarrWeb.CustomComponents.ButtonComponents do
       <div
         x-show="dropdownOpen"
         x-on:click.outside="dropdownOpen = false"
-        class="absolute left-0 top-full z-40 mt-2 w-full rounded-md bg-black py-3 shadow-card"
+        class="absolute left-0 top-full z-40 mt-2 w-full rounded-md border border-white/10 bg-midnight-800 py-3 shadow-card"
       >
         <ul class="flex flex-col">
           <li :for={option <- @option}>

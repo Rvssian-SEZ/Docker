@@ -19,10 +19,11 @@ defmodule VdlarrWeb.Pages.JobTableLiveTest do
     end
 
     test "shows records when present", %{conn: conn} do
-      {_source, _media_item, _task, _job} = create_media_item_job()
+      {_source, media_item, _task, _job} = create_media_item_job()
       {:ok, _view, html} = live_isolated(conn, JobTableLive, session: %{})
 
-      assert html =~ "Subject"
+      assert html =~ "Downloads"
+      assert html =~ media_item.title
     end
 
     test "doesn't show records in a terminal state", %{conn: conn} do
@@ -44,6 +45,38 @@ defmodule VdlarrWeb.Pages.JobTableLiveTest do
       assert html =~ source1.custom_name
       assert html =~ source2.custom_name
       assert html =~ source3.custom_name
+    end
+  end
+
+  describe "sections and timing" do
+    test "splits downloads from indexing and other tasks", %{conn: conn} do
+      {_source, media_item, _task, _job} = create_media_item_job(:executing)
+      {source, _task, _job} = create_source_job(:scheduled, custom_name: "Indexing Me")
+      {:ok, view, _html} = live_isolated(conn, JobTableLive, session: %{})
+
+      assert view |> element("section[aria-labelledby='activity-downloads']") |> render() =~ media_item.title
+      assert view |> element("section[aria-labelledby='activity-other']") |> render() =~ source.custom_name
+    end
+
+    test "shows when a scheduled job will run instead of an attempt count", %{conn: conn} do
+      {_source, _task, job} = create_source_job(:scheduled)
+      at = DateTime.add(DateTime.utc_now(), 3, :day)
+      Repo.update_all(from(j in Oban.Job, where: j.id == ^job.id), set: [scheduled_at: at])
+
+      {:ok, _view, html} = live_isolated(conn, JobTableLive, session: %{})
+      local = Timex.Timezone.convert(at, Application.get_env(:vdlarr, :timezone))
+
+      assert html =~ Calendar.strftime(local, "%b %d · %H:%M")
+      refute html =~ "Attempt 0"
+    end
+
+    test "labels a retry with its upcoming attempt number", %{conn: conn} do
+      {_source, _task, job} = create_source_job(:retryable)
+      Repo.update_all(from(j in Oban.Job, where: j.id == ^job.id), set: [attempt: 2])
+
+      {:ok, _view, html} = live_isolated(conn, JobTableLive, session: %{})
+
+      assert html =~ "Retrying (attempt 3)"
     end
   end
 
@@ -74,11 +107,13 @@ defmodule VdlarrWeb.Pages.JobTableLiveTest do
   end
 
   describe "job rendering" do
-    test "shows worker name", %{conn: conn} do
+    test "shows download tasks under Downloads and other tasks by worker name", %{conn: conn} do
       {_source, _media_item, _task, _job} = create_media_item_job()
+      {_source, _task, _job} = create_source_job(:scheduled)
       {:ok, _view, html} = live_isolated(conn, JobTableLive, session: %{})
 
-      assert html =~ "Downloading Media"
+      assert html =~ "Downloads"
+      assert html =~ "Fetching Source Metadata"
     end
 
     test "shows the media item title", %{conn: conn} do

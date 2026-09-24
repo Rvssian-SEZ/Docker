@@ -65,20 +65,11 @@ defmodule Vdlarr.Lifecycle.Notifications.JellyfinNotifier do
     end
   end
 
-  # If Jellyfin sees this library at a different container path than we do (eg: two
-  # different containers mounting the same host directory at different paths), swap
-  # our media_directory prefix for the configured Jellyfin-side prefix. Otherwise,
-  # assume both containers mount the same path and send it unchanged.
-  defp remap_path(filepath) do
-    case Settings.get!(:jellyfin_path_prefix) do
-      prefix when is_binary(prefix) and prefix != "" ->
-        media_directory = Application.get_env(:vdlarr, :media_directory)
-        String.replace_prefix(filepath, media_directory, prefix)
-
-      _ ->
-        filepath
-    end
-  end
+  # If Jellyfin sees a root folder at a different container path than we do (eg: two
+  # containers mounting the same host directory at different paths), swap that root's prefix
+  # for its Jellyfin-side path - see RootFolders.jellyfin_path_for/1. Otherwise the path is
+  # sent unchanged.
+  defp remap_path(filepath), do: Vdlarr.RootFolders.jellyfin_path_for(filepath)
 
   defp request_headers(api_key) do
     [

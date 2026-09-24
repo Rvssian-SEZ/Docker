@@ -1,25 +1,60 @@
-<div class="mb-6 flex gap-3 flex-row items-center justify-between">
-  <div class="flex gap-3 items-center">
-    <h2 class="font-display font-bold text-[22px] text-white">
-      Logs
-    </h2>
-  </div>
+<div class="mb-6 flex flex-row items-center justify-between gap-3">
+  <h2 class="font-display text-[22px] font-bold text-white">Logs</h2>
 </div>
 
-<div class="rounded-xl border border-white/5 bg-midnight-850 px-5 py-5 sm:px-7.5 mb-4">
-  <pre class="font-mono text-sm text-slate-300 whitespace-pre-wrap">{diagnostic_info_string()}</pre>
+<div class="mb-4 rounded-xl border border-white/5 bg-midnight-850 px-5 py-5 sm:px-7.5">
+  <pre class="whitespace-pre-wrap font-mono text-sm text-slate-300">{diagnostic_info_string()}</pre>
 </div>
 
 <div class="rounded-xl border border-white/5 bg-midnight-850 px-5 py-5 sm:px-7.5">
-  <div class="mb-3 flex items-center justify-between">
-    <span class="text-lg font-display font-medium text-white">Recent Logs</span>
-    <.link href={~p"/download_logs"}>
-      <.icon_button icon_name="hero-arrow-down-tray" class="h-8 w-8" tooltip="Download full log file" />
-    </.link>
+  <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <span class="font-display text-lg font-medium text-white">Recent Logs</span>
+    <div class="flex items-center gap-3">
+      <nav class="inline-flex overflow-hidden rounded-lg border border-white/10" aria-label="Log level">
+        <.link
+          :for={{value, label} <- [{"error", "Errors"}, {"warning", "Warnings+"}, {"info", "Info+"}, {"debug", "Everything"}]}
+          href={~p"/logs?level=#{value}"}
+          aria-current={if @level == value, do: "page"}
+          class={[
+            "px-3 py-1.5 text-[12px] font-medium transition-colors",
+            if(@level == value, do: "bg-indigo-500 text-white", else: "text-slate-400 hover:bg-white/5 hover:text-white")
+          ]}
+        >
+          {label}
+        </.link>
+      </nav>
+      <.link href={~p"/download_logs"}>
+        <.icon_button icon_name="hero-arrow-down-tray" class="h-8 w-8" tooltip="Download full log file" />
+      </.link>
+    </div>
   </div>
-  <pre
-    :if={@log_content}
-    class="font-mono text-xs text-slate-300 whitespace-pre-wrap max-h-[32rem] overflow-y-auto rounded-lg bg-midnight-900 border border-white/5 p-4"
-  >{@log_content}</pre>
-  <p :if={!@log_content} class="text-slate-500">Log file couldn't be found.</p>
+
+  <p :if={@logger_level == :debug and @level != "debug"} class="mb-3 text-xs text-[#7d8da2]">
+    The app is logging at debug level, so most of the file is request/SQL detail hidden by this filter.
+    Set <code class="text-[#b9c7dc]">LOG_LEVEL=info</code> on the container to stop writing it.
+  </p>
+
+  <p :if={is_nil(@log_entries)} class="text-slate-500">Log file couldn't be found.</p>
+  <p :if={@log_entries == []} class="text-sm text-[#92a1b4]">No log entries at this level in the recent log.</p>
+
+  <ol
+    :if={@log_entries not in [nil, []]}
+    class="max-h-[36rem] divide-y divide-white/5 overflow-y-auto rounded-lg border border-white/5 bg-midnight-900 font-mono text-xs"
+    data-testid="log-entries"
+  >
+    <li :for={entry <- @log_entries} class="flex gap-3 px-3 py-2">
+      <span class={[
+        "m3-badge h-fit flex-none uppercase",
+        case entry.level do
+          "error" -> "bg-[#9f1d22]/80 text-[#ffb5b5]"
+          "warning" -> "bg-[#8c4500]/80 text-[#ffd09f]"
+          "info" -> "bg-[#123e76] text-[#9ecaff]"
+          _ -> "bg-[#293645] text-[#b9c7dc]"
+        end
+      ]}>
+        {entry.level}
+      </span>
+      <pre class="min-w-0 flex-1 whitespace-pre-wrap break-words text-slate-300">{entry.text}</pre>
+    </li>
+  </ol>
 </div>

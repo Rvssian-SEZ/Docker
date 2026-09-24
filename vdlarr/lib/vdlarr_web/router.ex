@@ -66,6 +66,7 @@ defmodule VdlarrWeb.Router do
     post "/sources/new_video", Sources.SourceController, :create_video
     get "/sources/folders", Sources.SourceFolderController, :index
     get "/sources/schedule_preview", Sources.SourceScheduleController, :preview
+    resources "/root_folders", Settings.RootFolderController, only: [:create, :delete]
     get "/sources/hidden", Sources.SourceController, :hidden_index
 
     resources "/sources", Sources.SourceController do

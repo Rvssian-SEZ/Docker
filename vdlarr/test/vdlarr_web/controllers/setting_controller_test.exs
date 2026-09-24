@@ -83,16 +83,62 @@ defmodule VdlarrWeb.SettingControllerTest do
       assert html_response(conn, 200) =~ "Logs"
     end
 
-    test "renders the tail of the log file when present", %{conn: conn} do
+    setup do
       log_path = Path.join([System.tmp_dir!(), "vdlarr", "data", "vdlarr.log"])
-      FilesystemUtils.write_p(log_path, "test log data")
+
+      FilesystemUtils.write_p(log_path, """
+      13:47:13.001 [debug] QUERY OK source="sources"
+      SELECT s0."id" FROM "sources" AS s0
+      13:47:14.002 [info] GET /sources/9
+      13:47:15.003 [warning] bgutil plugin is out of date
+      13:47:16.004 [error] yt-dlp download error for media item #1
+      ERROR: [download] Got error: Broken pipe
+      """)
+
       Application.put_env(:vdlarr, :log_path, log_path)
+      on_exit(fn -> Application.put_env(:vdlarr, :log_path, nil) end)
+    end
 
-      conn = get(conn, ~p"/logs")
+    test "defaults to info and above, newest first", %{conn: conn} do
+      html = conn |> get(~p"/logs") |> html_response(200)
 
-      assert html_response(conn, 200) =~ "test log data"
+      refute html =~ "QUERY OK"
+      assert html =~ "GET /sources/9"
+      assert html =~ "bgutil plugin is out of date"
+      assert html =~ "yt-dlp download error"
 
-      Application.put_env(:vdlarr, :log_path, nil)
+      {error_pos, _} = :binary.match(html, "yt-dlp download error")
+      {info_pos, _} = :binary.match(html, "GET /sources/9")
+      assert error_pos < info_pos
+    end
+
+    test "keeps multi-line entries together", %{conn: conn} do
+      html = conn |> get(~p"/logs?level=error") |> html_response(200)
+
+      assert html =~ "ERROR: [download] Got error: Broken pipe"
+      refute html =~ "GET /sources/9"
+      refute html =~ "out of date"
+    end
+
+    test "can show warnings and above", %{conn: conn} do
+      html = conn |> get(~p"/logs?level=warning") |> html_response(200)
+
+      assert html =~ "out of date"
+      refute html =~ "GET /sources/9"
+    end
+
+    test "can show everything, including debug detail", %{conn: conn} do
+      html = conn |> get(~p"/logs?level=debug") |> html_response(200)
+
+      assert html =~ "QUERY OK"
+      assert html =~ ~s(SELECT s0.&quot;id&quot;)
+    end
+
+    test "ignores an unknown level and falls back to info", %{conn: conn} do
+      html = conn |> get(~p"/logs?level=nonsense") |> html_response(200)
+
+      assert html =~ "GET /sources/9"
+      refute html =~ "QUERY OK"
     end
   end
 

@@ -13,6 +13,8 @@ defmodule VdlarrWeb.Sources.SourceController do
   alias Vdlarr.Sources.SourceDeletionWorker
   alias Vdlarr.Sources.SingleVideoHelpers
   alias Vdlarr.Sources.SourceImageHelpers
+  alias Vdlarr.Sources.PosterThumbnails
+  alias VdlarrWeb.Sources.SourceOverview
   alias Vdlarr.Downloading.DownloadingHelpers
   alias Vdlarr.SlowIndexing.SlowIndexingHelpers
   alias Vdlarr.Metadata.SourceMetadataStorageWorker
@@ -45,7 +47,7 @@ defmodule VdlarrWeb.Sources.SourceController do
   browser skip re-downloading the same poster on every page load while still picking
   up a genuinely new image immediately once the file itself changes.
   """
-  def poster(conn, %{"source_id" => id}) do
+  def poster(conn, %{"source_id" => id} = params) do
     source = Sources.get_source!(id)
 
     case SourceImageHelpers.poster_filepath(source) do
@@ -53,9 +55,20 @@ defmodule VdlarrWeb.Sources.SourceController do
         send_resp(conn, 404, "Image not found")
 
       filepath ->
-        serve_cacheable_file(conn, filepath)
+        serve_cacheable_file(conn, poster_variant(source, filepath, params["size"]))
     end
   end
+
+  # `?size=thumb` is the small square copy the grid/table/dashboard display. If a thumbnail
+  # can't be made (eg: ffmpeg missing or the image is unreadable), fall back to the original.
+  defp poster_variant(source, filepath, "thumb") do
+    case PosterThumbnails.thumbnail_for(source.id, filepath) do
+      {:ok, thumb_path} -> thumb_path
+      {:error, _} -> filepath
+    end
+  end
+
+  defp poster_variant(_source, filepath, _size), do: filepath
 
   defp serve_cacheable_file(conn, filepath) do
     %{mtime: mtime, size: size} = File.stat!(filepath, time: :posix)
@@ -212,7 +225,7 @@ defmodule VdlarrWeb.Sources.SourceController do
       |> Tasks.list_tasks_for(nil, [:executing, :available, :scheduled, :retryable])
       |> Repo.preload(:job)
 
-    render(conn, :show, source: source, pending_tasks: pending_tasks)
+    render(conn, :show, source: source, pending_tasks: pending_tasks, overview: SourceOverview.build(source))
   end
 
   def edit(conn, %{"id" => id}) do

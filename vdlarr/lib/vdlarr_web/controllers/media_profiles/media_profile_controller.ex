@@ -13,10 +13,12 @@ defmodule VdlarrWeb.MediaProfiles.MediaProfileController do
     media_profiles_query =
       from mp in MediaProfile,
         as: :media_profile,
+        left_join: r in assoc(mp, :root_folder),
         where: is_nil(mp.marked_for_deletion_at),
         order_by: [asc: mp.name],
         select: map(mp, ^MediaProfile.__schema__(:fields)),
         select_merge: %{
+          root_folder_name: r.name,
           source_count:
             subquery(
               from s in Source,
@@ -60,7 +62,7 @@ defmodule VdlarrWeb.MediaProfiles.MediaProfileController do
   end
 
   def show(conn, %{"id" => id}) do
-    media_profile = Profiles.get_media_profile!(id)
+    media_profile = id |> Profiles.get_media_profile!() |> Repo.preload(:root_folder)
 
     sources =
       SourcesQuery.new()

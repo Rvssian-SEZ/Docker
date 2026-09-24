@@ -61,7 +61,7 @@ defmodule VdlarrWeb.Sources.SourceScheduleController do
 
     %{
       ok: true,
-      summary: "Every #{interval_label(minutes)}, counted from when the previous index finished",
+      summary: "Every #{CronUtils.describe_interval(minutes)}, counted from when the previous index finished",
       # A never-indexed source indexes straight away, then every interval after that
       next_runs:
         if(source && source.last_indexed_at,
@@ -70,17 +70,6 @@ defmodule VdlarrWeb.Sources.SourceScheduleController do
         )
     }
   end
-
-  defp interval_label(minutes) do
-    cond do
-      rem(minutes, 1440) == 0 -> unit_label(div(minutes, 1440), "day")
-      rem(minutes, 60) == 0 -> unit_label(div(minutes, 60), "hour")
-      true -> unit_label(minutes, "minute")
-    end
-  end
-
-  defp unit_label(1, unit), do: unit
-  defp unit_label(n, unit), do: "#{n} #{unit}s"
 
   defp time_label(datetime) do
     datetime

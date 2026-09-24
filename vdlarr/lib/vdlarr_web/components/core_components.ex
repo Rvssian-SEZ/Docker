@@ -348,7 +348,7 @@ defmodule VdlarrWeb.CoreComponents do
         <input type="hidden" id={@id} name={@name} x-bind:value="enabled" {@rest} />
         <%!-- This triggers a `change` event on the hidden input when the toggle is clicked --%>
         <div class="inline-block cursor-pointer" @click={"enabled = !enabled; dispatchFor('#{@id}', 'change')"}>
-          <div x-bind:class="enabled && '!bg-primary'" class="block h-8 w-14 rounded-full bg-black"></div>
+          <div x-bind:class="enabled && '!bg-primary'" class="block h-8 w-14 rounded-full bg-[#273443]"></div>
           <div
             x-bind:class="enabled && '!right-1 !translate-x-full'"
             class={[

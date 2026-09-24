@@ -201,7 +201,7 @@ defmodule Vdlarr.Downloading.DownloadOptionBuilder do
     additional_options_map = output_options_map(media_item_with_preloads)
     {:ok, output_path} = OutputPathBuilder.build(string, additional_options_map)
 
-    Path.join(base_directory(), output_path)
+    Path.join(base_directory(media_item_with_preloads), output_path)
   end
 
   defp output_options_map(media_item_with_preloads) do
@@ -239,7 +239,11 @@ defmodule Vdlarr.Downloading.DownloadOptionBuilder do
     |> String.pad_leading(count, padding)
   end
 
-  defp base_directory do
-    Application.get_env(:vdlarr, :media_directory)
+  # The media profile's root folder - MEDIA_PATH unless the profile picked another root
+  defp base_directory(%{source: source}) do
+    source
+    |> Vdlarr.Repo.preload(:media_profile)
+    |> Map.fetch!(:media_profile)
+    |> Vdlarr.RootFolders.base_path_for()
   end
 end

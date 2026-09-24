@@ -8,7 +8,7 @@ defmodule VdlarrWeb.Pages.PageController do
   alias Vdlarr.Downloading.DownloadingHelpers
 
   def dashboard(conn, _params) do
-    render(conn, :dashboard, page_title: "Dashboard")
+    render(conn, :dashboard)
   end
 
   def home(conn, _params) do
@@ -16,7 +16,9 @@ defmodule VdlarrWeb.Pages.PageController do
   end
 
   def wanted(conn, _params) do
-    render(conn, :wanted)
+    failed_count = MediaQuery.new() |> where(^dynamic(^MediaQuery.failed())) |> Repo.aggregate(:count)
+
+    render(conn, :wanted, failed_count: failed_count)
   end
 
   def activity(conn, _params) do
@@ -37,7 +39,7 @@ defmodule VdlarrWeb.Pages.PageController do
 
     conn
     |> put_flash(:info, "Retrying all failed media items.")
-    |> redirect(to: ~p"/")
+    |> redirect(to: ~p"/wanted")
   end
 
   defp render_home_page(conn) do

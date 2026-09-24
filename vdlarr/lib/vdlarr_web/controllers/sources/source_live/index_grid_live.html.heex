@@ -1,13 +1,20 @@
 <div class="flex flex-col">
-  <div class="flex flex-wrap items-center gap-2.5 mb-4 px-1">
-    <div class="inline-flex rounded-lg border border-white/10 overflow-hidden">
+  <p class="mb-4 px-1 text-sm text-[#92a1b4]" data-testid="sources-summary">
+    {format_count(@summary.count)} {if @show_hidden, do: "hidden ", else: ""}{if @summary.count == 1,
+      do: "channel",
+      else: "channels"} · {format_count(@summary.monitored)} monitored · {format_size(@summary.size)}
+  </p>
+
+  <div class="mb-4 flex flex-wrap items-center gap-2.5 px-1">
+    <div class="inline-flex overflow-hidden rounded-lg border border-white/10" role="group" aria-label="View">
       <button
         type="button"
         phx-click="set_view_mode"
         phx-value-mode="poster"
+        aria-pressed={to_string(@view_mode == :poster)}
         class={[
           "px-3 py-1.5 text-[12px] font-medium transition-colors",
-          if(@view_mode == :poster, do: "bg-indigo-500 text-white", else: "text-slate-400 hover:text-white hover:bg-white/5")
+          if(@view_mode == :poster, do: "bg-indigo-500 text-white", else: "text-slate-400 hover:bg-white/5 hover:text-white")
         ]}
       >
         Poster
@@ -16,9 +23,10 @@
         type="button"
         phx-click="set_view_mode"
         phx-value-mode="table"
+        aria-pressed={to_string(@view_mode == :table)}
         class={[
           "px-3 py-1.5 text-[12px] font-medium transition-colors",
-          if(@view_mode == :table, do: "bg-indigo-500 text-white", else: "text-slate-400 hover:text-white hover:bg-white/5")
+          if(@view_mode == :table, do: "bg-indigo-500 text-white", else: "text-slate-400 hover:bg-white/5 hover:text-white")
         ]}
       >
         Table
@@ -28,14 +36,16 @@
     <form phx-change="sort_update" id="source-sort-form">
       <select
         name="sort_key"
-        class="bg-midnight-800 border border-white/10 text-slate-300 rounded-lg px-2.5 py-1.5 text-[12px] outline-none focus:border-indigo-400/50"
+        aria-label="Sort channels"
+        class="rounded-lg border border-white/10 bg-midnight-800 px-2.5 py-1.5 text-[12px] text-slate-300 outline-none focus:border-indigo-400/50"
       >
         <option value="custom_name" selected={@sort_key == :custom_name}>Sort: Name</option>
-        <option value="pending_count" selected={@sort_key == :pending_count}>Sort: Pending</option>
+        <option value="total_count" selected={@sort_key == :total_count}>Sort: Videos</option>
         <option value="downloaded_count" selected={@sort_key == :downloaded_count}>Sort: Downloaded</option>
+        <option value="pending_count" selected={@sort_key == :pending_count}>Sort: Pending</option>
         <option value="media_size_bytes" selected={@sort_key == :media_size_bytes}>Sort: Size</option>
         <option value="media_profile_name" selected={@sort_key == :media_profile_name}>Sort: Media Profile</option>
-        <option value="enabled" selected={@sort_key == :enabled}>Sort: Enabled?</option>
+        <option value="enabled" selected={@sort_key == :enabled}>Sort: Monitored</option>
       </select>
     </form>
     <button
@@ -43,62 +53,68 @@
       id="sort-direction-toggle"
       phx-click="sort_update"
       phx-value-sort_key={@sort_key}
-      class="rounded-lg border border-white/10 p-1.5 text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+      class="rounded-lg border border-white/10 p-1.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-white"
       title="Toggle sort direction"
+      aria-label={if @sort_direction == :asc, do: "Sort ascending", else: "Sort descending"}
     >
-      <.icon name={if @sort_direction == :asc, do: "hero-chevron-up", else: "hero-chevron-down"} class="w-4 h-4" />
+      <.icon name={if @sort_direction == :asc, do: "hero-chevron-up", else: "hero-chevron-down"} class="h-4 w-4" />
     </button>
 
     <form phx-change="search" phx-submit="search" id="source-search-form" class="ml-auto">
-      <div class="flex items-center gap-2 bg-black/30 border border-white/10 rounded-lg px-3 py-1.5 w-56 focus-within:ring-1 focus-within:ring-indigo-400/60 focus-within:border-indigo-400/40 transition-shadow">
-        <.icon name="hero-magnifying-glass" class="w-[14px] h-[14px] text-slate-500 flex-none" />
+      <div class="flex w-56 items-center gap-2 rounded-lg border border-white/10 bg-black/30 px-3 py-1.5 transition-shadow focus-within:border-indigo-400/40 focus-within:ring-1 focus-within:ring-indigo-400/60">
+        <.icon name="hero-magnifying-glass" class="h-[14px] w-[14px] flex-none text-slate-500" />
         <input
           type="text"
           name="search_term"
           value={@search_term}
-          placeholder="Filter sources…"
+          placeholder="Filter channels…"
+          aria-label="Filter channels"
           phx-debounce="300"
-          class="bg-transparent border-none outline-none text-slate-200 placeholder-slate-500 text-[12px] w-full p-0 focus:ring-0"
+          class="w-full border-none bg-transparent p-0 text-[12px] text-slate-200 placeholder-slate-500 outline-none focus:ring-0"
         />
       </div>
     </form>
   </div>
 
-  <div :if={@view_mode == :poster} class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+  <p :if={@sources == []} class="px-1 py-10 text-center text-sm text-[#92a1b4]">
+    {if @search_term, do: "No channels match \"#{@search_term}\".", else: "No channels yet."}
+  </p>
+
+  <div :if={@view_mode == :poster} class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
     <div
       :for={source <- @sources}
-      class="group relative rounded-xl overflow-hidden bg-midnight-850 border border-white/5 hover:border-indigo-400/40 hover:-translate-y-1 shadow-md hover:shadow-xl hover:shadow-indigo-500/10 transition-all duration-200"
+      class="group relative overflow-hidden rounded-xl border border-m3-border bg-m3-card transition duration-200 hover:-translate-y-0.5 hover:border-[#334354] hover:shadow-xl hover:shadow-black/40"
       data-testid="source-grid-item"
     >
-      <.link href={~p"/sources/#{source.id}"} class="block relative aspect-[2/3] w-full bg-midnight-800">
+      <.link href={~p"/sources/#{source.id}"} class="relative block aspect-square w-full bg-midnight-800" aria-label={source.custom_name}>
         <img
           :if={source.resolved_poster_filepath}
-          src={~p"/sources/#{source.id}/poster"}
-          class="w-full h-full object-cover"
+          src={~p"/sources/#{source.id}/poster?size=thumb"}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          class="h-full w-full object-cover"
         />
-        <div :if={!source.resolved_poster_filepath} class="w-full h-full flex items-center justify-center">
-          <.icon name="hero-photo" class="w-12 h-12 text-slate-600" />
+        <div :if={!source.resolved_poster_filepath} class="flex h-full w-full items-center justify-center">
+          <.icon name="hero-photo" class="h-12 w-12 text-slate-600" />
         </div>
-        <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-        </div>
-        <div :if={!source.enabled} class="absolute inset-0 bg-black/50"></div>
+        <div :if={!source.enabled} class="absolute inset-0 bg-black/55"></div>
         <span class={[
-          "absolute top-2 right-2 text-[10px] font-semibold px-2 py-0.5 rounded-full backdrop-blur",
-          if(source.enabled, do: "bg-emerald-500/90 text-emerald-950", else: "bg-slate-600/90 text-slate-100")
+          "m3-badge absolute right-2 top-2 backdrop-blur",
+          if(source.enabled, do: "bg-[#063e2e]/90 text-[#66e6b1]", else: "bg-[#293645]/90 text-[#b9c7dc]")
         ]}>
           {if source.enabled, do: "Monitored", else: "Paused"}
         </span>
+        <span
+          :if={source.pending_count > 0}
+          class="m3-badge absolute bottom-2 left-2 bg-[#8c4500]/90 text-[#ffd09f] backdrop-blur"
+          data-testid="pending-badge"
+        >
+          {format_count(source.pending_count)} pending
+        </span>
       </.link>
 
-      <div class="h-1 bg-black/40">
-        <div
-          class="h-full bg-gradient-to-r from-indigo-400 to-violet-400"
-          style={"width: #{source_progress_pct(source)}%"}
-        >
-        </div>
-      </div>
-
-      <div class="absolute top-1 left-1">
+      <div class="absolute left-2 top-2 transition-opacity sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover:opacity-100">
         <.live_component
           module={VdlarrWeb.Sources.SourceLive.SourceEnableToggle}
           source={source}
@@ -106,73 +122,112 @@
         />
       </div>
 
-      <div class="absolute top-8 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        <.icon_link href={~p"/sources/#{source.id}/edit"} icon="hero-pencil-square" class="bg-black/60 rounded p-1" />
+      <div class="absolute right-2 top-9 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <.icon_link href={~p"/sources/#{source.id}/edit"} icon="hero-pencil-square" class="rounded bg-black/60 p-1" />
       </div>
 
-      <div class="p-2.5">
-        <div class="truncate text-[12.5px] font-semibold text-white">
-          <.subtle_link href={~p"/sources/#{source.id}"}>
-            {source.custom_name}
-          </.subtle_link>
-        </div>
-        <div class="flex justify-between text-[10px] text-slate-500 mt-1 gap-1 whitespace-nowrap">
-          <.subtle_link href={~p"/sources/#{source.id}/#tab-pending"}>
-            Pending: <.localized_number number={source.pending_count} />
-          </.subtle_link>
-          <.subtle_link href={~p"/sources/#{source.id}/#tab-downloaded"}>
-            Downloaded: <.localized_number number={source.downloaded_count} />
-          </.subtle_link>
-        </div>
+      <div
+        class="flex h-1 bg-[#273443]"
+        title={"#{format_count(source.downloaded_count)} downloaded · #{format_count(source.pending_count)} pending · #{format_count(source.breakdown.skipped)} skipped"}
+        data-testid="source-progress"
+      >
+        <div class="h-full bg-[#4d98ff]" style={"width: #{source.breakdown.downloaded}%"}></div>
+        <div class="h-full bg-[#ff9f43]" style={"width: #{source.breakdown.pending}%"}></div>
+      </div>
+
+      <div class="p-3">
+        <.link
+          href={~p"/sources/#{source.id}"}
+          class="block truncate text-[13px] font-semibold text-[#edf1f7] transition-colors hover:text-[#8dc2ff]"
+          title={source.custom_name}
+        >
+          {source.custom_name}
+        </.link>
+        <.link
+          href={~p"/sources/#{source.id}/#tab-downloaded"}
+          class="mt-1 block truncate text-[11px] tabular-nums text-[#7d8da2] transition-colors hover:text-[#b9c7dc]"
+        >
+          {format_count(source.downloaded_count)} of {format_count(source.total_count)} downloaded
+        </.link>
       </div>
     </div>
   </div>
 
-  <div :if={@view_mode == :table} class="max-w-full overflow-x-auto">
-    <table class="w-full border-collapse rounded-xl overflow-hidden">
+  <div :if={@view_mode == :table and @sources != []} class="max-w-full overflow-x-auto">
+    <table class="w-full min-w-[820px] border-collapse text-left">
       <thead>
-        <tr class="text-left text-slate-500 text-[11px] uppercase tracking-wide bg-white/5">
-          <th class="px-3 py-2.5 font-semibold">Title</th>
+        <tr class="bg-white/5 text-[11px] uppercase tracking-wide text-slate-500">
+          <th class="px-3 py-2.5 font-semibold">Channel</th>
           <th class="px-3 py-2.5 font-semibold">Status</th>
-          <th class="px-3 py-2.5 font-semibold">Pending</th>
-          <th class="px-3 py-2.5 font-semibold">Downloaded</th>
+          <th class="px-3 py-2.5 font-semibold">Profile</th>
+          <th class="px-3 py-2.5 text-right font-semibold">Downloaded</th>
+          <th class="px-3 py-2.5 text-right font-semibold">Pending</th>
+          <th class="px-3 py-2.5 text-right font-semibold">Size</th>
+          <th class="px-3 py-2.5 font-semibold">Next Index</th>
+          <th class="px-3 py-2.5 font-semibold"><span class="sr-only">Monitored</span></th>
         </tr>
       </thead>
       <tbody>
-        <tr :for={source <- @sources} class="border-b border-white/5 hover:bg-white/5 transition-colors">
+        <tr :for={source <- @sources} class="m3-row" data-testid="source-table-row">
           <td class="px-3 py-2.5">
             <div class="flex items-center gap-3">
-              <div class="w-7 h-10 rounded flex-none overflow-hidden bg-midnight-800 flex items-center justify-center">
+              <div class="flex h-9 w-9 flex-none items-center justify-center overflow-hidden rounded-md bg-midnight-800">
                 <img
                   :if={source.resolved_poster_filepath}
-                  src={~p"/sources/#{source.id}/poster"}
-                  class="w-full h-full object-cover"
+                  src={~p"/sources/#{source.id}/poster?size=thumb"}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  class="h-full w-full object-cover"
                 />
-                <.icon :if={!source.resolved_poster_filepath} name="hero-photo" class="w-4 h-4 text-slate-600" />
+                <.icon :if={!source.resolved_poster_filepath} name="hero-photo" class="h-4 w-4 text-slate-600" />
               </div>
-              <span class="text-slate-200">
-                <.subtle_link href={~p"/sources/#{source.id}"}>
-                  {source.custom_name}
-                </.subtle_link>
-              </span>
+              <.link
+                href={~p"/sources/#{source.id}"}
+                class="truncate font-medium text-[#edf1f7] transition-colors hover:text-[#8dc2ff]"
+              >
+                {source.custom_name}
+              </.link>
             </div>
           </td>
           <td class="px-3 py-2.5">
             <span class={[
-              "text-[10px] font-semibold px-2 py-0.5 rounded-full",
-              if(source.enabled, do: "bg-emerald-500/90 text-emerald-950", else: "bg-slate-600/90 text-slate-100")
+              "m3-badge",
+              if(source.enabled, do: "bg-[#063e2e] text-[#66e6b1]", else: "bg-[#293645] text-[#b9c7dc]")
             ]}>
               {if source.enabled, do: "Monitored", else: "Paused"}
             </span>
           </td>
-          <td class="px-3 py-2.5 text-slate-300"><.localized_number number={source.pending_count} /></td>
-          <td class="px-3 py-2.5 text-slate-300"><.localized_number number={source.downloaded_count} /></td>
+          <td class="px-3 py-2.5 text-[#b9c7dc]">{source.media_profile_name}</td>
+          <td class="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-[#edf1f7]">
+            {format_count(source.downloaded_count)}
+            <span class="text-[#7d8da2]">/ {format_count(source.total_count)}</span>
+          </td>
+          <td class={[
+            "px-3 py-2.5 text-right tabular-nums",
+            if(source.pending_count > 0, do: "text-[#ffd09f]", else: "text-[#7d8da2]")
+          ]}>
+            {format_count(source.pending_count)}
+          </td>
+          <td class="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-[#b9c7dc]">
+            {if source.media_size_bytes > 0, do: format_size(source.media_size_bytes), else: "—"}
+          </td>
+          <td class={["whitespace-nowrap px-3 py-2.5 text-xs", elem(source.next_index, 1) && "text-[#7d8da2]"]}>
+            {elem(source.next_index, 0)}
+          </td>
+          <td class="px-3 py-2.5">
+            <.live_component
+              module={VdlarrWeb.Sources.SourceLive.SourceEnableToggle}
+              source={source}
+              id={"source_#{source.id}_enabled_row"}
+            />
+          </td>
         </tr>
       </tbody>
     </table>
   </div>
 
-  <section class="flex justify-center my-5">
+  <section class="my-5 flex justify-center">
     <.live_pagination_controls page_number={@page} total_pages={@total_pages} />
   </section>
 </div>

@@ -9,6 +9,7 @@ defmodule Vdlarr.Pages.DashboardLive do
   alias Vdlarr.Sources.SourceImageHelpers
   alias Vdlarr.Utils.NumberUtils
   alias Vdlarr.Downloading.DownloadProgressStore
+  alias VdlarrWeb.Helpers.NextIndexHelpers
 
   @refresh_ms 30_000
   @download_worker "Vdlarr.Downloading.MediaDownloadWorker"
@@ -290,7 +291,7 @@ defmodule Vdlarr.Pages.DashboardLive do
   defp poster_thumb(assigns) do
     ~H"""
     <div class="grid h-11 w-9 shrink-0 place-items-center overflow-hidden rounded-md bg-gradient-to-br from-[#5e4b83] to-[#1c1830] text-[9px] font-bold">
-      <img :if={@has_poster} src={~p"/sources/#{@source.id}/poster"} class="h-full w-full object-cover" loading="lazy" alt="" />
+      <img :if={@has_poster} src={~p"/sources/#{@source.id}/poster?size=thumb"} class="h-full w-full object-cover" loading="lazy" alt="" />
       <span :if={!@has_poster}>{initials(@source.custom_name)}</span>
     </div>
     """
@@ -386,7 +387,7 @@ defmodule Vdlarr.Pages.DashboardLive do
       from(m in MediaItem, where: ^MediaQuery.downloaded(), group_by: m.source_id, select: %{source_id: m.source_id, n: count(m.id)})
 
     totals = from(m in MediaItem, group_by: m.source_id, select: %{source_id: m.source_id, n: count(m.id)})
-    next_runs = scheduled_index_runs()
+    next_runs = NextIndexHelpers.scheduled_runs()
 
     from(s in Source,
       join: mp in assoc(s, :media_profile),
@@ -401,7 +402,7 @@ defmodule Vdlarr.Pages.DashboardLive do
         id: s.id,
         name: s.custom_name,
         enabled: s.enabled,
-        frequency: s.index_frequency_minutes,
+        index_frequency_minutes: s.index_frequency_minutes,
         resolution: mp.preferred_resolution,
         downloaded: coalesce(d.n, 0),
         total: coalesce(t.n, 0)
@@ -409,36 +410,10 @@ defmodule Vdlarr.Pages.DashboardLive do
     )
     |> Repo.all()
     |> Enum.map(fn source ->
-      {label, muted} = next_index_label(source, Map.get(next_runs, source.id))
+      {label, muted} = NextIndexHelpers.label(source, next_runs)
       Map.merge(source, %{next_index: label, next_index_muted: muted})
     end)
   end
-
-  # The real scheduled indexing job is the source of truth for "next index" - it already
-  # accounts for cron schedules, intervals, and manual re-index requests.
-  defp scheduled_index_runs do
-    from(j in Oban.Job,
-      where: j.worker == @indexing_worker and j.state in ^["executing" | @queued_states],
-      select: {fragment("json_extract(?, '$.id')", j.args), j.state, j.scheduled_at}
-    )
-    |> Repo.all()
-    |> Enum.reduce(%{}, fn {source_id, state, at}, acc ->
-      Map.update(acc, source_id, {state, at}, fn {old_state, old_at} = old ->
-        cond do
-          old_state == "executing" -> old
-          state == "executing" -> {state, at}
-          DateTime.compare(at, old_at) == :lt -> {state, at}
-          true -> {old_state, old_at}
-        end
-      end)
-    end)
-  end
-
-  defp next_index_label(_source, {"executing", _}), do: {"Indexing now", false}
-  defp next_index_label(%{enabled: false}, _), do: {"Paused", true}
-  defp next_index_label(_source, {_state, at}), do: {local_datetime_label(at), false}
-  defp next_index_label(%{frequency: freq}, nil) when freq <= 0, do: {"Once only", true}
-  defp next_index_label(_source, nil), do: {"—", true}
 
   defp queue do
     from(j in Oban.Job,
@@ -616,5 +591,4 @@ defmodule Vdlarr.Pages.DashboardLive do
     end
   end
 
-  defp local_datetime_label(datetime), do: datetime |> to_local() |> Calendar.strftime("%b %d · %H:%M")
 end

@@ -63,6 +63,16 @@ defmodule Vdlarr.Utils.CronUtilsTest do
     end
   end
 
+  describe "describe_interval/1" do
+    test "uses the largest whole unit" do
+      assert CronUtils.describe_interval(1440) == "day"
+      assert CronUtils.describe_interval(10_080) == "7 days"
+      assert CronUtils.describe_interval(360) == "6 hours"
+      assert CronUtils.describe_interval(60) == "hour"
+      assert CronUtils.describe_interval(45) == "45 minutes"
+    end
+  end
+
   describe "next_run_times/2" do
     test "returns the requested number of ascending future UTC times" do
       assert {:ok, [first, second, third]} = CronUtils.next_run_times("0 */6 * * *", 3)

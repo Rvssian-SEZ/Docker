@@ -23,6 +23,46 @@ defmodule VdlarrWeb.Layouts do
   def nav_active?(request_path, href), do: String.starts_with?(request_path, href)
 
   @doc """
+  The browser tab title, eg: "Channels · VDLarr" or "Erren Manhwa Playlist · VDLarr". Uses an
+  explicit `page_title` assign if set, then the page's own record (source, video, media
+  profile), then falls back to the section the request path belongs to.
+  """
+  def browser_title(assigns) do
+    path = if assigns[:conn], do: assigns.conn.request_path, else: ""
+    subject = assigns[:page_title] || record_title(assigns) || section_title(path)
+    subject = if subject && String.ends_with?(path, "/edit"), do: "Edit #{subject}", else: subject
+
+    if subject, do: "#{subject} · VDLarr", else: "VDLarr"
+  end
+
+  defp record_title(%{media_item: %{title: title}}) when is_binary(title), do: title
+  defp record_title(%{source: %{custom_name: name}}) when is_binary(name), do: name
+  defp record_title(%{media_profile: %{name: name}}) when is_binary(name), do: name
+  defp record_title(_assigns), do: nil
+
+  @section_titles [
+    {"/sources/hidden", "Hidden Sources"},
+    {"/sources/new_video", "Single Video"},
+    {"/sources/new", "New Source"},
+    {"/sources", "Channels"},
+    {"/media_profiles/new", "New Media Profile"},
+    {"/media_profiles", "Media Profiles"},
+    {"/activity", "Activity"},
+    {"/wanted", "Wanted"},
+    {"/stats", "History"},
+    {"/logs", "Logs"},
+    {"/settings", "Settings"},
+    {"/search", "Search"},
+    {"/login", "Log in"}
+  ]
+
+  defp section_title("/"), do: "Dashboard"
+
+  defp section_title(path) do
+    Enum.find_value(@section_titles, fn {prefix, title} -> if String.starts_with?(path, prefix), do: title end)
+  end
+
+  @doc """
   Number of media items waiting to download, for the Wanted nav badge.
   """
   def wanted_count do

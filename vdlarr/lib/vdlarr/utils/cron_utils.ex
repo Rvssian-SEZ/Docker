@@ -86,6 +86,21 @@ defmodule Vdlarr.Utils.CronUtils do
   end
 
   @doc """
+  A repeating interval in words, eg: 1440 -> "day", 360 -> "6 hours", 45 -> "45 minutes".
+  Reads naturally after "every".
+  """
+  def describe_interval(minutes) when is_integer(minutes) and minutes > 0 do
+    cond do
+      rem(minutes, 1440) == 0 -> unit_label(div(minutes, 1440), "day")
+      rem(minutes, 60) == 0 -> unit_label(div(minutes, 60), "hour")
+      true -> unit_label(minutes, "minute")
+    end
+  end
+
+  defp unit_label(1, unit), do: unit
+  defp unit_label(n, unit), do: "#{n} #{unit}s"
+
+  @doc """
   Best-effort human-readable description of a cron expression. Falls back to
   echoing the raw string for shapes the friendly picker UI doesn't model
   (multi-hour lists, step values, month/day-of-month constraints, etc).

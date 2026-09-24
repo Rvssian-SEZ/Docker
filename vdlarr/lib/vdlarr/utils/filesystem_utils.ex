@@ -114,8 +114,7 @@ defmodule Vdlarr.Utils.FilesystemUtils do
 
   Returns [binary()]
   """
-  def list_media_subdirectories do
-    base_directory = Application.get_env(:vdlarr, :media_directory)
+  def list_media_subdirectories(base_directory \\ Application.get_env(:vdlarr, :media_directory)) do
 
     case File.ls(base_directory) do
       {:ok, entries} ->
