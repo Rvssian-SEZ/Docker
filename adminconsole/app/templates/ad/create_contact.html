@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3 mb-4"><i class="bi bi-person-vcard me-2"></i>Create Contact</h1>
+
+{% if error %}<div class="alert alert-warning">{{ error }}</div>{% endif %}
+
+<form method="post" action="/ad/create-contact" class="row g-3" style="max-width: 42rem" id="createContactForm">
+  <div class="col-md-6">
+    <label class="form-label">First name</label>
+    <input type="text" name="first_name" id="firstName" class="form-control" required autofocus>
+  </div>
+  <div class="col-md-6">
+    <label class="form-label">Last name</label>
+    <input type="text" name="last_name" id="lastName" class="form-control" required>
+  </div>
+
+  <div class="col-md-6">
+    <label class="form-label">Display name</label>
+    <input type="text" name="display_name" id="displayName" class="form-control">
+  </div>
+  <div class="col-md-6">
+    <label class="form-label">OU</label>
+    <select name="ou_dn" class="form-select" required>
+      <option value="" disabled selected>Select an OU…</option>
+      {% for ou in ous %}
+      <option value="{{ ou.dn }}">{{ ou.display }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="col-12">
+    <label class="form-label">External mail address</label>
+    <input type="text" name="mail" id="externalMail" class="form-control" required placeholder="e.g. s.airport@seypec.com">
+    <div class="form-text">The real external address this contact routes to.</div>
+  </div>
+
+  <div class="col-12">
+    <label class="form-label">Proxy address — external (primary)</label>
+    <input type="text" name="proxy_external" id="proxyExternal" class="form-control font-monospace">
+  </div>
+  <div class="col-12">
+    <label class="form-label">Proxy address — internal (saa.sc)</label>
+    <input type="text" name="proxy_internal_saa" id="proxyInternalSaa" class="form-control font-monospace">
+  </div>
+  <div class="col-12">
+    <label class="form-label">Proxy address — internal (Exchange Online)</label>
+    <input type="text" name="proxy_internal_o365" id="proxyInternalO365" class="form-control font-monospace">
+  </div>
+
+  <div class="col-12">
+    <label class="form-label">Reason / ticket ref</label>
+    <input type="text" name="reason" class="form-control" required>
+  </div>
+
+  <div class="col-12">
+    <button class="btn btn-primary"><i class="bi bi-person-vcard me-1"></i>Create Contact</button>
+  </div>
+</form>
+
+<script>
+(function () {
+  const firstName = document.getElementById("firstName");
+  const lastName = document.getElementById("lastName");
+  const displayName = document.getElementById("displayName");
+  const externalMail = document.getElementById("externalMail");
+  const proxyExternal = document.getElementById("proxyExternal");
+  const proxyInternalSaa = document.getElementById("proxyInternalSaa");
+  const proxyInternalO365 = document.getElementById("proxyInternalO365");
+
+  const edited = { displayName: false, proxyExternal: false, proxyInternalSaa: false, proxyInternalO365: false };
+  [displayName, proxyExternal, proxyInternalSaa, proxyInternalO365].forEach(function (el) {
+    el.addEventListener("input", function () { edited[el.id] = true; });
+  });
+
+  function refreshFromName() {
+    const first = firstName.value.trim();
+    const last = lastName.value.trim();
+    if (!edited.displayName) displayName.value = (first + " " + last).trim();
+    // "Name.Surname" internal-alias convention for contacts, preserving
+    // typed case — matches the real "Seypec.Airport" pattern this
+    // feature was modeled on, not a lowercased logon-style local part.
+    if (first && last) {
+      const localPart = first + "." + last;
+      if (!edited.proxyInternalSaa) proxyInternalSaa.value = "smtp:" + localPart + "@saa.sc";
+      if (!edited.proxyInternalO365) proxyInternalO365.value = "smtp:" + localPart + "@scaasey.mail.onmicrosoft.com";
+    }
+  }
+
+  firstName.addEventListener("input", refreshFromName);
+  lastName.addEventListener("input", refreshFromName);
+
+  externalMail.addEventListener("input", function () {
+    if (!edited.proxyExternal) proxyExternal.value = "SMTP:" + externalMail.value.trim();
+  });
+})();
+</script>
+{% endblock %}

@@ -1094,6 +1094,108 @@ async def ad_create_user(
     )
 
 
+@router.get("/ad/create-contact", response_class=HTMLResponse)
+async def ad_create_contact_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("ad.create_contact")),
+):
+    store = await load_settings(db)
+    if not (store.get("ad.ldaps_url") and store.get("ad.bind_dn") and store.get("ad.base_dn")):
+        return templates.TemplateResponse(request, "ad/not_configured.html", {"user": user}, status_code=200)
+    try:
+        conn = _open_conn(store)
+    except AdNotConfigured:
+        return templates.TemplateResponse(request, "ad/not_configured.html", {"user": user}, status_code=200)
+    try:
+        ous = ldap_client.list_ous(conn, store.get("ad.base_dn"))
+    finally:
+        conn.unbind()
+    return templates.TemplateResponse(request, "ad/create_contact.html", {"user": user, "ous": ous, "error": None})
+
+
+@router.post("/ad/create-contact")
+async def ad_create_contact(
+    request: Request,
+    reason: str = Form(...),
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    display_name: str = Form(""),
+    mail: str = Form(...),
+    ou_dn: str = Form(...),
+    proxy_external: str = Form(""),
+    proxy_internal_saa: str = Form(""),
+    proxy_internal_o365: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    user: CurrentUser = Depends(require("ad.create_contact")),
+):
+    """Modeled directly on a real existing contact ("Seypec Airport",
+    read live 2026-09-24 before this was built — see CLAUDE_CONTEXT.md
+    "Create Contact") — a mail contact, not a security principal: no
+    sAMAccountName/userPrincipalName/password/userAccountControl at all.
+    `mail` is the real external address the contact routes to; the three
+    proxyAddresses fields are auto-filled client-side but editable, same
+    "auto-fill until manually edited" convention as Create User/Create
+    Group. Only external+2 internal aliases per Alex's explicit scope —
+    no X.400/x500 legacy address-space entries (those are Exchange-
+    generated, not something to hand-craft here)."""
+    if not reason.strip():
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "A reason/ticket-ref is required."})
+    if not mail.strip():
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "External mail address is required."})
+    if not rate_check(f"create_contact:{user.username}", max_calls=10, window_seconds=600):
+        raise HTTPException(status_code=429, detail="Too many contact creations — try again shortly.")
+
+    first = first_name.strip()
+    last = last_name.strip()
+    disp = display_name.strip() or f"{first} {last}".strip()
+    store = await load_settings(db)
+    try:
+        conn = _open_conn(store)
+    except AdNotConfigured:
+        return templates.TemplateResponse(request, "ad/not_configured.html", {"user": user}, status_code=200)
+
+    dn = f"CN={ldap_client.escape_dn_value(disp)},{ou_dn}"
+    try:
+        _check_scope(store, ou_dn, user)
+
+        proxy_addresses = [p.strip() for p in (proxy_external, proxy_internal_saa, proxy_internal_o365) if p.strip()]
+        attrs: dict[str, str | list[str]] = {
+            "cn": disp,
+            "displayName": disp,
+            "mail": mail.strip(),
+        }
+        if first:
+            attrs["givenName"] = first
+        if last:
+            attrs["sn"] = last
+        if proxy_addresses:
+            attrs["proxyAddresses"] = proxy_addresses
+
+        ldap_client.create_contact(conn, dn, attrs)
+    except ScopeDenied as exc:
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": exc.message})
+    except ldap_client.LdapError as exc:
+        await _log_and_alert(request, user, action="create_contact_failed", target_id=disp, reason=reason, detail=str(exc), target_type="ad_contact")
+        return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": str(exc)})
+    finally:
+        conn.unbind()
+
+    await _log_and_alert(
+        request, user, action="create_contact", target_id=disp, reason=reason,
+        detail=f"Created {dn}; mail={mail.strip()}", target_type="ad_contact",
+    )
+    if user.is_breakglass:
+        pending = getattr(request.state, "breakglass_alert_pending", None)
+        if pending:
+            await alert(db, subject="SAA Admin Console: break-glass create_contact", body=pending)
+
+    return templates.TemplateResponse(
+        request, "ad/action_result.html",
+        {"user": user, "ok": True, "message": f"Contact created: {disp} ({mail.strip()}) in {ou_dn}."},
+    )
+
+
 async def _perform(request: Request, db: AsyncSession, user: CurrentUser, sam: str, reason: str, *, action: str, op) -> HTMLResponse:
     if not reason.strip():
         return templates.TemplateResponse(request, "ad/action_result.html", {"user": user, "ok": False, "message": "A reason/ticket-ref is required."})

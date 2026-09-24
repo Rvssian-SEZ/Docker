@@ -25,6 +25,9 @@
       {% if user and user.can('ad.create_user') %}
       <li><a href="/ad/create" class="nav-link"><i class="bi bi-person-plus me-2"></i>Create User</a></li>
       {% endif %}
+      {% if user and user.can('ad.create_contact') %}
+      <li><a href="/ad/create-contact" class="nav-link"><i class="bi bi-person-vcard me-2"></i>Create Contact</a></li>
+      {% endif %}
       {% if user and user.can('ad.manage_groups') %}
       <li><a href="/ad/groups" class="nav-link"><i class="bi bi-people me-2"></i>Groups</a></li>
       <li><a href="/ad/groups/create" class="nav-link"><i class="bi bi-people-fill me-2"></i>Create Group</a></li>
