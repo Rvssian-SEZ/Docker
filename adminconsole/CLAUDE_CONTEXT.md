@@ -51,8 +51,10 @@ not read-only — every write path is treated as high-risk.**
   fields are write-only in the UI (is_set() badge, never the value); a
   blank field on save means "keep existing", never "clear".
 - **Settings page re-auth:** `require_reauth` (app/core/auth.py) — a
-  5-minute freshness window, separate from the 15-minute idle-session
-  timeout. Local/break-glass users re-enter password(+TOTP); OIDC users
+  5-minute freshness window, separate from the idle-session timeout
+  (`IDLE_TIMEOUT`, originally 15 minutes per spec, raised to 1 hour —
+  Alex, 2026-09-24 — this 5-minute Settings re-auth window is unchanged).
+  Local/break-glass users re-enter password(+TOTP); OIDC users
   are bounced back through `/auth/oidc/login?reauth_next=...`, which
   marks reauth fresh on a successful callback instead of the normal
   post-login redirect to "/". Live-verified end-to-end (see Build order).
@@ -760,6 +762,18 @@ no fallback needed (this is a plain attribute write on the group object,
 same risk tier as the membership/create writes that already worked via
 LDAPS directly). Test group cleaned up the same way as before
 (`admin_cleanup_test_group.yml`).
+
+**Create Group promoted to its own top-level nav tab (2026-09-24).**
+Alex re-asked for "a new tab with an ability to create groups" with the
+same mail/proxy/displayName attributes already described above — this
+feature already existed at `/ad/groups/create` (confirmed by reading the
+live template before touching anything, not assumed), just reachable
+only via a button on the Groups list page. Rather than build a
+duplicate flow, added `/ad/groups/create` as its own top-level
+`base.html` nav item (mirroring how Create User sits alongside AD
+Accounts) — same route, same gating (`ad.manage_groups`), no new code
+in `ad_accounts.py` at all. The existing "Create Group" button on
+`/ad/groups` was left in place too — both paths lead to the same page.
 
 **Add Member autocomplete (2026-09-08).** `GET /ad/groups/member-suggest`
 reuses `search_accounts()` (same substring search as AD Accounts) to back
