@@ -9,6 +9,7 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
 
   require Logger
 
+  alias Vdlarr.Downloading.DownloadProgressStore
   alias __MODULE__
   alias Vdlarr.Tasks
   alias Vdlarr.Repo
@@ -27,6 +28,8 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
   Returns {:ok, %Task{}} | {:error, :duplicate_job} | {:error, %Ecto.Changeset{}}
   """
   def kickoff_with_task(media_item, job_args \\ %{}, job_opts \\ []) do
+    job_opts = Keyword.put_new_lazy(job_opts, :priority, fn -> default_priority(media_item, job_args) end)
+
     %{id: media_item.id}
     |> Map.merge(job_args)
     |> MediaDownloadWorker.new(job_opts)
@@ -34,15 +37,41 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
   end
 
   @doc """
+  Oban priority (0 = runs first) for a download when the caller doesn't set one. With one
+  download at a time, plain first-in-first-out meant a single 26-hour compilation blocked every
+  new upload behind it for a day - so shorter videos go first, something the user explicitly
+  asked for (Force Download / retry) goes before all of them, and background re-downloads go
+  last. Long waits are evened out by `DownloadPriorityAgingWorker`, so nothing starves.
+  """
+  def default_priority(media_item, job_args) do
+    cond do
+      truthy?(job_args, :force) -> 0
+      truthy?(job_args, :quality_upgrade?) or truthy?(job_args, :redownload_existing) -> 7
+      true -> duration_priority(media_item.duration_seconds)
+    end
+  end
+
+  defp duration_priority(seconds) when is_integer(seconds) and seconds <= 30 * 60, do: 3
+  defp duration_priority(seconds) when is_integer(seconds) and seconds <= 2 * 3600, do: 4
+  defp duration_priority(seconds) when is_integer(seconds) and seconds > 6 * 3600, do: 6
+  defp duration_priority(_seconds), do: 5
+
+  defp truthy?(args, key), do: Map.get(args, key) in [true, "true"] or Map.get(args, to_string(key)) in [true, "true"]
+
+  @doc """
   For a given media item, download the media alongside any options.
   Does not download media if its source is set to not download media
   (unless forced).
 
   Options:
-    - `force`: force download even if the source is set to not download media. Fully
-      re-downloads media, including the video
+    - `force`: force download even if the source is set to not download media. Only
+      overwrites (fully re-downloads) media that has already finished downloading - an
+      item that never finished resumes its partial file instead
     - `quality_upgrade?`: re-downloads media, including the video. Does not force download
       if the source is set to not download media
+    - `redownload_existing`: runs the download again for media that's already downloaded
+      (eg: to pick up newly enabled thumbnails/subtitles/metadata) WITHOUT overwriting the
+      existing video file. Respects the source's download setting like a quality upgrade does
 
   Returns :ok | {:error, any, ...any}
   """
@@ -50,10 +79,12 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
   def perform(%Oban.Job{args: %{"id" => media_item_id} = args}) do
     should_force = Map.get(args, "force", false)
     is_quality_upgrade = Map.get(args, "quality_upgrade?", false)
+    # Already-downloaded media is never "pending", so without this the job would be a no-op
+    ignores_pending = is_quality_upgrade or Map.get(args, "redownload_existing", false)
 
     media_item = fetch_and_run_prevent_download_user_script(media_item_id)
 
-    if should_download_media?(media_item, should_force, is_quality_upgrade) do
+    if should_download_media?(media_item, should_force, ignores_pending) do
       download_media_and_schedule_jobs(media_item, is_quality_upgrade, should_force)
     else
       :ok
@@ -61,16 +92,19 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
   rescue
     Ecto.NoResultsError -> Logger.info("#{__MODULE__} discarded: media item #{media_item_id} not found")
     Ecto.StaleEntryError -> Logger.info("#{__MODULE__} discarded: media item #{media_item_id} stale")
+  after
+    # A stopped (killed) download never reaches this - JobTableLive's stop handler clears it instead
+    DownloadProgressStore.delete(media_item_id)
   end
 
   # If this is a quality upgrade, only check if the source is set to download media
   # or that the media item's download hasn't been prevented
-  defp should_download_media?(media_item, should_force, true = _is_quality_upgrade) do
+  defp should_download_media?(media_item, should_force, true = _ignores_pending) do
     (media_item.source.download_media && !media_item.prevent_download) || should_force
   end
 
   # If it's not a quality upgrade, additionally check if the media item is pending download
-  defp should_download_media?(media_item, should_force, _is_quality_upgrade) do
+  defp should_download_media?(media_item, should_force, _ignores_pending) do
     source = media_item.source
     is_pending = Media.pending_download?(media_item)
 
@@ -92,8 +126,7 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
   end
 
   defp download_media_and_schedule_jobs(media_item, is_quality_upgrade, should_force) do
-    overwrite_behaviour = if should_force || is_quality_upgrade, do: :force_overwrites, else: :no_force_overwrites
-    override_opts = [overwrite_behaviour: overwrite_behaviour]
+    override_opts = [overwrite_behaviour: overwrite_behaviour(media_item, is_quality_upgrade, should_force)]
 
     case MediaDownloader.download_for_media_item(media_item, override_opts) do
       {:ok, downloaded_media_item} ->
@@ -153,6 +186,14 @@ defmodule Vdlarr.Downloading.MediaDownloadWorker do
       _ -> nil
     end
   end
+
+  # `--force-overwrites` makes yt-dlp delete any partial `.part` file and start from zero, so
+  # only use it when there's a finished file to replace. A forced download of something that
+  # never finished (Force Download, retry-failed, and every Oban retry of those jobs, which
+  # keep `force: true`) resumes where it left off instead of re-fetching gigabytes.
+  defp overwrite_behaviour(_media_item, true = _is_quality_upgrade, _should_force), do: :force_overwrites
+  defp overwrite_behaviour(%{media_filepath: path}, _is_quality_upgrade, true) when is_binary(path), do: :force_overwrites
+  defp overwrite_behaviour(_media_item, _is_quality_upgrade, _should_force), do: :no_force_overwrites
 
   defp get_redownloaded_at(true), do: DateTime.utc_now()
   defp get_redownloaded_at(_), do: nil

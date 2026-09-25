@@ -1,6 +1,7 @@
 defmodule VdlarrWeb.Sources.SourceLive.IndexGridLiveTest do
   use VdlarrWeb.ConnCase
 
+  import Ecto.Query, warn: false
   import Phoenix.LiveViewTest
   import Vdlarr.SourcesFixtures
   import Vdlarr.ProfilesFixtures
@@ -49,7 +50,7 @@ defmodule VdlarrWeb.Sources.SourceLive.IndexGridLiveTest do
 
       {:ok, view, _html} = live_isolated(conn, IndexGridLive, session: create_session())
 
-      assert render_element(view, "[data-testid='source-grid-item']:first-child") =~ ~s(src="/sources/#{source.id}/poster")
+      assert render_element(view, "[data-testid='source-grid-item']:first-child") =~ ~s(src="/sources/#{source.id}/poster?size=thumb")
     end
 
     test "shows the poster image for a source with only a custom (manually-uploaded) poster", %{conn: conn} do
@@ -57,7 +58,7 @@ defmodule VdlarrWeb.Sources.SourceLive.IndexGridLiveTest do
 
       {:ok, view, _html} = live_isolated(conn, IndexGridLive, session: create_session())
 
-      assert render_element(view, "[data-testid='source-grid-item']:first-child") =~ ~s(src="/sources/#{source.id}/poster")
+      assert render_element(view, "[data-testid='source-grid-item']:first-child") =~ ~s(src="/sources/#{source.id}/poster?size=thumb")
       refute render_element(view, "[data-testid='source-grid-item']:first-child") =~ "hero-photo"
     end
 
@@ -69,7 +70,7 @@ defmodule VdlarrWeb.Sources.SourceLive.IndexGridLiveTest do
 
       {:ok, view, _html} = live_isolated(conn, IndexGridLive, session: create_session())
 
-      assert render_element(view, "[data-testid='source-grid-item']:first-child") =~ ~s(src="/sources/#{source.id}/poster")
+      assert render_element(view, "[data-testid='source-grid-item']:first-child") =~ ~s(src="/sources/#{source.id}/poster?size=thumb")
       refute render_element(view, "[data-testid='source-grid-item']:first-child") =~ "hero-photo"
     end
   end
@@ -233,6 +234,124 @@ defmodule VdlarrWeb.Sources.SourceLive.IndexGridLiveTest do
 
       assert %{enabled: false} = Repo.get!(Source, source.id)
     end
+
+    test "refreshes the card's status badge and the summary straight away", %{conn: conn} do
+      source_fixture(enabled: true)
+      {:ok, view, html} = live_isolated(conn, IndexGridLive, session: create_session())
+      assert html =~ "Monitored"
+      assert render_element(view, "[data-testid='sources-summary']") =~ "1 monitored"
+
+      view
+      |> element(".enabled_toggle_form")
+      |> render_change(%{source: %{"enabled" => false}})
+
+      assert render_element(view, "[data-testid='source-grid-item']") =~ "Paused"
+      assert render_element(view, "[data-testid='sources-summary']") =~ "0 monitored"
+    end
+  end
+
+  # NOTE: media_item_fixture/1 eagerly builds its default `source_id` (an extra source) even
+  # when one is passed in, so these tests target their own named cards rather than
+  # first/last-child, and count expected totals from the DB.
+  describe "summary line" do
+    test "totals channels, monitored channels and library size", %{conn: conn} do
+      source = source_fixture(enabled: true)
+      source_fixture(enabled: false)
+      media_item_fixture(source_id: source.id, media_size_bytes: 1_073_741_824)
+
+      total = Repo.aggregate(Source, :count)
+      monitored = Repo.aggregate(from(s in Source, where: s.enabled), :count)
+
+      {:ok, view, _html} = live_isolated(conn, IndexGridLive, session: create_session())
+
+      assert render_element(view, "[data-testid='sources-summary']") =~
+               "#{total} channels · #{monitored} monitored · 1.0 GB"
+    end
+
+    test "counts only hidden sources on the hidden page", %{conn: conn} do
+      source_fixture(hidden: false)
+      source_fixture(hidden: true)
+
+      {:ok, view, _html} = live_isolated(conn, IndexGridLive, session: Map.put(create_session(), "show_hidden", true))
+
+      assert render_element(view, "[data-testid='sources-summary']") =~ "1 hidden channel ·"
+    end
+  end
+
+  describe "download counts" do
+    test "shows downloaded out of all indexed videos, and skipped ones in the bar", %{conn: conn} do
+      source = source_fixture(custom_name: "Mostly skipped")
+      media_item_fixture(source_id: source.id)
+      for _ <- 1..3, do: media_item_fixture(source_id: source.id, media_filepath: nil, prevent_download: true)
+
+      {:ok, view, _html} = live_isolated(conn, IndexGridLive, session: create_session())
+      card = view |> element("[data-testid='source-grid-item']", "Mostly skipped") |> render()
+
+      assert card =~ "1 of 4 downloaded"
+      assert card =~ "width: 25.0%"
+      assert card =~ "3 skipped"
+    end
+
+    test "only shows a pending badge when something is waiting", %{conn: conn} do
+      waiting = source_fixture(custom_name: "Has pending")
+      media_item_fixture(source_id: waiting.id, media_filepath: nil)
+      done = source_fixture(custom_name: "Nothing pending")
+      media_item_fixture(source_id: done.id)
+
+      {:ok, view, _html} = live_isolated(conn, IndexGridLive, session: create_session())
+
+      assert view |> element("[data-testid='source-grid-item']", "Has pending") |> render() =~ "1 pending"
+      refute view |> element("[data-testid='source-grid-item']", "Nothing pending") |> render() =~ "pending-badge"
+    end
+  end
+
+  describe "every sort key" do
+    for key <- ~w(custom_name total_count downloaded_count pending_count media_size_bytes media_profile_name enabled) do
+      test "sorting by #{key} works", %{conn: conn} do
+        source = source_fixture(custom_name: "Sortable source")
+        media_item_fixture(source_id: source.id)
+
+        {:ok, view, _html} = live_isolated(conn, IndexGridLive, session: create_session())
+
+        assert change_sort_key(view, unquote(key)) =~ "Sortable source"
+      end
+    end
+
+    test "sorting by downloaded orders by download count, and the toggle reverses it", %{conn: conn} do
+      few = source_fixture(custom_name: "Few downloads")
+      media_item_fixture(source_id: few.id)
+      many = source_fixture(custom_name: "Many downloads")
+      for _ <- 1..3, do: media_item_fixture(source_id: many.id)
+
+      {:ok, view, _html} = live_isolated(conn, IndexGridLive, session: create_session())
+
+      first_order = order_of(change_sort_key(view, "downloaded_count"), ["Few downloads", "Many downloads"])
+      second_order = order_of(toggle_sort_direction(view), ["Few downloads", "Many downloads"])
+
+      assert Enum.sort([first_order, second_order]) == Enum.sort([["Few downloads", "Many downloads"], ["Many downloads", "Few downloads"]])
+    end
+  end
+
+  describe "table view columns" do
+    test "shows profile, downloaded/total, size, next index and the enable toggle", %{conn: conn} do
+      profile = media_profile_fixture(name: "My Profile")
+      source = source_fixture(custom_name: "Table source", media_profile_id: profile.id, index_frequency_minutes: -1)
+      media_item_fixture(source_id: source.id, media_size_bytes: 2048)
+
+      {:ok, view, _html} = live_isolated(conn, IndexGridLive, session: create_session())
+      click_element(view, "button", "Table")
+      row = view |> element("[data-testid='source-table-row']", "Table source") |> render()
+
+      assert row =~ "My Profile"
+      assert row =~ "/ 1"
+      assert row =~ "2.0 KB"
+      assert row =~ "Once only"
+      assert row =~ "enabled_toggle_form"
+    end
+  end
+
+  defp order_of(html, names) do
+    Enum.sort_by(names, fn name -> :binary.match(html, name) |> elem(0) end)
   end
 
   defp click_element(view, selector, text_filter \\ nil) do

@@ -65,6 +65,42 @@ defmodule Vdlarr.Utils.CronUtils do
   end
 
   @doc """
+  The next `count` times (in UTC) a valid cron expression will run, computed relative to now
+  in the app's configured local timezone - same interpretation as `next_run_at/1`.
+
+  Returns {:ok, [DateTime.t()]} | {:error, any()}
+  """
+  def next_run_times(cron_expression, count) when is_integer(count) and count > 0 do
+    with {:ok, parsed} <- parse(cron_expression) do
+      timezone = Application.get_env(:vdlarr, :timezone)
+      local_naive_now = timezone |> Timex.now() |> DateTime.to_naive()
+
+      times =
+        parsed
+        |> Crontab.Scheduler.get_next_run_dates(local_naive_now)
+        |> Enum.take(count)
+        |> Enum.map(&(&1 |> Timex.to_datetime(timezone) |> Timex.Timezone.convert("Etc/UTC")))
+
+      {:ok, times}
+    end
+  end
+
+  @doc """
+  A repeating interval in words, eg: 1440 -> "day", 360 -> "6 hours", 45 -> "45 minutes".
+  Reads naturally after "every".
+  """
+  def describe_interval(minutes) when is_integer(minutes) and minutes > 0 do
+    cond do
+      rem(minutes, 1440) == 0 -> unit_label(div(minutes, 1440), "day")
+      rem(minutes, 60) == 0 -> unit_label(div(minutes, 60), "hour")
+      true -> unit_label(minutes, "minute")
+    end
+  end
+
+  defp unit_label(1, unit), do: unit
+  defp unit_label(n, unit), do: "#{n} #{unit}s"
+
+  @doc """
   Best-effort human-readable description of a cron expression. Falls back to
   echoing the raw string for shapes the friendly picker UI doesn't model
   (multi-hour lists, step values, month/day-of-month constraints, etc).
@@ -112,13 +148,55 @@ defmodule Vdlarr.Utils.CronUtils do
           custom_picker_state(cron_expression)
         end
 
-      {:ok, _parsed} ->
-        custom_picker_state(cron_expression)
+      {:ok, parsed} ->
+        case hourly_shape(parsed) do
+          {every, first_hour, m} ->
+            %{
+              mode: "hourly",
+              every: every,
+              hour: first_hour,
+              minute: m,
+              weekdays: [],
+              raw: cron_expression,
+              summary: describe(cron_expression)
+            }
+
+          nil ->
+            custom_picker_state(cron_expression)
+        end
 
       {:error, _} ->
         custom_picker_state(cron_expression)
     end
   end
+
+  @hourly_steps [1, 2, 3, 4, 6, 8, 12]
+
+  # "Every N hours at :MM, all day" - either `MM */N * * *`, `MM * * * *`, or an explicit,
+  # evenly spaced hour list covering the whole day (what the picker itself generates, eg:
+  # `30 3,9,15,21 * * *`). Returns {every, first_hour, minute} | nil
+  defp hourly_shape(%Crontab.CronExpression{minute: [m], hour: hours, day: [:*], month: [:*], weekday: [:*]})
+       when is_integer(m) do
+    case hours do
+      [:*] ->
+        {1, 0, m}
+
+      [{:/, :*, step}] when step in @hourly_steps ->
+        {step, 0, m}
+
+      [first, second | _] = list when is_integer(first) and is_integer(second) ->
+        step = second - first
+
+        if step in @hourly_steps and first < step and list == Enum.to_list(first..23//step),
+          do: {step, first, m},
+          else: nil
+
+      _ ->
+        nil
+    end
+  end
+
+  defp hourly_shape(_parsed), do: nil
 
   defp custom_picker_state(cron_expression) do
     %{mode: "custom", hour: 3, minute: 0, weekdays: [], raw: cron_expression, summary: describe(cron_expression)}
@@ -144,7 +222,20 @@ defmodule Vdlarr.Utils.CronUtils do
     end
   end
 
-  defp describe_parsed(_parsed, raw), do: "Custom schedule: #{raw}"
+  defp describe_parsed(parsed, raw) do
+    case hourly_shape(parsed) do
+      {1, _first, m} ->
+        "Runs every hour at :#{pad(m)}"
+
+      {2, first, m} ->
+        "Runs every 2 hours at :#{pad(m)}, on #{if first == 0, do: "even", else: "odd"} hours"
+
+      {every, first, m} ->
+        times = first..23//every |> Enum.map_join(", ", &"#{pad(&1)}:#{pad(m)}")
+        "Runs every #{every} hours at #{times}"
+      nil -> "Custom schedule: #{raw}"
+    end
+  end
 
   defp pad(n), do: n |> Integer.to_string() |> String.pad_leading(2, "0")
 

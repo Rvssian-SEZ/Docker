@@ -41,9 +41,24 @@ defmodule VdlarrWeb.CustomComponents.TextComponents do
 
   def subtle_link(assigns) do
     ~H"""
-    <.link href={@href} target={@target} class="underline decoration-bodydark decoration-1 hover:decoration-white">
+    <.link href={@href} target={@target} class="transition-colors hover:text-[#8dc2ff]">
       {render_slot(@inner_block)}
     </.link>
+    """
+  end
+
+  @doc """
+  One labelled value in an overview `<dl>` grid, eg: on a source's or media profile's page.
+  """
+  attr :label, :string, required: true
+  slot :inner_block, required: true
+
+  def detail_item(assigns) do
+    ~H"""
+    <div class="min-w-0">
+      <dt class="text-[11px] font-semibold uppercase tracking-wide text-[#7d8da2]">{@label}</dt>
+      <dd class="mt-1 break-words text-sm text-[#edf1f7]">{render_slot(@inner_block)}</dd>
+    </div>
     """
   end
 

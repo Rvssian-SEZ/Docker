@@ -58,7 +58,8 @@ defmodule VdlarrWeb.MediaProfileControllerTest do
       conn = get(conn, ~p"/media_profiles/new", %{"template_id" => profile.id})
       assert html_response(conn, 200) =~ "New Media Profile"
       assert html_response(conn, 200) =~ profile.sub_langs
-      refute html_response(conn, 200) =~ profile.name
+      # The sidebar lists every profile by name, so check the name field itself isn't prefilled
+      refute html_response(conn, 200) =~ ~s(value="#{profile.name}")
     end
   end
 
@@ -83,6 +84,26 @@ defmodule VdlarrWeb.MediaProfileControllerTest do
 
       conn = get(conn, ~p"/media_profiles/#{media_profile}")
       assert html_response(conn, 200) =~ "some updated name"
+    end
+
+    test "opens on a readable overview", %{conn: conn, media_profile: media_profile} do
+      {:ok, profile} =
+        Vdlarr.Profiles.update_media_profile(media_profile, %{
+          download_subs: true,
+          embed_subs: true,
+          sub_langs: "en,fr",
+          sponsorblock_behaviour: :remove,
+          sponsorblock_categories: ["sponsor"],
+          shorts_behaviour: :exclude
+        })
+
+      html = conn |> get(~p"/media_profiles/#{profile}") |> html_response(200)
+
+      assert html =~ "profile-overview"
+      assert html =~ "Embedded, uploaded only · en,fr"
+      assert html =~ "Remove: sponsor"
+      assert html =~ "Skip shorts"
+      refute html =~ "Raw Attributes"
     end
 
     test "renders errors when data is invalid", %{conn: conn, media_profile: media_profile} do

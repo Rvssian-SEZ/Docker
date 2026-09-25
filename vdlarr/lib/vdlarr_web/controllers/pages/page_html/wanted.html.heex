@@ -1,14 +1,22 @@
-<div class="mb-6 flex gap-3 flex-row items-center justify-between">
-  <div class="flex gap-3 items-center">
-    <h2 class="font-display font-bold text-[22px] text-white">
-      Wanted
-    </h2>
-  </div>
+<div class="mb-6 flex flex-row items-center justify-between gap-3">
+  <h2 class="font-display text-[22px] font-bold text-white">Wanted</h2>
+  <.link
+    :if={@failed_count > 0}
+    href={~p"/force_download_failed"}
+    method="post"
+    data-confirm={"Retry all #{@failed_count} failed downloads?"}
+    class="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#1f63b3]"
+  >
+    <.material_icon name="sync" class="!text-[18px]" /> Retry all failed ({@failed_count})
+  </.link>
 </div>
 <div class="rounded-xl border border-white/5 bg-midnight-850 p-5">
-  {live_render(
-    @conn,
-    Vdlarr.Pages.HistoryTableLive,
-    session: %{"media_state" => "pending"}
-  )}
+  <.tabbed_layout>
+    <:tab title="Pending" id="pending">
+      {live_render(@conn, Vdlarr.Pages.HistoryTableLive, id: "wanted-pending", session: %{"media_state" => "pending"})}
+    </:tab>
+    <:tab title={"Failed (#{@failed_count})"} id="failed">
+      {live_render(@conn, Vdlarr.Pages.HistoryTableLive, id: "wanted-failed", session: %{"media_state" => "failed"})}
+    </:tab>
+  </.tabbed_layout>
 </div>

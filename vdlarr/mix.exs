@@ -46,7 +46,7 @@ defmodule Vdlarr.MixProject do
   # (rebrand, its own feature set, its own GHCR image) to warrant its own semantic
   # versioning instead, starting at its first tagged release.
   defp build_version do
-    "1.0.0"
+    "2.0.0"
   end
 
   # Specifies your project dependencies.

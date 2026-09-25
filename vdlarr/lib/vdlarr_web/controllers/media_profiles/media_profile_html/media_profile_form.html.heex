@@ -70,15 +70,29 @@
           audio: '#{audio_output_template()}',
           archiving: '#{default_output_template()}'
         },
-        folders: []
-    }"} x-init="fetchMediaFolders().then((f) => (folders = f))">
+        folders: [],
+        rootFolderId: '#{Phoenix.HTML.javascript_escape(to_string(f[:root_folder_id].value || ""))}'
+    }"} x-init="
+      const load = (id) => fetchMediaFolders({ root_folder_id: id }).then((f) => (folders = f))
+      load(rootFolderId)
+      $watch('rootFolderId', load)
+    ">
+      <.input
+        field={f[:root_folder_id]}
+        type="select"
+        label="Root folder"
+        options={root_folder_options()}
+        help="Where this profile's files are saved. Add more root folders (eg: a second share) under Settings"
+        x-model="rootFolderId"
+      />
+
       <.input
         id="output-path-template"
         field={f[:output_path_template]}
         type="text"
         inputclass="font-mono"
         label="Output path template"
-        help="Must end with .{{ ext }}. See below for more details. The default is good for most cases (required)"
+        help="Relative to the root folder above. Must end with .{{ ext }}. See below for more details. The default is good for most cases (required)"
         x-init="$watch('selectedPreset', p => p && ($el.value = presets[p]))"
       />
 

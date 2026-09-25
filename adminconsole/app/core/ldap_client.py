@@ -429,6 +429,21 @@ def create_group(conn: Connection, dn: str, attributes: dict[str, str | int]) ->
         raise LdapError(f"Group creation failed: {conn.result.get('description')} — {conn.result.get('message')}")
 
 
+def create_contact(conn: Connection, dn: str, attributes: dict[str, str | list[str]]) -> None:
+    """Creates a new AD mail contact — not a security principal (no
+    sAMAccountName/userPrincipalName/userAccountControl at all, unlike
+    create_user()), used for external recipients (Alex, 2026-09-24; see
+    CLAUDE_CONTEXT.md "Create Contact" — modeled directly on a real
+    existing contact, "Seypec Airport", read live before this was built).
+    Needs its own Create Child + write-property delegation on the
+    "contact" object class — none of the grants for "user"/"group"
+    objects carry over, same per-object-class rule already confirmed for
+    Manage Groups's mail/proxyAddresses grant."""
+    ok = conn.add(dn, object_class=["top", "person", "organizationalPerson", "contact"], attributes=attributes)
+    if not ok:
+        raise LdapError(f"Contact creation failed: {conn.result.get('description')} — {conn.result.get('message')}")
+
+
 def _escape(value: str) -> str:
     """Minimal RFC 4515 filter escaping for exact-match lookups (unlock/
     reset/enable-disable/attribute-edit/LAPS all resolve one already-known

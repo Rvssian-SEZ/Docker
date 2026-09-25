@@ -10,7 +10,9 @@ starting table for Helpdesk L2):
       ad.delete_computer (Alex, 2026-09-07 — same reasoning, delete is L2+),
       ad.move_object (Alex, 2026-09-07 — same reasoning, move is L2+),
       ad.manage_groups (Alex, 2026-09-07 — same reasoning, groups is L2+),
-      or ad.offboard (Alex, 2026-09-15 — same reasoning, offboarding is L2+).
+      ad.offboard (Alex, 2026-09-15 — same reasoning, offboarding is L2+),
+      or ad.create_contact (Alex, 2026-09-24 — same reasoning, contact
+      creation is L2+).
   Helpdesk L2 — everything Admin has EXCEPT settings.manage (the Settings
       tab, incl. Graph/Authentik/AD/break-glass-alerting/Automation
       credentials).
@@ -55,6 +57,11 @@ PERMISSIONS: dict[str, list[str]] = {
         # into one action, plus tracks the 6-month deletion clock — see
         # app/routers/offboarding.py and CLAUDE_CONTEXT.md "Offboarding".
         "ad.offboard",
+        # Admin + Helpdesk L2 only (Alex, 2026-09-24) — see DEFAULTS below.
+        # Creates mail contacts (external recipients) — see
+        # app/routers/ad_accounts.py's create-contact route and
+        # CLAUDE_CONTEXT.md "Create Contact".
+        "ad.create_contact",
     ],
     "Reporting": [
         "reports.view",

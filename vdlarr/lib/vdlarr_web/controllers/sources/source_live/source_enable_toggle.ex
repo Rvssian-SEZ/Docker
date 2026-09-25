@@ -28,6 +28,7 @@ defmodule VdlarrWeb.Sources.SourceLive.SourceEnableToggle do
   def handle_event("update", %{"source" => source_params}, %{assigns: assigns} = socket) do
     source = Sources.get_source!(assigns.source_id)
     Sources.update_source_from_params(source, source_params)
+    send(self(), {:source_enabled_changed, source.id})
 
     {:noreply, socket}
   end

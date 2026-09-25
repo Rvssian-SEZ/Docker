@@ -348,7 +348,7 @@ defmodule VdlarrWeb.CoreComponents do
         <input type="hidden" id={@id} name={@name} x-bind:value="enabled" {@rest} />
         <%!-- This triggers a `change` event on the hidden input when the toggle is clicked --%>
         <div class="inline-block cursor-pointer" @click={"enabled = !enabled; dispatchFor('#{@id}', 'change')"}>
-          <div x-bind:class="enabled && '!bg-primary'" class="block h-8 w-14 rounded-full bg-black"></div>
+          <div x-bind:class="enabled && '!bg-primary'" class="block h-8 w-14 rounded-full bg-[#273443]"></div>
           <div
             x-bind:class="enabled && '!right-1 !translate-x-full'"
             class={[
@@ -702,6 +702,20 @@ defmodule VdlarrWeb.CoreComponents do
   def icon(assigns) do
     ~H"""
     <span class={[@name, @class]} {@rest} />
+    """
+  end
+
+  @doc """
+  Renders a Material Symbols Rounded icon by its ligature name (eg: "home"). Only icons
+  included in the self-hosted subset render - see assets/css/material-symbols.css.
+  """
+  attr :name, :string, required: true
+  attr :class, :any, default: nil
+  attr :rest, :global
+
+  def material_icon(assigns) do
+    ~H"""
+    <span class={["material-symbols-rounded", @class]} aria-hidden="true" {@rest}>{@name}</span>
     """
   end
 

@@ -14,10 +14,11 @@ stale/partial session dict.
 
 Session timeout: SessionMiddleware itself doesn't do idle timeout: app/main.py
 enforces `session.absolute` less usefully than an idle check, so
-get_current_user additionally checks last-activity against a 15-minute
-window (spec: "shorter than the reporting-only version... e.g. 15 min
-idle") and clears+redirects on expiry, refreshing the marker on every
-authenticated request.
+get_current_user additionally checks last-activity against a 1-hour
+window (originally 15 min per the spec's "shorter than the
+reporting-only version... e.g. 15 min idle" — raised to 1 hour, Alex,
+2026-09-24) and clears+redirects on expiry, refreshing the marker on
+every authenticated request.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -31,7 +32,7 @@ from app.core.db import get_db
 from app.core.models import AuthSource, RolePermission, User
 from app.core.security import verify_password
 
-IDLE_TIMEOUT = timedelta(minutes=15)
+IDLE_TIMEOUT = timedelta(hours=1)
 
 # Settings page requires re-authentication to view/edit (spec) — a stolen
 # session cookie alone isn't enough. Separate from IDLE_TIMEOUT: this

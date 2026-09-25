@@ -63,7 +63,32 @@ defmodule Vdlarr.Utils.CronUtilsTest do
     end
   end
 
-  describe "describe/1" do
+  describe "describe_interval/1" do
+    test "uses the largest whole unit" do
+      assert CronUtils.describe_interval(1440) == "day"
+      assert CronUtils.describe_interval(10_080) == "7 days"
+      assert CronUtils.describe_interval(360) == "6 hours"
+      assert CronUtils.describe_interval(60) == "hour"
+      assert CronUtils.describe_interval(45) == "45 minutes"
+    end
+  end
+
+  describe "next_run_times/2" do
+    test "returns the requested number of ascending future UTC times" do
+      assert {:ok, [first, second, third]} = CronUtils.next_run_times("0 */6 * * *", 3)
+
+      assert Enum.all?([first, second, third], &(&1.time_zone == "Etc/UTC"))
+      assert DateTime.compare(first, DateTime.utc_now()) == :gt
+      assert DateTime.diff(second, first) == 6 * 3600
+      assert DateTime.diff(third, second) == 6 * 3600
+    end
+
+    test "returns an error for an invalid expression" do
+      assert {:error, _} = CronUtils.next_run_times("not a cron expression", 3)
+    end
+  end
+
+    describe "describe/1" do
     test "describes a daily schedule" do
       assert CronUtils.describe("30 18 * * *") == "Runs daily at 18:30"
     end
@@ -72,8 +97,18 @@ defmodule Vdlarr.Utils.CronUtilsTest do
       assert CronUtils.describe("30 18 * * 1,3,5") == "Runs weekly on Mon, Wed, Fri at 18:30"
     end
 
+    test "describes an every-N-hours schedule" do
+      assert CronUtils.describe("0 */6 * * *") == "Runs every 6 hours at 00:00, 06:00, 12:00, 18:00"
+      assert CronUtils.describe("30 3,9,15,21 * * *") == "Runs every 6 hours at 03:30, 09:30, 15:30, 21:30"
+      assert CronUtils.describe("15 1,3,5,7,9,11,13,15,17,19,21,23 * * *") == "Runs every 2 hours at :15, on odd hours"
+    end
+
+    test "describes an hourly schedule" do
+      assert CronUtils.describe("15 * * * *") == "Runs every hour at :15"
+    end
+
     test "falls back to a custom description for unmodeled shapes" do
-      assert CronUtils.describe("0 */6 * * *") == "Custom schedule: 0 */6 * * *"
+      assert CronUtils.describe("0 3 1 * *") == "Custom schedule: 0 3 1 * *"
     end
 
     test "falls back to echoing the raw string for an unparseable expression" do
@@ -112,8 +147,19 @@ defmodule Vdlarr.Utils.CronUtilsTest do
              }
     end
 
+    test "decomposes an every-N-hours schedule, in both */N and explicit-list form" do
+      assert %{mode: "hourly", every: 6, hour: 0, minute: 0} = CronUtils.to_picker_state("0 */6 * * *")
+      assert %{mode: "hourly", every: 6, hour: 3, minute: 30} = CronUtils.to_picker_state("30 3,9,15,21 * * *")
+      assert %{mode: "hourly", every: 1, hour: 0, minute: 15} = CronUtils.to_picker_state("15 * * * *")
+    end
+
+    test "treats an unevenly spaced or partial-day hour list as custom" do
+      assert %{mode: "custom"} = CronUtils.to_picker_state("0 3,9,20 * * *")
+      assert %{mode: "custom"} = CronUtils.to_picker_state("0 9,15,21 * * *")
+    end
+
     test "falls back to custom mode for unmodeled shapes, preserving the raw string" do
-      assert %{mode: "custom", raw: "0 */6 * * *"} = CronUtils.to_picker_state("0 */6 * * *")
+      assert %{mode: "custom", raw: "0 3 1 * *"} = CronUtils.to_picker_state("0 3 1 * *")
     end
 
     test "falls back to custom mode for an unparseable expression, preserving the raw string" do

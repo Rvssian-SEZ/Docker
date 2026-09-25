@@ -1,0 +1,84 @@
+# Example Docker Compose setup for VDLarr.
+#
+#   cp example.docker.yaml docker-compose.yaml   # then edit the values marked "CHANGE ME"
+#   mkdir -p vdlarr/config vdlarr/yt-dlp-plugins && touch vdlarr/yt-dlp.conf
+#   docker compose up -d
+#
+# (The `touch` matters: if yt-dlp.conf doesn't exist, Docker creates a directory in its place.)
+#
+# Everything below uses example values. Paths on the left of each volume are on the host;
+# paths on the right are what VDLarr sees inside the container.
+
+services:
+  vdlarr:
+    image: ghcr.io/rvssian-sez/vdlarr:latest
+    container_name: vdlarr
+    restart: unless-stopped
+    ports:
+      - "8945:8945"
+    environment:
+      # Only used to seed the app's timezone on first start - after that it's changed under
+      # Settings (the saved setting wins over this variable).
+      TZ: "Europe/London" # CHANGE ME
+      UMASK: "022"
+      PORT: "8945"
+      RUN_CONTEXT: "selfhosted"
+      MIX_ENV: "prod"
+
+      # The default root folder downloads are saved under. Extra root folders (eg: a second
+      # share) are added in the app under Settings > Root Folders - mount them below first.
+      MEDIA_PATH: "/downloads/youtube"
+
+      # How many downloads / channel indexes run at once. Keep these low: every extra
+      # concurrent yt-dlp stream raises the request rate YouTube sees from your IP.
+      YT_DLP_WORKER_CONCURRENCY: "1"
+      INDEXING_WORKER_CONCURRENCY: "1"
+
+      # "info" keeps the log readable; "debug" also writes every request and SQL query.
+      LOG_LEVEL: "info"
+
+      # Optional login page. Leave both unset for no login (fine on a trusted LAN only).
+      LOGIN_USERNAME: "admin" # CHANGE ME
+      LOGIN_PASSWORD: "change-this-password" # CHANGE ME
+      # Alternatively, HTTP basic auth instead of the login page:
+      # BASIC_AUTH_USERNAME: "admin"
+      # BASIC_AUTH_PASSWORD: "change-this-password"
+
+      # Signs sessions/cookies. Generate one with: openssl rand -base64 48
+      # Required if VDLarr is reachable from outside your network.
+      SECRET_KEY_BASE: "replace-with-a-64-character-random-string-generated-by-openssl-rand" # CHANGE ME
+
+      # Optional extras:
+      # BASE_ROUTE_PATH: "/vdlarr"      # when served from a sub-path behind a reverse proxy
+      # EXPOSE_FEED_ENDPOINTS: "true"   # serve podcast RSS feeds without auth
+      # ENABLE_PROMETHEUS: "true"       # expose /metrics
+    volumes:
+      # App database, settings, logs, metadata, poster thumbnails, cookies.txt
+      - ./vdlarr/config:/config
+      # Default root folder (matches MEDIA_PATH above)
+      - /mnt/media/youtube:/downloads/youtube # CHANGE ME
+      # Optional extra root folder - add it under Settings > Root Folders as /downloads/archive
+      - /mnt/archive/youtube:/downloads/archive # CHANGE ME (or remove)
+      # yt-dlp plugins (eg: the bgutil PO token plugin; VDLarr keeps it in sync with the
+      # provider's version automatically) and an optional global yt-dlp config file
+      - ./vdlarr/yt-dlp-plugins:/etc/yt-dlp/plugins
+      - ./vdlarr/yt-dlp.conf:/etc/yt-dlp.conf
+    networks:
+      - vdlarr
+    depends_on:
+      - bgutil-provider
+
+  # Generates YouTube PO tokens so yt-dlp gets past bot checks. After starting, set
+  # Settings > PO Token Provider URL to http://bgutil-provider:4416
+  # No ports are published - only VDLarr on the same network can reach it.
+  bgutil-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: bgutil-provider
+    restart: unless-stopped
+    init: true
+    networks:
+      - vdlarr
+
+networks:
+  vdlarr:
+    name: vdlarr

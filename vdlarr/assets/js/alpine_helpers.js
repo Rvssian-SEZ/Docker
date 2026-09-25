@@ -47,9 +47,11 @@ window.dispatchFor = (elementOrId, eventName, detail = {}) => {
   }, 0)
 }
 
-window.fetchMediaFolders = async () => {
+// `params` picks whose root folder to list: { media_profile_id } or { root_folder_id }
+window.fetchMediaFolders = async (params = {}) => {
   try {
-    const response = await fetch('/sources/folders')
+    const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value != null)).toString()
+    const response = await fetch(query ? `/sources/folders?${query}` : '/sources/folders')
     const { folders } = await response.json()
 
     return folders

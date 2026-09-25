@@ -1,115 +1,116 @@
 <aside
   x-bind:class="sidebarVisible ? 'translate-x-0' : '-translate-x-full'"
   class={[
-    "-translate-x-full absolute left-0 top-0 z-9999 flex h-screen w-65 flex-col overflow-y-hidden justify-between",
-    "bg-midnight-900 border-r border-white/5 duration-300 ease-linear shadow-lg sm:shadow-none lg:static lg:translate-x-0"
+    "-translate-x-full absolute left-0 top-0 z-9999 flex h-screen w-[252px] flex-none flex-col overflow-y-hidden justify-between",
+    "bg-midnight-900 border-r border-[#151d27] duration-300 ease-linear shadow-lg sm:shadow-none lg:static lg:translate-x-0"
   ]}
   @click.outside="sidebarVisible = false"
 >
-  <section>
-    <div class="flex items-center justify-between gap-2 px-6 py-4 border-b border-white/5">
-      <a href={~p"/"} class="flex items-center">
-        <img src={~p"/images/logo-2026-08-27.svg"} alt="VDLarr" class="w-auto" />
+  <section class="flex min-h-0 flex-col">
+    <div class="flex h-[70px] flex-none items-center justify-between gap-3 px-6">
+      <a href={~p"/"} class="flex items-center gap-3">
+        <span class="grid h-10 w-10 place-items-center rounded-full bg-[radial-gradient(circle_at_35%_30%,#fff_0_7%,#56a7ff_8%_30%,#06366d_31%_55%,#111923_56%)] ring-1 ring-white/10">
+          <.material_icon name="hub" class="text-white" />
+        </span>
+        <span class="text-[24px] font-bold tracking-tight text-[#edf1f7]">VDLarr</span>
       </a>
 
-      <button class="block mt-3 lg:hidden" @click.stop="sidebarVisible = !sidebarVisible">
-        <.icon name="hero-arrow-left" class="fill-current text-slate-400" />
+      <button class="grid h-9 w-9 place-items-center rounded-full hover:bg-white/5 lg:hidden" @click.stop="sidebarVisible = !sidebarVisible">
+        <.material_icon name="arrow_back" class="text-[#afbdd0]" />
       </button>
     </div>
-    <div class="no-scrollbar flex flex-col overflow-y-auto duration-300 ease-linear">
-      <nav class="mt-3 px-4 py-4 lg:px-6">
-        <h3 class="mb-4 ml-3 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-          <span>Menu</span>
-        </h3>
-        <div class="flex flex-col justify-between">
-          <ul class="mb-6 flex flex-col gap-1">
-            <.sidebar_item
-              icon="hero-tv"
-              text="Dashboard"
-              href={~p"/sources"}
-              active={nav_active?(@conn.request_path, "/sources")}
-            />
-          </ul>
-        </div>
 
-        <h3 class="mb-4 ml-3 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-          <span>Library</span>
-        </h3>
-        <div class="flex flex-col justify-between">
-          <ul class="mb-6 flex flex-col gap-1">
-            <.sidebar_item
-              icon="hero-chart-bar"
-              text="Stats"
-              href={~p"/stats"}
-              active={nav_active?(@conn.request_path, "/stats")}
-            />
-            <.sidebar_item
-              :if={Settings.get!(:show_hidden_sources_menu)}
-              icon="hero-eye-slash"
-              text="Hidden Sources"
-              href={~p"/sources/hidden"}
-              active={nav_active?(@conn.request_path, "/sources/hidden")}
-            />
-            <.sidebar_item
-              icon="hero-adjustments-vertical"
-              text="Media Profiles"
-              href={~p"/media_profiles"}
-              active={nav_active?(@conn.request_path, "/media_profiles")}
-            />
-            <.sidebar_item
-              icon="hero-arrow-down-tray"
-              text="Wanted"
-              href={~p"/wanted"}
-              active={nav_active?(@conn.request_path, "/wanted")}
-            />
-            <.sidebar_item
-              icon="hero-queue-list"
-              text="Activity"
-              href={~p"/activity"}
-              active={nav_active?(@conn.request_path, "/activity")}
-            />
-          </ul>
-        </div>
-
-        <h3 class="mb-4 ml-3 text-[10px] font-semibold uppercase tracking-wider text-slate-600">
-          <span>System</span>
-        </h3>
-        <div class="flex flex-col justify-between">
-          <ul class="mb-6 flex flex-col gap-1">
-            <.sidebar_item
-              icon="hero-document-text"
-              text="Logs"
-              href={~p"/logs"}
-              active={nav_active?(@conn.request_path, "/logs")}
-            />
-            <.sidebar_item
-              icon="hero-cog-6-tooth"
-              text="Settings"
-              href={~p"/settings"}
-              active={nav_active?(@conn.request_path, "/settings")}
-            />
-          </ul>
-        </div>
+    <div class="no-scrollbar flex min-h-0 flex-col overflow-y-auto">
+      <nav class="px-3 pt-4">
+        <ul class="flex flex-col gap-1">
+          <.sidebar_item icon="home" text="Dashboard" href={~p"/"} active={nav_active?(@conn.request_path, "/")} />
+          <.sidebar_item
+            icon="subscriptions"
+            text="Channels"
+            href={~p"/sources"}
+            active={nav_active?(@conn.request_path, "/sources")}
+          />
+          <.sidebar_item
+            icon="downloading"
+            text="Activity"
+            href={~p"/activity"}
+            active={nav_active?(@conn.request_path, "/activity")}
+          />
+          <.sidebar_item
+            icon="error"
+            text="Wanted"
+            href={~p"/wanted"}
+            badge={wanted_count()}
+            active={nav_active?(@conn.request_path, "/wanted")}
+          />
+          <.sidebar_item
+            icon="video_library"
+            text="History"
+            href={~p"/stats"}
+            active={nav_active?(@conn.request_path, "/stats")}
+          />
+          <.sidebar_item
+            :if={Settings.get!(:show_hidden_sources_menu)}
+            icon="visibility_off"
+            text="Hidden Sources"
+            href={~p"/sources/hidden"}
+            active={nav_active?(@conn.request_path, "/sources/hidden")}
+          />
+          <.sidebar_item
+            icon="history"
+            text="Logs"
+            href={~p"/logs"}
+            active={nav_active?(@conn.request_path, "/logs")}
+          />
+          <.sidebar_item
+            icon="settings"
+            text="Settings"
+            href={~p"/settings"}
+            active={nav_active?(@conn.request_path, "/settings")}
+          />
+        </ul>
       </nav>
+
+      <div class="mx-5 my-5 h-px bg-[#202832]"></div>
+
+      <div class="px-3 pb-4">
+        <ul>
+          <.sidebar_item
+            icon="tune"
+            text="Media Profiles"
+            href={~p"/media_profiles"}
+            active={nav_active?(@conn.request_path, "/media_profiles")}
+          />
+        </ul>
+        <div class="space-y-1 pl-14 pr-4 pt-1 text-[13px] text-[#9aa9bc]">
+          <.link
+            :for={{{id, name, source_count}, idx} <- Enum.with_index(media_profile_source_counts())}
+            href={~p"/media_profiles/#{id}"}
+            class="flex items-center justify-between gap-2 py-2 hover:text-white"
+          >
+            <span class="truncate">{name}</span>
+            <span class={["m3-badge", Enum.at(profile_badge_classes(), rem(idx, 3))]}>{source_count}</span>
+          </.link>
+        </div>
+      </div>
     </div>
   </section>
-  <section>
-    <nav class="px-4 py-4 lg:px-6 border-t border-white/5">
-      <ul class="mb-6 flex flex-col gap-1">
-        <li :if={VdlarrWeb.Plugs.session_login_enabled?()}>
-          <.link
-            href={~p"/logout"}
-            method="delete"
-            class="font-medium group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
-          >
-            <.icon name="hero-arrow-right-on-rectangle" /> Logout
-          </.link>
-        </li>
-      </ul>
-      <div class="flex items-center justify-between px-3 text-[11px] text-slate-600">
-        <span>VDLarr {Application.spec(:vdlarr)[:vsn]} · yt-dlp {Settings.get!(:yt_dlp_version)}</span>
-        <span class="text-emerald-500">●</span>
-      </div>
-    </nav>
+
+  <section class="flex-none border-t border-[#151d27] px-3 py-4">
+    <ul :if={VdlarrWeb.Plugs.session_login_enabled?()} class="mb-3">
+      <li>
+        <.link
+          href={~p"/logout"}
+          method="delete"
+          class="flex items-center gap-4 rounded-xl px-4 py-3 text-[14px] text-[#c4cfdf] transition hover:bg-[#111a25] hover:text-white"
+        >
+          <.material_icon name="logout" /> Logout
+        </.link>
+      </li>
+    </ul>
+    <div class="flex items-center gap-2 px-4 text-[11px] text-[#7688a0]">
+      <span class="h-2 w-2 flex-none rounded-full bg-m3-green shadow-[0_0_8px_#3ddc97]"></span>
+      <span class="truncate">VDLarr {Application.spec(:vdlarr)[:vsn]} · yt-dlp {Settings.get!(:yt_dlp_version)}</span>
+    </div>
   </section>
 </aside>

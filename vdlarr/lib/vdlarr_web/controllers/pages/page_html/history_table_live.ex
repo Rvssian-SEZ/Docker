@@ -6,7 +6,7 @@ defmodule Vdlarr.Pages.HistoryTableLive do
   alias Vdlarr.Utils.NumberUtils
   alias VdlarrWeb.CustomComponents.TextComponents
 
-  @limit 5
+  @limit 25
 
   def render(%{records: []} = assigns) do
     ~H"""

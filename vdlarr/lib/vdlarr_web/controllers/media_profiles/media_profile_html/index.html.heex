@@ -19,9 +19,14 @@
             {media_profile.name}
           </.subtle_link>
         </:col>
-        <:col :let={media_profile} label="Preferred Resolution">
+        <:col :let={media_profile} label="Resolution">
           {media_profile.preferred_resolution}
         </:col>
+        <:col :let={media_profile} label="Download folder">
+          <span class="font-mono text-[13px] text-[#b9c7dc]">{download_folder_label(media_profile.output_path_template, media_profile.root_folder_name)}</span>
+        </:col>
+        <:col :let={media_profile} label="Subtitles">{short_subtitles_label(media_profile)}</:col>
+        <:col :let={media_profile} label="SponsorBlock">{short_sponsorblock_label(media_profile)}</:col>
         <:col :let={media_profile} label="Sources">
           <.subtle_link href={~p"/media_profiles/#{media_profile.id}/#tab-sources"}>
             <.localized_number number={media_profile.source_count} />

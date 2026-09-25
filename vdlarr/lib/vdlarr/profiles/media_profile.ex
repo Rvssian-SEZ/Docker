@@ -31,6 +31,7 @@ defmodule Vdlarr.Profiles.MediaProfile do
     media_container
     redownload_delay_days
     marked_for_deletion_at
+    root_folder_id
   )a
 
   @required_fields ~w(name output_path_template)a
@@ -73,6 +74,7 @@ defmodule Vdlarr.Profiles.MediaProfile do
     field :marked_for_deletion_at, :utc_datetime
 
     has_many :sources, Source
+    belongs_to :root_folder, Vdlarr.RootFolders.RootFolder
 
     timestamps(type: :utc_datetime)
   end
@@ -95,7 +97,7 @@ defmodule Vdlarr.Profiles.MediaProfile do
 
   @doc false
   def json_exluded_fields do
-    ~w(__meta__ __struct__ sources)a
+    ~w(__meta__ __struct__ sources root_folder)a
   end
 
   defimpl Jason.Encoder, for: MediaProfile do

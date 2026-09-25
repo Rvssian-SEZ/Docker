@@ -52,6 +52,6 @@ defmodule VdlarrWeb.Settings.SettingHTML do
   end
 
   defp help_link_classes do
-    "underline decoration-bodydark decoration-1 hover:decoration-white"
+    "text-[#7eb7ff] transition-colors hover:text-[#b3d5ff]"
   end
 end

@@ -75,7 +75,8 @@ config :vdlarr, Oban,
        {"#{current_minute} #{current_hour} * * *", Vdlarr.YtDlp.UpdateWorker},
        {"30 #{current_hour} * * *", Vdlarr.YtDlp.BgutilPluginUpdateWorker},
        {"0 1 * * *", Vdlarr.Downloading.MediaRetentionWorker},
-       {"0 2 * * *", Vdlarr.Downloading.MediaQualityUpgradeWorker}
+       {"0 2 * * *", Vdlarr.Downloading.MediaQualityUpgradeWorker},
+       {"15 * * * *", Vdlarr.Downloading.DownloadPriorityAgingWorker}
      ]}
   ]
 

@@ -51,8 +51,10 @@ not read-only — every write path is treated as high-risk.**
   fields are write-only in the UI (is_set() badge, never the value); a
   blank field on save means "keep existing", never "clear".
 - **Settings page re-auth:** `require_reauth` (app/core/auth.py) — a
-  5-minute freshness window, separate from the 15-minute idle-session
-  timeout. Local/break-glass users re-enter password(+TOTP); OIDC users
+  5-minute freshness window, separate from the idle-session timeout
+  (`IDLE_TIMEOUT`, originally 15 minutes per spec, raised to 1 hour —
+  Alex, 2026-09-24 — this 5-minute Settings re-auth window is unchanged).
+  Local/break-glass users re-enter password(+TOTP); OIDC users
   are bounced back through `/auth/oidc/login?reauth_next=...`, which
   marks reauth fresh on a successful callback instead of the normal
   post-login redirect to "/". Live-verified end-to-end (see Build order).
@@ -761,6 +763,18 @@ same risk tier as the membership/create writes that already worked via
 LDAPS directly). Test group cleaned up the same way as before
 (`admin_cleanup_test_group.yml`).
 
+**Create Group promoted to its own top-level nav tab (2026-09-24).**
+Alex re-asked for "a new tab with an ability to create groups" with the
+same mail/proxy/displayName attributes already described above — this
+feature already existed at `/ad/groups/create` (confirmed by reading the
+live template before touching anything, not assumed), just reachable
+only via a button on the Groups list page. Rather than build a
+duplicate flow, added `/ad/groups/create` as its own top-level
+`base.html` nav item (mirroring how Create User sits alongside AD
+Accounts) — same route, same gating (`ad.manage_groups`), no new code
+in `ad_accounts.py` at all. The existing "Create Group" button on
+`/ad/groups` was left in place too — both paths lead to the same page.
+
 **Add Member autocomplete (2026-09-08).** `GET /ad/groups/member-suggest`
 reuses `search_accounts()` (same substring search as AD Accounts) to back
 a live, debounced dropdown on the Add Member modal's username field —
@@ -816,6 +830,73 @@ routing reason. `_check_scope()` is checked against the *group's* DN only
 **Confirmed live** end-to-end (add -> shows up via `resolve_groups_by_dn`
 -> remove -> confirmed gone) against a real disposable test group
 (`zzz-test-account-groups`, cleaned up afterward).
+
+## Create Contact (2026-09-24)
+New top-level tab (`ad.create_contact`, Admin + Helpdesk L2 — same tier
+as every other object-creation permission) at `/ad/create-contact` for
+creating AD mail contacts (external recipients). **Modeled directly on a
+real existing contact** — Alex pointed at "Seypec Airport"
+(`s.airport@seypec.com`) and asked what attributes it actually had; that
+was read live via a raw LDAP search (`ALL_ATTRIBUTES`, not assumed) as a
+separate step *before* this feature was designed, which is what
+determined the exact field set below rather than guessing at a generic
+"contact" schema.
+
+- **Not a security principal** — `ldap_client.create_contact()` sets
+  `object_class=["top","person","organizationalPerson","contact"]` and
+  nothing else structural: no `sAMAccountName`, no
+  `userPrincipalName`, no password, no `userAccountControl`. Confirmed
+  from the real object: it genuinely has none of those.
+- **Fields**: First name (`givenName`) / Last name (`sn`) / Display name
+  (`displayName`, defaults to "First Last", editable) / External mail
+  (`mail` — the real destination address) / OU (same `list_ous()` picker
+  as Create User/Create Group) / three proxy address fields, all
+  auto-filled client-side but editable before submit:
+  - External (primary): `SMTP:{mail}` — mirrors whatever's typed into
+    the external mail field.
+  - Internal (saa.sc): `smtp:{First}.{Last}@saa.sc`
+  - Internal (Exchange Online): `smtp:{First}.{Last}@scaasey.mail.onmicrosoft.com`
+
+  The internal aliases use **`First.Last` with the exact case as typed**
+  (e.g. `Seypec.Airport`), not a lowercased logon-style local part —
+  this matches the real contact's actual proxyAddresses exactly, and is
+  a deliberately different convention from Create User's lowercase
+  `sAMAccountName`-based aliases (contacts have no logon name to base it
+  on).
+  `cn` is set to the same value as `displayName` (also matches the real
+  object, where `cn`/`name`/`displayName` were all identical).
+- **Deliberately excludes X.400/x500 legacy address-space entries** —
+  the real contact has two of these (`X400:...`, `x500:...`), but they're
+  Exchange-generated (almost certainly added when/if this contact is
+  ever synced into Exchange Online), not something to hand-craft via raw
+  LDAP. Alex's explicit scope for this feature was "we only need"
+  external + the two internal aliases.
+- **New AD delegation round** — no existing grant covers the `contact`
+  object class at all (per-object-class ACE rule, same one already hit
+  for Manage Groups's `mail`/`proxyAddresses` grant not covering
+  `group`):
+  `SAA/playbooks/admin_grant_create_contact_adminconsole.yml` — `CC;contact`
+  + `WP;givenName;contact` + `WP;sn;contact` + `WP;displayName;contact` +
+  `WP;mail;contact` + `WP;proxyAddresses;contact`, all rc=0.
+- **Confirmed live end-to-end** against a disposable test contact
+  (`Zzz TestContact`) — created via the exact same `ldap_client.create_contact()`
+  call path the route uses, then every attribute (`cn`, `displayName`,
+  `givenName`, `sn`, `mail`, `proxyAddresses`, `objectClass`) verified via
+  a fresh LDAP read matching expectations exactly.
+- **Found and fixed a real bug in the shared test-cleanup playbook along
+  the way**: `admin_cleanup_test_objects.yml` filtered by
+  `SamAccountName`, which — as this feature's own discovery confirmed —
+  a contact object doesn't have at all, so cleanup silently reported
+  `not_found` for a contact that genuinely existed. Fixed to filter by
+  `Name` instead (present on every object class); the playbook's own
+  comment now flags that the caller must pass whatever value was used as
+  the object's `cn`/display name at creation, not necessarily a
+  `sAMAccountName` — those only coincided before because this project's
+  own disposable-test-object scripts happened to set `cn == sAMAccountName`
+  by their own convention, not an AD guarantee.
+- Same live-DB gotcha as every permission added this session —
+  `ad.create_contact` patched directly into `role_permissions` for
+  role_id 3 (admin) and 2 (helpdesk_l2) after deploy.
 
 ## Offboarding (2026-09-15)
 New top-level tab (`ad.offboard`, Admin + Helpdesk L2 — same tier as

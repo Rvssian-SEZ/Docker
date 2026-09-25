@@ -20,6 +20,8 @@ defmodule Vdlarr.Application do
       Vdlarr.Repo,
       # Must be before startup tasks
       Vdlarr.Boot.PreJobStartupTasks,
+      # Download workers write to this, so it has to exist before Oban starts running jobs
+      Vdlarr.Downloading.DownloadProgressStore,
       {Oban, Application.fetch_env!(:vdlarr, Oban)},
       Vdlarr.Boot.PostJobStartupTasks,
       {DNSCluster, query: Application.get_env(:vdlarr, :dns_cluster_query) || :ignore},

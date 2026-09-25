@@ -209,7 +209,7 @@ defmodule Vdlarr.Downloading.DownloadingHelpersTest do
 
       assert [{:ok, _}] = DownloadingHelpers.kickoff_redownload_for_existing_media(source)
 
-      assert_enqueued(worker: MediaDownloadWorker, args: %{"id" => media_item.id})
+      assert_enqueued(worker: MediaDownloadWorker, args: %{"id" => media_item.id, "redownload_existing" => true})
     end
 
     test "doesn't enqueue jobs for media that should be ignored" do

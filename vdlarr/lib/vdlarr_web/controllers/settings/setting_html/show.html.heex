@@ -10,3 +10,83 @@
     <.setting_form conn={@conn} changeset={@changeset} action={~p"/settings"} />
   </div>
 </div>
+
+<section id="root-folders" class="mt-6 rounded-xl border border-white/5 bg-midnight-850 px-5 py-5 sm:px-7.5" aria-labelledby="root-folders-title">
+  <h3 id="root-folders-title" class="font-display text-2xl text-white">Root Folders</h3>
+  <p class="mt-1 max-w-3xl text-sm text-bodydark2">
+    Top-level folders media can be saved into. Each media profile picks one, and its output path template is
+    relative to it. Extra roots must already be mounted into the container.
+  </p>
+
+  <div class="mt-5 max-w-full overflow-x-auto">
+    <table class="w-full min-w-[720px] text-left text-sm">
+      <thead class="text-[11px] uppercase tracking-wide text-[#7d8da2]">
+        <tr>
+          <th class="pb-3 pr-4 font-semibold">Name</th>
+          <th class="pb-3 pr-4 font-semibold">Path</th>
+          <th class="pb-3 pr-4 text-right font-semibold">Free</th>
+          <th class="pb-3 pr-4 font-semibold">Jellyfin path</th>
+          <th class="pb-3 pr-4 text-right font-semibold">Profiles</th>
+          <th class="pb-3 font-semibold"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="m3-row">
+          <td class="py-3 pr-4 text-[#edf1f7]">Default <span class="text-xs text-[#7d8da2]">(MEDIA_PATH)</span></td>
+          <td class="py-3 pr-4 font-mono text-[13px] text-[#b9c7dc]">{@default_root.path}</td>
+          <td class="py-3 pr-4 text-right tabular-nums text-[#b9c7dc]">
+            <.readable_filesize :if={@default_root.free} byte_size={@default_root.free} />
+            <span :if={!@default_root.free}>—</span>
+          </td>
+          <td class="py-3 pr-4 font-mono text-[13px] text-[#7d8da2]">
+            {if @default_root.jellyfin in [nil, ""], do: "Same path", else: @default_root.jellyfin}
+          </td>
+          <td class="py-3 pr-4 text-right text-[#7d8da2]">—</td>
+          <td class="py-3 text-xs text-[#7d8da2]">Built in</td>
+        </tr>
+        <tr :for={%{root: root, free: free, profiles: profiles} <- @root_folders} class="m3-row" data-testid="root-folder-row">
+          <td class="py-3 pr-4 text-[#edf1f7]">{root.name}</td>
+          <td class="py-3 pr-4 font-mono text-[13px] text-[#b9c7dc]">{root.path}</td>
+          <td class="py-3 pr-4 text-right tabular-nums text-[#b9c7dc]">
+            <.readable_filesize :if={free} byte_size={free} />
+            <span :if={!free}>—</span>
+          </td>
+          <td class="py-3 pr-4 font-mono text-[13px] text-[#7d8da2]">{root.jellyfin_path || "Same path"}</td>
+          <td class="py-3 pr-4 text-right tabular-nums text-[#b9c7dc]">{profiles}</td>
+          <td class="py-3 text-right">
+            <.link
+              :if={profiles == 0}
+              href={~p"/root_folders/#{root.id}"}
+              method="delete"
+              data-confirm={"Remove the root folder \"#{root.name}\"? Files on disk are not touched."}
+              class="text-sm text-[#ff8a8f] transition-colors hover:text-[#ffb5b5]"
+            >
+              Remove
+            </.link>
+            <span :if={profiles > 0} class="text-xs text-[#7d8da2]" title="Move its media profiles to another root first">
+              In use
+            </span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <.form
+    :let={f}
+    for={@root_folder_changeset}
+    action={~p"/root_folders"}
+    class="mt-6 grid gap-4 rounded-lg border border-m3-border bg-midnight-800/60 p-4 md:grid-cols-[1fr_1.5fr_1.5fr_auto] md:items-end"
+  >
+    <.input field={f[:name]} type="text" label="Name" placeholder="Archive" />
+    <.input field={f[:path]} type="text" label="Container path" placeholder="/downloads/archive" inputclass="font-mono" />
+    <.input
+      field={f[:jellyfin_path]}
+      type="text"
+      label="Jellyfin path (optional)"
+      placeholder="Only if Jellyfin mounts it elsewhere"
+      inputclass="font-mono"
+    />
+    <.button class="h-[50px] w-full md:w-auto" rounding="rounded-lg">Add root folder</.button>
+  </.form>
+</section>

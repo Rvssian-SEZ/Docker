@@ -23,19 +23,107 @@
         <.actions_dropdown source={@source} conn={@conn} />
       </:tab_append>
 
-      <:tab title="Source" id="source">
-        <div class="flex flex-col text-white gap-10">
-          <section>
-            <h3 class="font-bold text-xl mb-2 mt-6">Raw Attributes</h3>
-            <section>
-              <strong>Media Profile:</strong>
-              <.subtle_link href={~p"/media_profiles/#{@source.media_profile_id}"}>
-                {@source.media_profile.name}
-              </.subtle_link>
-            </section>
+      <:tab title="Overview" id="source">
+        <div class="mt-6 flex flex-col gap-8 text-white" data-testid="source-overview">
+          <div class="flex flex-col gap-6 sm:flex-row">
+            <div class="flex h-40 w-40 flex-none items-center justify-center overflow-hidden rounded-xl border border-m3-border bg-midnight-800">
+              <img
+                :if={@overview.has_poster}
+                src={~p"/sources/#{@source.id}/poster?size=thumb"}
+                alt=""
+                class="h-full w-full object-cover"
+              />
+              <.icon :if={!@overview.has_poster} name="hero-photo" class="h-12 w-12 text-slate-600" />
+            </div>
 
-            <.list_items_from_map map={Map.from_struct(@source)} />
-          </section>
+            <div class="min-w-0 flex-1 space-y-4">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class={[
+                  "m3-badge",
+                  if(@source.enabled, do: "bg-[#063e2e] text-[#66e6b1]", else: "bg-[#293645] text-[#b9c7dc]")
+                ]}>
+                  {if @source.enabled, do: "Monitored", else: "Paused"}
+                </span>
+                <span class="m3-badge bg-[#123e76] text-[#a9d0ff]">
+                  {VdlarrWeb.Sources.SourceOverview.collection_type_label(@source.collection_type)}
+                </span>
+                <span :if={@source.hidden} class="m3-badge bg-[#293645] text-[#b9c7dc]">Hidden</span>
+                <span :if={!@source.download_media} class="m3-badge bg-[#8c4500]/80 text-[#ffd09f]">Index only</span>
+              </div>
+
+              <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <div class="rounded-lg border border-m3-border bg-midnight-800 p-3">
+                  <div class="text-[11px] uppercase tracking-wide text-[#7d8da2]">Downloaded</div>
+                  <div class="mt-1 text-xl font-bold tabular-nums">
+                    <.localized_number number={@overview.downloaded} />
+                    <span class="text-sm font-normal text-[#7d8da2]">
+                      of <.localized_number number={@overview.total} />
+                    </span>
+                  </div>
+                </div>
+                <.link href="#tab-pending" class="rounded-lg border border-m3-border bg-midnight-800 p-3 transition hover:border-[#334354]">
+                  <div class="text-[11px] uppercase tracking-wide text-[#7d8da2]">Pending</div>
+                  <div class={["mt-1 text-xl font-bold tabular-nums", @overview.pending > 0 && "text-[#ffd09f]"]}>
+                    <.localized_number number={@overview.pending} />
+                  </div>
+                </.link>
+                <.link href="#tab-failed" class="rounded-lg border border-m3-border bg-midnight-800 p-3 transition hover:border-[#334354]">
+                  <div class="text-[11px] uppercase tracking-wide text-[#7d8da2]">Failed</div>
+                  <div class={["mt-1 text-xl font-bold tabular-nums", @overview.failed > 0 && "text-[#ffb5b5]"]}>
+                    <.localized_number number={@overview.failed} />
+                  </div>
+                </.link>
+                <div class="rounded-lg border border-m3-border bg-midnight-800 p-3">
+                  <div class="text-[11px] uppercase tracking-wide text-[#7d8da2]">On disk</div>
+                  <div class="mt-1 text-xl font-bold tabular-nums"><.readable_filesize byte_size={@overview.size} /></div>
+                </div>
+              </div>
+
+              <a
+                :if={@source.original_url}
+                href={@source.original_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex max-w-full items-center gap-1 truncate text-sm text-[#7eb7ff] transition-colors hover:text-[#b3d5ff]"
+              >
+                <.icon name="hero-arrow-top-right-on-square" class="h-4 w-4 flex-none" />
+                <span class="truncate">{@source.original_url}</span>
+              </a>
+            </div>
+          </div>
+
+          <dl class="grid gap-x-8 gap-y-5 sm:grid-cols-2 xl:grid-cols-3">
+            <.detail_item label="Media profile">
+              <.subtle_link href={~p"/media_profiles/#{@source.media_profile_id}"}>{@source.media_profile.name}</.subtle_link>
+            </.detail_item>
+            <.detail_item label="Schedule">{@overview.schedule}</.detail_item>
+            <.detail_item label="Next index">{@overview.next_index}</.detail_item>
+            <.detail_item label="Last indexed">
+              {VdlarrWeb.Sources.SourceOverview.local_datetime(@source.last_indexed_at)}
+            </.detail_item>
+            <.detail_item label="Download folder">
+              <span class="font-mono text-[13px]">{@source.series_directory || "Created on first download"}</span>
+            </.detail_item>
+            <.detail_item label="Cutoff date">
+              {VdlarrWeb.Sources.SourceOverview.cutoff_label(@source.download_cutoff_date)}
+            </.detail_item>
+            <.detail_item label="Retention">
+              {VdlarrWeb.Sources.SourceOverview.retention_label(@source.retention_period_days)}
+            </.detail_item>
+            <.detail_item label="Filters">{VdlarrWeb.Sources.SourceOverview.filters_label(@source)}</.detail_item>
+            <.detail_item label="Cookies">
+              {VdlarrWeb.Sources.SourceOverview.cookie_label(@source.cookie_behaviour)}
+            </.detail_item>
+          </dl>
+
+          <details class="group rounded-lg border border-m3-border bg-midnight-900/60">
+            <summary class="cursor-pointer select-none px-4 py-3 text-sm font-medium text-[#b9c7dc] hover:text-white">
+              Advanced: all fields
+            </summary>
+            <div class="border-t border-m3-border px-4 pb-4">
+              <.list_items_from_map map={Map.from_struct(@source)} />
+            </div>
+          </details>
         </div>
       </:tab>
       <:tab title="Pending" id="pending">
