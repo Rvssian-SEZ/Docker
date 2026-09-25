@@ -109,6 +109,48 @@ defmodule Coffer.Reporting do
   end
 
   @doc """
+  Total allocated / spent / remaining across `spend_by_envelope/1` rows, so
+  the dashboard's headline numbers are always exactly the sum of the
+  per-envelope bars shown beneath them.
+  """
+  def budget_totals(rows) do
+    allocated = sum_rows(rows, & &1.allocated)
+    spent = sum_rows(rows, & &1.spent)
+    %{allocated: allocated, spent: spent, remaining: Decimal.sub(allocated, spent)}
+  end
+
+  @doc """
+  Rows from `spend_by_envelope/1` whose spend exceeds their allocation by
+  MORE than `min_percent` percent (0 = every over-budget envelope), worst
+  first. Adds `:over_amount` and `:over_percent` to each row. An envelope
+  with spend but a zero allocation has no meaningful percentage
+  (`over_percent: nil`) and always passes the threshold.
+  """
+  def over_budget(rows, min_percent \\ 0) do
+    rows
+    |> Enum.flat_map(fn %{allocated: allocated, spent: spent} = row ->
+      if Decimal.compare(spent, allocated) == :gt do
+        over_amount = Decimal.sub(spent, allocated)
+
+        over_percent =
+          if Decimal.eq?(allocated, 0),
+            do: nil,
+            else: over_amount |> Decimal.div(allocated) |> Decimal.mult(100)
+
+        [Map.merge(row, %{over_amount: over_amount, over_percent: over_percent})]
+      else
+        []
+      end
+    end)
+    |> Enum.filter(
+      &(is_nil(&1.over_percent) or Decimal.compare(&1.over_percent, min_percent) == :gt)
+    )
+    |> Enum.sort_by(&(&1.over_percent || Decimal.new(1_000_000)), {:desc, Decimal})
+  end
+
+  defp sum_rows(rows, fun), do: Enum.reduce(rows, Decimal.new(0), &Decimal.add(&2, fun.(&1)))
+
+  @doc """
   Expense `amount_base` grouped by the envelope's category, rolled up the
   hierarchy — a parent category's total includes its own directly-tagged
   spend plus every descendant category's spend (unenveloped/uncategorized

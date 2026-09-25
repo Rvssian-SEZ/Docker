@@ -47,6 +47,76 @@ defmodule CofferWeb.Charts do
     """
   end
 
+  @doc """
+  Donut showing how much of `total` has been `used`, with the percentage in
+  the middle. The arc is clamped to a full ring past 100% and turns the
+  error color, but the center label keeps the true (unclamped) percentage so
+  an overspend is still visible as e.g. "112%".
+  """
+  attr :used, Decimal, required: true
+  attr :total, Decimal, required: true
+
+  def donut(assigns) do
+    over? = Decimal.compare(assigns.used, assigns.total) == :gt
+
+    true_percent =
+      if Decimal.eq?(assigns.total, 0),
+        do: 0,
+        else:
+          assigns.used
+          |> Decimal.div(assigns.total)
+          |> Decimal.mult(100)
+          |> Decimal.round(0)
+          |> Decimal.to_integer()
+
+    assigns =
+      assigns
+      |> assign(:over?, over?)
+      |> assign(:true_percent, true_percent)
+      |> assign(:arc, percent_of(assigns.used, assigns.total))
+
+    ~H"""
+    <svg
+      viewBox="0 0 120 120"
+      class="mx-auto w-40 h-40"
+      role="img"
+      aria-label={"#{@true_percent}% of budget used"}
+    >
+      <circle
+        cx="60"
+        cy="60"
+        r="46"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="16"
+        class="text-base-200"
+      />
+      <circle
+        :if={@arc > 0}
+        cx="60"
+        cy="60"
+        r="46"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="16"
+        pathLength="100"
+        stroke-dasharray={"#{@arc} #{100 - @arc}"}
+        transform="rotate(-90 60 60)"
+        class={(@over? && "text-error") || "text-primary"}
+      />
+      <text
+        x="60"
+        y="58"
+        text-anchor="middle"
+        class={["fill-current text-2xl font-semibold", @over? && "text-error"]}
+      >
+        {@true_percent}%
+      </text>
+      <text x="60" y="74" text-anchor="middle" class="fill-current text-[9px] opacity-60">used</text>
+    </svg>
+    """
+  end
+
   @doc "A labeled horizontal bar scaled to `max` (the largest value among the set being rendered), for simple magnitude comparison — no over/under concept, unlike `progress_bar/1`."
   attr :label, :string, required: true
   attr :value, Decimal, required: true
